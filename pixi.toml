@@ -1,0 +1,11 @@
+[workspace]
+authors = ["Joshua James Venter <venter.joshua@gmail.com>"]
+channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
+name = "mograd"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+mojo = ">=1.0.0b2.dev2026050306,<2"
