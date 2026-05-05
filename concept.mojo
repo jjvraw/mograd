@@ -3,36 +3,46 @@ from std.memory import ArcPointer
 
 trait OpImpl:
     @staticmethod
-    def forward(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
+    def node(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
         ...
 
     @staticmethod
-    def backward(node: ArcPointer[Op], upstream: ArcPointer[Op]):
+    def grad(node: ArcPointer[Op], upstream: ArcPointer[Op]):
         ...
-
-
-struct AddOp(OpImpl):
-    @staticmethod
-    def forward(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
-        return Op.add(lhs, rhs)
-
-    @staticmethod
-    def backward(node: ArcPointer[Op], upstream: ArcPointer[Op]):
-        for j in range(len(node[].srcs)):
-            node[].srcs[j][].accum_grad(upstream)
 
 
 struct MulOp(OpImpl):
     @staticmethod
-    def forward(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
-        return Op.mul(lhs, rhs)
+    def node(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
+        var srcs = List[ArcPointer[Op]]()
+        srcs.append(lhs)
+        srcs.append(rhs)
+        return ArcPointer(
+            Op(OpType.MUL, lhs[].shape.copy(), lhs[].dtype, srcs^)
+        )
 
     @staticmethod
-    def backward(node: ArcPointer[Op], upstream: ArcPointer[Op]):
+    def grad(node: ArcPointer[Op], upstream: ArcPointer[Op]):
         var s0 = node[].srcs[0]
         var s1 = node[].srcs[1]
-        s0[].accum_grad(Op.mul(s1, upstream))
-        s1[].accum_grad(Op.mul(s0, upstream))
+        s0[].accum_grad(MulOp.node(s1, upstream))
+        s1[].accum_grad(MulOp.node(s0, upstream))
+
+
+struct AddOp(OpImpl):
+    @staticmethod
+    def node(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
+        var srcs = List[ArcPointer[Op]]()
+        srcs.append(lhs)
+        srcs.append(rhs)
+        return ArcPointer(
+            Op(OpType.ADD, lhs[].shape.copy(), lhs[].dtype, srcs^)
+        )
+
+    @staticmethod
+    def grad(node: ArcPointer[Op], upstream: ArcPointer[Op]):
+        for j in range(len(node[].srcs)):
+            node[].srcs[j][].accum_grad(upstream)
 
 
 @fieldwise_init
@@ -74,24 +84,6 @@ struct Op(Copyable, Movable):
             self.grad.value().destroy_pointee()
             self.grad.value().free()
 
-    @staticmethod
-    def mul(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
-        var srcs = List[ArcPointer[Op]]()
-        srcs.append(lhs)
-        srcs.append(rhs)
-        return ArcPointer(
-            Op(OpType.MUL, lhs[].shape.copy(), lhs[].dtype, srcs^)
-        )
-
-    @staticmethod
-    def add(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
-        var srcs = List[ArcPointer[Op]]()
-        srcs.append(lhs)
-        srcs.append(rhs)
-        return ArcPointer(
-            Op(OpType.ADD, lhs[].shape.copy(), lhs[].dtype, srcs^)
-        )
-
     def set_grad(mut self, var grad: Op):
         if self.grad:
             self.grad.value().destroy_pointee()
@@ -102,11 +94,9 @@ struct Op(Copyable, Movable):
 
     def accum_grad(mut self, grad: ArcPointer[Op]):
         if self.grad:
-            var srcs = List[ArcPointer[Op]]()
-            srcs.append(ArcPointer(self.grad.value()[].copy()))
-            srcs.append(grad)
-            var accumulated = ArcPointer(
-                Op(OpType.ADD, self.shape.copy(), self.dtype, srcs^)
+            var accumulated = AddOp.node(
+                ArcPointer(self.grad.value()[].copy()),
+                grad,
             )
             self.set_grad(accumulated[].copy())
         else:
@@ -114,9 +104,9 @@ struct Op(Copyable, Movable):
 
 
 struct Grad:
-    comptime BACKWARD_PATTERNS = (
-        (OpType.MUL._value, MulOp.backward),
-        (OpType.ADD._value, AddOp.backward),
+    comptime RULES = (
+        (OpType.MUL._value, MulOp.grad),
+        (OpType.ADD._value, AddOp.grad),
     )
 
     def __init__(out self):
@@ -146,9 +136,9 @@ struct Grad:
         node: ArcPointer[Op], upstream: ArcPointer[Op]
     ) raises:
         var pat = node[].op_type._value
-        comptime for i in range(len(Self.BACKWARD_PATTERNS)):
-            if pat == Self.BACKWARD_PATTERNS[i][0]:
-                Self.BACKWARD_PATTERNS[i][1](node, upstream)
+        comptime for i in range(len(Self.RULES)):
+            if pat == Self.RULES[i][0]:
+                Self.RULES[i][1](node, upstream)
                 return
 
     @staticmethod
@@ -202,12 +192,14 @@ struct Tensor:
 
     def __add__(self, other: Self) -> Self:
         return Tensor(
-            Op.add(self.op, other.op), self.requires_grad or other.requires_grad
+            AddOp.node(self.op, other.op),
+            self.requires_grad or other.requires_grad,
         )
 
     def __mul__(self, other: Self) -> Self:
         return Tensor(
-            Op.mul(self.op, other.op), self.requires_grad or other.requires_grad
+            MulOp.node(self.op, other.op),
+            self.requires_grad or other.requires_grad,
         )
 
     def backward(mut self) raises -> None:
