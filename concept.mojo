@@ -205,10 +205,11 @@ struct Tensor:
     def backward(mut self) raises -> None:
         Grad()(self.op)
 
-    def grad(self) -> Optional[ArcPointer[Op]]:
-        if self.op[].grad:
-            return ArcPointer(self.op[].grad.value()[].copy())
-        return None
+    def has_grad(self) -> Bool:
+        return Bool(self.op[].grad)
+
+    def grad(self) -> Tensor:
+        return Tensor(ArcPointer(self.op[].grad.value()[].copy()))
 
     @staticmethod
     def _str_op(op: ArcPointer[Op]) -> String:
@@ -247,7 +248,7 @@ def main() raises:
     print(out.__str__())
     out.backward()
 
-    if g := x.grad():
-        print("x.grad:", Tensor(g.value()).__str__())
-    if g := w.grad():
-        print("w.grad:", Tensor(g.value()).__str__())
+    if x.has_grad():
+        print("x.grad:", x.grad().__str__())
+    if w.has_grad():
+        print("w.grad:", w.grad().__str__())
