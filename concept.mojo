@@ -1,10 +1,38 @@
 from std.memory import ArcPointer
 
 
-# struct MulOP:
-#     @staticmethod
-#     def forward() -> Op:
-#         ...
+trait OpImpl:
+    @staticmethod
+    def forward(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
+        ...
+
+    @staticmethod
+    def backward(node: ArcPointer[Op], upstream: ArcPointer[Op]):
+        ...
+
+
+struct AddOp(OpImpl):
+    @staticmethod
+    def forward(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
+        return Op.add(lhs, rhs)
+
+    @staticmethod
+    def backward(node: ArcPointer[Op], upstream: ArcPointer[Op]):
+        for j in range(len(node[].srcs)):
+            node[].srcs[j][].accum_grad(upstream)
+
+
+struct MulOp(OpImpl):
+    @staticmethod
+    def forward(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
+        return Op.mul(lhs, rhs)
+
+    @staticmethod
+    def backward(node: ArcPointer[Op], upstream: ArcPointer[Op]):
+        var s0 = node[].srcs[0]
+        var s1 = node[].srcs[1]
+        s0[].accum_grad(Op.mul(s1, upstream))
+        s1[].accum_grad(Op.mul(s0, upstream))
 
 
 @fieldwise_init
@@ -85,6 +113,69 @@ struct Op(Copyable, Movable):
             self.set_grad(grad[].copy())
 
 
+struct Grad:
+    comptime BACKWARD_PATTERNS = (
+        (OpType.MUL._value, MulOp.backward),
+        (OpType.ADD._value, AddOp.backward),
+    )
+
+    def __init__(out self):
+        pass
+
+    def __call__(self, ref root: ArcPointer[Op]) raises:
+        root[].set_grad(
+            Op(
+                OpType.ONES,
+                root[].shape.copy(),
+                root[].dtype,
+                List[ArcPointer[Op]](),
+            )
+        )
+
+        var topo = Self.toposort(root)
+
+        for i in reversed(range(len(topo))):
+            var node = topo[i]
+            if not node[].grad:
+                continue
+            var upstream = ArcPointer(node[].grad.value()[].copy())
+            Self.backward_dispatch(node, upstream)
+
+    @staticmethod
+    def backward_dispatch(
+        node: ArcPointer[Op], upstream: ArcPointer[Op]
+    ) raises:
+        var pat = node[].op_type._value
+        comptime for i in range(len(Self.BACKWARD_PATTERNS)):
+            if pat == Self.BACKWARD_PATTERNS[i][0]:
+                Self.BACKWARD_PATTERNS[i][1](node, upstream)
+                return
+
+    @staticmethod
+    def toposort(
+        root: ArcPointer[Op],
+    ) -> List[ArcPointer[Op]]:
+        var visited = List[Int]()
+        var result = List[ArcPointer[Op]]()
+        Self._dfs(root, visited, result)
+        return result^
+
+    @staticmethod
+    def _dfs(
+        node: ArcPointer[Op],
+        mut visited: List[Int],
+        mut result: List[ArcPointer[Op]],
+    ):
+        var addr = Int(node.unsafe_ptr())
+        for i in range(len(visited)):
+            if visited[i] == addr:
+                return
+        visited.append(addr)
+        for i in range(len(node[].srcs)):
+            Self._dfs(node[].srcs[i], visited, result)
+        result.append(node)
+
+
 struct Tensor:
     var op: ArcPointer[Op]
     var requires_grad: Bool
@@ -120,29 +211,7 @@ struct Tensor:
         )
 
     def backward(mut self) raises -> None:
-        self.op[].set_grad(
-            Op(
-                OpType.ONES,
-                self.op[].shape.copy(),
-                self.op[].dtype,
-                List[ArcPointer[Op]](),
-            )
-        )
-
-        var topo = toposort(self)
-
-        for i in reversed(range(len(topo))):
-            var node = topo[i]
-            if not node[].grad:
-                continue
-            var upstream = ArcPointer(node[].grad.value()[].copy())
-
-            if node[].op_type == OpType.MUL:
-                node[].srcs[0][].accum_grad(Op.mul(node[].srcs[1], upstream))
-                node[].srcs[1][].accum_grad(Op.mul(node[].srcs[0], upstream))
-            elif node[].op_type == OpType.ADD:
-                for j in range(len(node[].srcs)):
-                    node[].srcs[j][].accum_grad(upstream)
+        Grad()(self.op)
 
     def grad(self) -> Optional[ArcPointer[Op]]:
         if self.op[].grad:
@@ -176,28 +245,6 @@ struct Tensor:
 
     def __str__(self) -> String:
         return Tensor._str_op(self.op)
-
-
-def _dfs(
-    node: ArcPointer[Op],
-    mut visited: List[Int],
-    mut result: List[ArcPointer[Op]],
-):
-    var addr = Int(node.unsafe_ptr())
-    for i in range(len(visited)):
-        if visited[i] == addr:
-            return
-    visited.append(addr)
-    for i in range(len(node[].srcs)):
-        _dfs(node[].srcs[i], visited, result)
-    result.append(node)
-
-
-def toposort(root: Tensor) -> List[ArcPointer[Op]]:
-    var visited = List[Int]()
-    var result = List[ArcPointer[Op]]()
-    _dfs(root.op, visited, result)
-    return result^
 
 
 def main() raises:
