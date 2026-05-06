@@ -48,14 +48,15 @@ struct AddOp(OpImpl):
 @fieldwise_init
 struct OpType(Copyable, Equatable, ImplicitlyCopyable, Movable):
     var _value: Int
-    comptime BUFFER = OpType(2)
-    comptime ONES = OpType(3)
-    comptime ADD = OpType(5)
-    comptime MUL = OpType(7)
+    var _name: String
+    comptime BUFFER = OpType(2, "BUFFER")
+    comptime ONES = OpType(3, "ONES")
+    comptime ADD = OpType(5, "ADD")
+    comptime MUL = OpType(7, "MUL")
 
 
 @fieldwise_init
-struct Op(Copyable, Movable):
+struct Op(Copyable, Movable, Writable):
     # TODO: Use ArcPointer when Optional[ArcPointer] is resolved:
     # https://github.com/modular/modular/issues/3293
     comptime OpPointer = UnsafePointer[Self, MutExternalOrigin]
@@ -83,6 +84,9 @@ struct Op(Copyable, Movable):
         if self.grad:
             self.grad.value().destroy_pointee()
             self.grad.value().free()
+
+    def __str__(self) -> String:
+        return self.op_type._name
 
     def set_grad(mut self, var grad: Op):
         if self.grad:
@@ -213,17 +217,7 @@ struct Tensor:
 
     @staticmethod
     def _str_op(op: ArcPointer[Op]) -> String:
-        var op_name: String
-        if op[].op_type == OpType.BUFFER:
-            op_name = "BUFFER"
-        elif op[].op_type == OpType.ADD:
-            op_name = "ADD"
-        elif op[].op_type == OpType.MUL:
-            op_name = "MUL"
-        elif op[].op_type == OpType.ONES:
-            op_name = "ONES"
-        else:
-            op_name = "?"
+        var op_name = op[].__str__()
 
         if len(op[].srcs) == 0:
             return op_name
