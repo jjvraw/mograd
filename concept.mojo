@@ -68,8 +68,6 @@ struct OpType(Copyable, Equatable, ImplicitlyCopyable, Movable):
 
 
 struct Op(Copyable, Movable, Writable):
-    # TODO: Use ArcPointer when Optional[ArcPointer] is resolved:
-    # https://github.com/modular/modular/issues/3293
     var op_type: OpType
     var shape: List[Int]
     var dtype: DType
@@ -180,6 +178,8 @@ struct Grad:
 struct Tensor(Copyable, Movable):
     var op: ArcPointer[Op]
     var requires_grad: Bool
+    # TODO: Use ArcPointer when Optional[ArcPointer] is resolved:
+    # https://github.com/modular/modular/issues/3293
     var _grad: ArcPointer[Optional[Tensor]]
 
     def __init__(out self, var op: ArcPointer[Op], requires_grad: Bool = False):
