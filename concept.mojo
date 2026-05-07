@@ -27,7 +27,7 @@ struct Pat(Copyable, Movable):
     def matches(self, node: ArcPointer[Op]) -> Bool:
         if not self.op_type:
             return True
-        if node[].op_type != self.op_type.value():
+        if node[].op_type != self.op_type.unsafe_value():
             return False
         if len(self.srcs) == 0:
             return True
@@ -100,16 +100,12 @@ struct Op(Copyable, Movable, Writable):
 
 
 def mul_node(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
-    var srcs = List[ArcPointer[Op]]()
-    srcs.append(lhs)
-    srcs.append(rhs)
+    var srcs = [lhs, rhs]
     return ArcPointer(Op(OpType.MUL, lhs[].shape.copy(), lhs[].dtype, srcs^))
 
 
 def add_node(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
-    var srcs = List[ArcPointer[Op]]()
-    srcs.append(lhs)
-    srcs.append(rhs)
+    var srcs = [lhs, rhs]
     return ArcPointer(Op(OpType.ADD, lhs[].shape.copy(), lhs[].dtype, srcs^))
 
 
@@ -125,8 +121,8 @@ struct Grad:
         initial_grad: ArcPointer[Op],
         target_ops: List[ArcPointer[Op]],
     ) raises -> List[Optional[ArcPointer[Op]]]:
-        var self = Grad()
-        self.grad_map[Int(root.unsafe_ptr())] = initial_grad
+        var grad = Grad()
+        grad.grad_map[Int(root.unsafe_ptr())] = initial_grad
 
         @always_inline
         def mul_grad(
@@ -153,26 +149,25 @@ struct Grad:
         for i in reversed(range(len(topo))):
             var node = topo[i]
             var addr = Int(node.unsafe_ptr())
-            if addr not in self.grad_map:
+            var upstream = grad.grad_map.get(addr)
+            if not upstream:
                 continue
-            var upstream = self.grad_map[addr]
+            var up = upstream.unsafe_value()
             var src_grads = PatternMatcher.match(
                 PatRule[mul_grad](Pat(OpType.MUL)),
                 PatRule[add_grad](Pat(OpType.ADD)),
                 node=node,
-                upstream=upstream,
+                upstream=up,
             )
             if src_grads:
+                ref sg = src_grads.unsafe_value()
                 for j in range(len(node[].srcs)):
-                    self.accum_into(node[].srcs[j], src_grads.value()[j])
+                    grad.accum_into(node[].srcs[j], sg[j])
 
         var result = List[Optional[ArcPointer[Op]]]()
         for i in range(len(target_ops)):
             var taddr = Int(target_ops[i].unsafe_ptr())
-            if taddr in self.grad_map:
-                result.append(self.grad_map[taddr])
-            else:
-                result.append(None)
+            result.append(grad.grad_map.get(taddr))
         return result^
 
     def accum_into(
@@ -181,8 +176,9 @@ struct Grad:
         grad: ArcPointer[Op],
     ) raises:
         var addr = Int(op.unsafe_ptr())
-        if addr in self.grad_map:
-            self.grad_map[addr] = add_node(self.grad_map[addr], grad)
+        var existing = self.grad_map.get(addr)
+        if existing:
+            self.grad_map[addr] = add_node(existing.unsafe_value(), grad)
         else:
             self.grad_map[addr] = grad
 
