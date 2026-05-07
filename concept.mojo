@@ -1,60 +1,74 @@
 from std.memory import ArcPointer
 
 
-trait OpImpl:
-    @staticmethod
-    def node(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
+comptime RuleFn = def(ArcPointer[Op], ArcPointer[Op]) capturing[_] -> List[
+    ArcPointer[Op]
+]
+
+
+trait Rule:
+    def matches(self, node: ArcPointer[Op]) capturing -> Bool:
         ...
 
-    @staticmethod
-    def grad(
-        mut ctx: Grad,
-        node: ArcPointer[Op],
-        upstream: ArcPointer[Op],
-    ) raises:
+    def apply(
+        self, node: ArcPointer[Op], upstream: ArcPointer[Op]
+    ) raises capturing -> List[ArcPointer[Op]]:
         ...
 
 
-struct MulOp(OpImpl):
-    @staticmethod
-    def node(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
-        var srcs = List[ArcPointer[Op]]()
-        srcs.append(lhs)
-        srcs.append(rhs)
-        return ArcPointer(
-            Op(OpType.MUL, lhs[].shape.copy(), lhs[].dtype, srcs^)
-        )
+struct Pat(Copyable, Movable):
+    var op_type: Optional[OpType]  # None = wildcard
+    var srcs: List[Pat]  # empty = match any srcs
 
+    def __init__(out self, op_type: Optional[OpType] = None):
+        self.op_type = op_type
+        self.srcs = List[Pat]()
+
+    def matches(self, node: ArcPointer[Op]) -> Bool:
+        if not self.op_type:
+            return True
+        if node[].op_type != self.op_type.value():
+            return False
+        if len(self.srcs) == 0:
+            return True
+        if len(self.srcs) != len(node[].srcs):
+            return False
+        for i in range(len(self.srcs)):
+            if not self.srcs[i].matches(node[].srcs[i]):
+                return False
+        return True
+
+
+@fieldwise_init
+struct PatRule[
+    F: def(ArcPointer[Op], ArcPointer[Op]) raises capturing[_] -> List[
+        ArcPointer[Op]
+    ]
+](Rule):
+    var pat: Pat
+
+    def matches(self, node: ArcPointer[Op]) -> Bool:
+        return self.pat.matches(node)
+
+    def apply(
+        self, node: ArcPointer[Op], upstream: ArcPointer[Op]
+    ) raises -> List[ArcPointer[Op]]:
+        return Self.F(node, upstream)
+
+
+struct PatternMatcher:
     @staticmethod
-    def grad(
-        mut ctx: Grad,
+    def match[
+        *RuleTypes: Rule
+    ](
+        *rules: *RuleTypes,
         node: ArcPointer[Op],
         upstream: ArcPointer[Op],
-    ) raises:
-        var s0 = node[].srcs[0]
-        var s1 = node[].srcs[1]
-        ctx.accum_into(s0, MulOp.node(s1, upstream))
-        ctx.accum_into(s1, MulOp.node(s0, upstream))
-
-
-struct AddOp(OpImpl):
-    @staticmethod
-    def node(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
-        var srcs = List[ArcPointer[Op]]()
-        srcs.append(lhs)
-        srcs.append(rhs)
-        return ArcPointer(
-            Op(OpType.ADD, lhs[].shape.copy(), lhs[].dtype, srcs^)
-        )
-
-    @staticmethod
-    def grad(
-        mut ctx: Grad,
-        node: ArcPointer[Op],
-        upstream: ArcPointer[Op],
-    ) raises:
-        for j in range(len(node[].srcs)):
-            ctx.accum_into(node[].srcs[j], upstream)
+    ) raises -> Optional[List[ArcPointer[Op]]]:
+        comptime for i in range(len(RuleTypes)):
+            if rules[i].matches(node):
+                return rules[i].apply(node, upstream)
+        return None
 
 
 @fieldwise_init
@@ -89,11 +103,21 @@ struct Op(Copyable, Movable, Writable):
         return self.op_type._name
 
 
+def mul_node(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
+    var srcs = List[ArcPointer[Op]]()
+    srcs.append(lhs)
+    srcs.append(rhs)
+    return ArcPointer(Op(OpType.MUL, lhs[].shape.copy(), lhs[].dtype, srcs^))
+
+
+def add_node(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
+    var srcs = List[ArcPointer[Op]]()
+    srcs.append(lhs)
+    srcs.append(rhs)
+    return ArcPointer(Op(OpType.ADD, lhs[].shape.copy(), lhs[].dtype, srcs^))
+
+
 struct Grad:
-    comptime RULES = (
-        (OpType.MUL._value, MulOp.grad),
-        (OpType.ADD._value, AddOp.grad),
-    )
     var grad_map: Dict[Int, ArcPointer[Op]]
 
     def __init__(out self):
@@ -108,17 +132,43 @@ struct Grad:
         var self = Grad()
         self.grad_map[Int(root.unsafe_ptr())] = initial_grad
 
+        @always_inline
+        def mul_grad(
+            node: ArcPointer[Op], upstream: ArcPointer[Op]
+        ) raises capturing -> List[ArcPointer[Op]]:
+            var s0 = node[].srcs[0]
+            var s1 = node[].srcs[1]
+            var grads = List[ArcPointer[Op]]()
+            grads.append(mul_node(s1, upstream))
+            grads.append(mul_node(s0, upstream))
+            return grads^
+
+        @always_inline
+        def add_grad(
+            node: ArcPointer[Op], upstream: ArcPointer[Op]
+        ) raises capturing -> List[ArcPointer[Op]]:
+            var grads = List[ArcPointer[Op]]()
+            for _ in range(len(node[].srcs)):
+                grads.append(upstream)
+            return grads^
+
         var topo = Self.toposort(root)
 
         for i in reversed(range(len(topo))):
             var node = topo[i]
             var addr = Int(node.unsafe_ptr())
-
             if addr not in self.grad_map:
                 continue
-
             var upstream = self.grad_map[addr]
-            Self.backward_dispatch(self, node, upstream)
+            var src_grads = PatternMatcher.match(
+                PatRule[mul_grad](Pat(OpType.MUL)),
+                PatRule[add_grad](Pat(OpType.ADD)),
+                node=node,
+                upstream=upstream,
+            )
+            if src_grads:
+                for j in range(len(node[].srcs)):
+                    self.accum_into(node[].srcs[j], src_grads.value()[j])
 
         var result = List[Optional[ArcPointer[Op]]]()
         for i in range(len(target_ops)):
@@ -136,25 +186,12 @@ struct Grad:
     ) raises:
         var addr = Int(op.unsafe_ptr())
         if addr in self.grad_map:
-            self.grad_map[addr] = AddOp.node(self.grad_map[addr], grad)
+            self.grad_map[addr] = add_node(self.grad_map[addr], grad)
         else:
             self.grad_map[addr] = grad
 
-    def backward_dispatch(
-        mut self,
-        node: ArcPointer[Op],
-        upstream: ArcPointer[Op],
-    ) raises:
-        var pat = node[].op_type._value
-        comptime for i in range(len(Self.RULES)):
-            if pat == Self.RULES[i][0]:
-                Self.RULES[i][1](self, node, upstream)
-                return
-
     @staticmethod
-    def toposort(
-        root: ArcPointer[Op],
-    ) -> List[ArcPointer[Op]]:
+    def toposort(root: ArcPointer[Op]) -> List[ArcPointer[Op]]:
         var visited = Dict[Int, Bool]()
         var result = List[ArcPointer[Op]]()
         Self._dfs(root, visited, result)
@@ -212,13 +249,13 @@ struct Tensor(Copyable, Movable):
 
     def __add__(self, other: Self) -> Self:
         return Tensor(
-            AddOp.node(self.op, other.op),
+            add_node(self.op, other.op),
             self.requires_grad or other.requires_grad,
         )
 
     def __mul__(self, other: Self) -> Self:
         return Tensor(
-            MulOp.node(self.op, other.op),
+            mul_node(self.op, other.op),
             self.requires_grad or other.requires_grad,
         )
 
@@ -271,7 +308,7 @@ def main() raises:
     var out = x * w + w
 
     print(out.__str__())
-    list = out.gradient(x, w)
+    var grads = out.gradient(x, w)
 
-    for t in list:
+    for t in grads:
         print(t.__str__())
