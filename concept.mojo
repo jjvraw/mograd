@@ -1,9 +1,9 @@
 from std.memory import ArcPointer
 
 
-comptime RuleFn = def(ArcPointer[Op], ArcPointer[Op]) capturing[_] -> List[
-    ArcPointer[Op]
-]
+comptime RuleFn = def(ArcPointer[Op], ArcPointer[Op]) raises capturing[
+    _
+] -> List[ArcPointer[Op]]
 
 
 trait Rule:
@@ -40,11 +40,7 @@ struct Pat(Copyable, Movable):
 
 
 @fieldwise_init
-struct PatRule[
-    F: def(ArcPointer[Op], ArcPointer[Op]) raises capturing[_] -> List[
-        ArcPointer[Op]
-    ]
-](Rule):
+struct PatRule[F: RuleFn](Rule):
     var pat: Pat
 
     def matches(self, node: ArcPointer[Op]) -> Bool:
@@ -288,7 +284,6 @@ struct Tensor(Copyable, Movable):
             mul_node(self.op, other.op),
             self.requires_grad or other.requires_grad,
         )
-
 
     @staticmethod
     def _str_op(op: ArcPointer[Op]) -> String:
