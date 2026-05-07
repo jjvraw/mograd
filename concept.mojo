@@ -8,9 +8,9 @@ trait OpImpl:
 
     @staticmethod
     def grad(
+        mut ctx: Grad,
         node: ArcPointer[Op],
         upstream: ArcPointer[Op],
-        mut grad_map: Dict[Int, ArcPointer[Op]],
     ) raises:
         ...
 
@@ -27,14 +27,14 @@ struct MulOp(OpImpl):
 
     @staticmethod
     def grad(
+        mut ctx: Grad,
         node: ArcPointer[Op],
         upstream: ArcPointer[Op],
-        mut grad_map: Dict[Int, ArcPointer[Op]],
     ) raises:
         var s0 = node[].srcs[0]
         var s1 = node[].srcs[1]
-        Grad.accum_into(s0, MulOp.node(s1, upstream), grad_map)
-        Grad.accum_into(s1, MulOp.node(s0, upstream), grad_map)
+        ctx.accum_into(s0, MulOp.node(s1, upstream))
+        ctx.accum_into(s1, MulOp.node(s0, upstream))
 
 
 struct AddOp(OpImpl):
@@ -49,12 +49,12 @@ struct AddOp(OpImpl):
 
     @staticmethod
     def grad(
+        mut ctx: Grad,
         node: ArcPointer[Op],
         upstream: ArcPointer[Op],
-        mut grad_map: Dict[Int, ArcPointer[Op]],
     ) raises:
         for j in range(len(node[].srcs)):
-            Grad.accum_into(node[].srcs[j], upstream, grad_map)
+            ctx.accum_into(node[].srcs[j], upstream)
 
 
 @fieldwise_init
@@ -96,19 +96,19 @@ struct Grad:
         (OpType.MUL._value, MulOp.grad),
         (OpType.ADD._value, AddOp.grad),
     )
+    var grad_map: Dict[Int, ArcPointer[Op]]
 
     def __init__(out self):
-        pass
+        self.grad_map = Dict[Int, ArcPointer[Op]]()
 
-    def __call__(
-        self,
+    @staticmethod
+    def compute(
         root: ArcPointer[Op],
         initial_grad: ArcPointer[Op],
         target_ops: List[ArcPointer[Op]],
     ) raises -> List[Optional[ArcPointer[Op]]]:
-        var grad_map = Dict[Int, ArcPointer[Op]]()
-
-        grad_map[Int(root.unsafe_ptr())] = initial_grad
+        var self = Grad()
+        self.grad_map[Int(root.unsafe_ptr())] = initial_grad
 
         var topo = Self.toposort(root)
 
@@ -116,43 +116,41 @@ struct Grad:
             var node = topo[i]
             var addr = Int(node.unsafe_ptr())
 
-            if addr not in grad_map:
+            if addr not in self.grad_map:
                 continue
 
-            var upstream = grad_map[addr]
-            Self.backward_dispatch(node, upstream, grad_map)
+            var upstream = self.grad_map[addr]
+            Self.backward_dispatch(self, node, upstream)
 
         var result = List[Optional[ArcPointer[Op]]]()
         for i in range(len(target_ops)):
             var taddr = Int(target_ops[i].unsafe_ptr())
-            if taddr in grad_map:
-                result.append(grad_map[taddr])
+            if taddr in self.grad_map:
+                result.append(self.grad_map[taddr])
             else:
                 result.append(None)
         return result^
 
-    @staticmethod
     def accum_into(
+        mut self,
         op: ArcPointer[Op],
         grad: ArcPointer[Op],
-        mut grad_map: Dict[Int, ArcPointer[Op]],
     ) raises:
         var addr = Int(op.unsafe_ptr())
-        if addr in grad_map:
-            grad_map[addr] = AddOp.node(grad_map[addr], grad)
+        if addr in self.grad_map:
+            self.grad_map[addr] = AddOp.node(self.grad_map[addr], grad)
         else:
-            grad_map[addr] = grad
+            self.grad_map[addr] = grad
 
-    @staticmethod
     def backward_dispatch(
+        mut self,
         node: ArcPointer[Op],
         upstream: ArcPointer[Op],
-        mut grad_map: Dict[Int, ArcPointer[Op]],
     ) raises:
         var pat = node[].op_type._value
         comptime for i in range(len(Self.RULES)):
             if pat == Self.RULES[i][0]:
-                Self.RULES[i][1](node, upstream, grad_map)
+                Self.RULES[i][1](self, node, upstream)
                 return
 
     @staticmethod
@@ -234,16 +232,19 @@ struct Tensor(Copyable, Movable):
             initial_grad = Self.ones_like(self)
         target_ops: List[ArcPointer[Op]] = [t.op for t in targets]
 
-        var grads = Grad()(self.op, initial_grad.op, target_ops)
+        var grads = Grad.compute(self.op, initial_grad.op, target_ops)
 
         var result = List[Tensor]()
         for i in range(len(grads)):
             if grads[i]:
                 result.append(Tensor(grads[i].value()))
             else:
-                result.append(Self.empty(targets[i].op[].shape.copy(), targets[i].op[].dtype))
+                result.append(
+                    Self.empty(
+                        targets[i].op[].shape.copy(), targets[i].op[].dtype
+                    )
+                )
         return result^
-
 
     @staticmethod
     def _str_op(op: ArcPointer[Op]) -> String:
