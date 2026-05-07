@@ -17,17 +17,15 @@ trait Rule:
 
 
 struct Pat(Copyable, Movable):
-    var op_type: Optional[OpType]  # None = wildcard
+    var op_type: OpType
     var srcs: List[Pat]  # empty = match any srcs
 
-    def __init__(out self, op_type: Optional[OpType] = None):
+    def __init__(out self, op_type: OpType):
         self.op_type = op_type
         self.srcs = List[Pat]()
 
     def matches(self, node: ArcPointer[Op]) -> Bool:
-        if not self.op_type:
-            return True
-        if node[].op_type != self.op_type.unsafe_value():
+        if node[].op_type != self.op_type:
             return False
         if len(self.srcs) == 0:
             return True
@@ -53,6 +51,7 @@ struct PatRule[F: RuleFn](Rule):
 
 
 struct PatternMatcher:
+    # Can we build a dict at comptime?
     @staticmethod
     def match[
         *RuleTypes: Rule
