@@ -248,16 +248,10 @@ struct Tensor(Copyable, Movable):
         return Tensor(op, requires_grad)
 
     def __add__(self, other: Self) -> Self:
-        return Tensor(
-            add_node(self.op, other.op),
-            self.requires_grad or other.requires_grad,
-        )
+        return self.add(other)
 
     def __mul__(self, other: Self) -> Self:
-        return Tensor(
-            mul_node(self.op, other.op),
-            self.requires_grad or other.requires_grad,
-        )
+        return self.mul(other)
 
     def gradient(
         mut self, *targets: Tensor, var gradient: Optional[Tensor] = None
@@ -282,6 +276,19 @@ struct Tensor(Copyable, Movable):
                     )
                 )
         return result^
+
+    def add(self, other: Self) -> Self:
+        return Tensor(
+            add_node(self.op, other.op),
+            self.requires_grad or other.requires_grad,
+        )
+
+    def mul(self, other: Self) -> Self:
+        return Tensor(
+            mul_node(self.op, other.op),
+            self.requires_grad or other.requires_grad,
+        )
+
 
     @staticmethod
     def _str_op(op: ArcPointer[Op]) -> String:
