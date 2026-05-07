@@ -7,7 +7,11 @@ trait OpImpl:
         ...
 
     @staticmethod
-    def grad(node: ArcPointer[Op], upstream: ArcPointer[Op]):
+    def grad(
+        node: ArcPointer[Op],
+        upstream: ArcPointer[Op],
+        mut grad_map: Dict[Int, ArcPointer[Op]],
+    ) raises:
         ...
 
 
@@ -22,11 +26,15 @@ struct MulOp(OpImpl):
         )
 
     @staticmethod
-    def grad(node: ArcPointer[Op], upstream: ArcPointer[Op]):
+    def grad(
+        node: ArcPointer[Op],
+        upstream: ArcPointer[Op],
+        mut grad_map: Dict[Int, ArcPointer[Op]],
+    ) raises:
         var s0 = node[].srcs[0]
         var s1 = node[].srcs[1]
-        s0[].accum_grad(MulOp.node(s1, upstream))
-        s1[].accum_grad(MulOp.node(s0, upstream))
+        Grad.accum_into(s0, MulOp.node(s1, upstream), grad_map)
+        Grad.accum_into(s1, MulOp.node(s0, upstream), grad_map)
 
 
 struct AddOp(OpImpl):
@@ -40,9 +48,13 @@ struct AddOp(OpImpl):
         )
 
     @staticmethod
-    def grad(node: ArcPointer[Op], upstream: ArcPointer[Op]):
+    def grad(
+        node: ArcPointer[Op],
+        upstream: ArcPointer[Op],
+        mut grad_map: Dict[Int, ArcPointer[Op]],
+    ) raises:
         for j in range(len(node[].srcs)):
-            node[].srcs[j][].accum_grad(upstream)
+            Grad.accum_into(node[].srcs[j], upstream, grad_map)
 
 
 @fieldwise_init
@@ -55,17 +67,13 @@ struct OpType(Copyable, Equatable, ImplicitlyCopyable, Movable):
     comptime MUL = OpType(7, "MUL")
 
 
-@fieldwise_init
 struct Op(Copyable, Movable, Writable):
     # TODO: Use ArcPointer when Optional[ArcPointer] is resolved:
     # https://github.com/modular/modular/issues/3293
-    comptime OpPointer = UnsafePointer[Self, MutExternalOrigin]
-
     var op_type: OpType
     var shape: List[Int]
     var dtype: DType
     var srcs: List[ArcPointer[Op]]
-    var grad: Optional[Self.OpPointer]
 
     def __init__(
         out self,
@@ -78,33 +86,9 @@ struct Op(Copyable, Movable, Writable):
         self.shape = shape^
         self.dtype = dtype
         self.srcs = srcs^
-        self.grad = None
-
-    def __del__(deinit self):
-        if self.grad:
-            self.grad.value().destroy_pointee()
-            self.grad.value().free()
 
     def __str__(self) -> String:
         return self.op_type._name
-
-    def set_grad(mut self, var grad: Op):
-        if self.grad:
-            self.grad.value().destroy_pointee()
-            self.grad.value().free()
-        var ptr = alloc[Op](1)
-        ptr.init_pointee_move(grad^)
-        self.grad = ptr
-
-    def accum_grad(mut self, grad: ArcPointer[Op]):
-        if self.grad:
-            var accumulated = AddOp.node(
-                ArcPointer(self.grad.value()[].copy()),
-                grad,
-            )
-            self.set_grad(accumulated[].copy())
-        else:
-            self.set_grad(grad[].copy())
 
 
 struct Grad:
@@ -116,40 +100,66 @@ struct Grad:
     def __init__(out self):
         pass
 
-    def __call__(self, ref root: ArcPointer[Op]) raises:
-        root[].set_grad(
-            Op(
-                OpType.ONES,
-                root[].shape.copy(),
-                root[].dtype,
-                List[ArcPointer[Op]](),
-            )
-        )
+    def __call__(
+        self,
+        root: ArcPointer[Op],
+        initial_grad: ArcPointer[Op],
+        target_ops: List[ArcPointer[Op]],
+    ) raises -> List[Optional[ArcPointer[Op]]]:
+        var grad_map = Dict[Int, ArcPointer[Op]]()
+
+        grad_map[Int(root.unsafe_ptr())] = initial_grad
 
         var topo = Self.toposort(root)
 
         for i in reversed(range(len(topo))):
             var node = topo[i]
-            if not node[].grad:
+            var addr = Int(node.unsafe_ptr())
+
+            if addr not in grad_map:
                 continue
-            var upstream = ArcPointer(node[].grad.value()[].copy())
-            Self.backward_dispatch(node, upstream)
+
+            var upstream = grad_map[addr]
+            Self.backward_dispatch(node, upstream, grad_map)
+
+        var result = List[Optional[ArcPointer[Op]]]()
+        for i in range(len(target_ops)):
+            var taddr = Int(target_ops[i].unsafe_ptr())
+            if taddr in grad_map:
+                result.append(grad_map[taddr])
+            else:
+                result.append(None)
+        return result^
+
+    @staticmethod
+    def accum_into(
+        op: ArcPointer[Op],
+        grad: ArcPointer[Op],
+        mut grad_map: Dict[Int, ArcPointer[Op]],
+    ) raises:
+        var addr = Int(op.unsafe_ptr())
+        if addr in grad_map:
+            grad_map[addr] = AddOp.node(grad_map[addr], grad)
+        else:
+            grad_map[addr] = grad
 
     @staticmethod
     def backward_dispatch(
-        node: ArcPointer[Op], upstream: ArcPointer[Op]
+        node: ArcPointer[Op],
+        upstream: ArcPointer[Op],
+        mut grad_map: Dict[Int, ArcPointer[Op]],
     ) raises:
         var pat = node[].op_type._value
         comptime for i in range(len(Self.RULES)):
             if pat == Self.RULES[i][0]:
-                Self.RULES[i][1](node, upstream)
+                Self.RULES[i][1](node, upstream, grad_map)
                 return
 
     @staticmethod
     def toposort(
         root: ArcPointer[Op],
     ) -> List[ArcPointer[Op]]:
-        var visited = List[Int]()
+        var visited = Dict[Int, Bool]()
         var result = List[ArcPointer[Op]]()
         Self._dfs(root, visited, result)
         return result^
@@ -157,31 +167,39 @@ struct Grad:
     @staticmethod
     def _dfs(
         node: ArcPointer[Op],
-        mut visited: List[Int],
+        mut visited: Dict[Int, Bool],
         mut result: List[ArcPointer[Op]],
     ):
         var addr = Int(node.unsafe_ptr())
-        for i in range(len(visited)):
-            if visited[i] == addr:
-                return
-        visited.append(addr)
+        if addr in visited:
+            return
+        visited[addr] = True
         for i in range(len(node[].srcs)):
             Self._dfs(node[].srcs[i], visited, result)
         result.append(node)
 
 
-struct Tensor:
+struct Tensor(Copyable, Movable):
     var op: ArcPointer[Op]
     var requires_grad: Bool
+    var _grad: ArcPointer[Optional[Tensor]]
 
     def __init__(out self, var op: ArcPointer[Op], requires_grad: Bool = False):
         self.op = op^
         self.requires_grad = requires_grad
+        self._grad = ArcPointer(Optional[Tensor](None))
 
     @implicit
     def __init__(out self, var op: Op, requires_grad: Bool = False):
         self.op = ArcPointer(op^)
         self.requires_grad = requires_grad
+        self._grad = ArcPointer(Optional[Tensor](None))
+
+    @staticmethod
+    def ones_like(other: Tensor, requires_grad: Bool = False) -> Tensor:
+        srcs = List[ArcPointer[Op]]()
+        op = Op(OpType.ONES, other.op[].shape.copy(), other.op[].dtype, srcs^)
+        return Tensor(ArcPointer(op^), requires_grad)
 
     @staticmethod
     def empty(
@@ -206,14 +224,26 @@ struct Tensor:
             self.requires_grad or other.requires_grad,
         )
 
-    def backward(mut self) raises -> None:
-        Grad()(self.op)
+    def gradient(
+        mut self, *targets: Tensor, var gradient: Optional[Tensor] = None
+    ) raises -> List[Tensor]:
+        var initial_grad: Tensor
+        if gradient:
+            initial_grad = gradient.take()
+        else:
+            initial_grad = Self.ones_like(self)
+        target_ops: List[ArcPointer[Op]] = [t.op for t in targets]
 
-    def has_grad(self) -> Bool:
-        return Bool(self.op[].grad)
+        var grads = Grad()(self.op, initial_grad.op, target_ops)
 
-    def grad(self) -> Tensor:
-        return Tensor(ArcPointer(self.op[].grad.value()[].copy()))
+        var result = List[Tensor]()
+        for i in range(len(grads)):
+            if grads[i]:
+                result.append(Tensor(grads[i].value()))
+            else:
+                result.append(Self.empty(targets[i].op[].shape.copy(), targets[i].op[].dtype))
+        return result^
+
 
     @staticmethod
     def _str_op(op: ArcPointer[Op]) -> String:
@@ -240,9 +270,7 @@ def main() raises:
     var out = x * w + w
 
     print(out.__str__())
-    out.backward()
+    list = out.gradient(x, w)
 
-    if x.has_grad():
-        print("x.grad:", x.grad().__str__())
-    if w.has_grad():
-        print("w.grad:", w.grad().__str__())
+    for t in list:
+        print(t.__str__())
