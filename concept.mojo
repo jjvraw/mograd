@@ -109,10 +109,11 @@ struct PatternMatcher[rules: List[Rule]]:
         node: ArcPointer[Op],
         upstream: ArcPointer[Op],
     ) raises -> Optional[List[ArcPointer[Op]]]:
-        var matches = self.rule_table.get(node[].op_type._value, List[Rule]())
-        for rule in matches:
-            if rule.pat.matches(node):
-                return rule.func(node, upstream)
+        var matches = self.rule_table.get(node[].op_type._value)
+        if matches:
+            for rule in matches.value():
+                if rule.pat.matches(node):
+                    return rule.func(node, upstream)
         return None
 
 
