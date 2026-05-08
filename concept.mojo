@@ -1,18 +1,19 @@
 from std.memory import ArcPointer
 
+# ===-------------------------------------------------------------------===#
+# PatternMatcher
+# ===-------------------------------------------------------------------===#
 
-comptime RuleFn = def(ArcPointer[Op], ArcPointer[Op]) raises capturing[
-    _
-] -> List[ArcPointer[Op]]
+comptime RuleFn = def(ArcPointer[Op], ArcPointer[Op]) raises thin -> List[ArcPointer[Op]]
 
 
 trait Rule:
-    def matches(self, node: ArcPointer[Op]) capturing -> Bool:
+    def matches(self, node: ArcPointer[Op]) -> Bool:
         ...
 
     def apply(
         self, node: ArcPointer[Op], upstream: ArcPointer[Op]
-    ) raises capturing -> List[ArcPointer[Op]]:
+    ) raises -> List[ArcPointer[Op]]:
         ...
 
 
@@ -51,7 +52,7 @@ struct PatRule[F: RuleFn](Rule):
 
 
 struct PatternMatcher:
-    # Can we build a dict at comptime?
+    # TODO: Can we build a dict at comptime?
     @staticmethod
     def match[
         *RuleTypes: Rule
@@ -66,6 +67,12 @@ struct PatternMatcher:
         return None
 
 
+# ===-------------------------------------------------------------------===#
+# Op
+# ===-------------------------------------------------------------------===#
+
+
+# TODO: Lets rather have a op registry that is defined and built at comptime.
 @fieldwise_init
 struct OpType(Copyable, Equatable, ImplicitlyCopyable, Movable):
     var _value: Int
@@ -108,6 +115,11 @@ def add_node(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
     return ArcPointer(Op(OpType.ADD, lhs[].shape.copy(), lhs[].dtype, srcs^))
 
 
+# ===-------------------------------------------------------------------===#
+# Grad
+# ===-------------------------------------------------------------------===#
+
+
 struct Grad:
     var grad_map: Dict[Int, ArcPointer[Op]]
 
@@ -126,7 +138,7 @@ struct Grad:
         @always_inline
         def mul_grad(
             node: ArcPointer[Op], upstream: ArcPointer[Op]
-        ) raises capturing -> List[ArcPointer[Op]]:
+        ) raises -> List[ArcPointer[Op]]:
             var s0 = node[].srcs[0]
             var s1 = node[].srcs[1]
             var grads = List[ArcPointer[Op]]()
@@ -137,7 +149,7 @@ struct Grad:
         @always_inline
         def add_grad(
             node: ArcPointer[Op], upstream: ArcPointer[Op]
-        ) raises capturing -> List[ArcPointer[Op]]:
+        ) raises -> List[ArcPointer[Op]]:
             var grads = List[ArcPointer[Op]]()
             for _ in range(len(node[].srcs)):
                 grads.append(upstream)
@@ -201,6 +213,11 @@ struct Grad:
         for i in range(len(node[].srcs)):
             Self._dfs(node[].srcs[i], visited, result)
         result.append(node)
+
+
+# ===-------------------------------------------------------------------===#
+# Tensor
+# ===-------------------------------------------------------------------===#
 
 
 struct Tensor(Copyable, Movable):
@@ -297,6 +314,11 @@ struct Tensor(Copyable, Movable):
 
     def __str__(self) -> String:
         return Tensor._str_op(self.op)
+
+
+# ===-------------------------------------------------------------------===#
+# Main
+# ===-------------------------------------------------------------------===#
 
 
 def main() raises:
