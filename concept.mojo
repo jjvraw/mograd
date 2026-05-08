@@ -1,5 +1,4 @@
 from std.memory import ArcPointer
-from std.hashlib import default_comp_time_hasher
 
 # ===-------------------------------------------------------------------===#
 # Op
@@ -85,22 +84,25 @@ struct Pat(Copyable, Movable):
         return True
 
 
-def build_rule_table(
-    var rules: List[Rule],
-) -> Dict[Int, List[Rule], default_comp_time_hasher]:
-    var d = Dict[Int, List[Rule], default_comp_time_hasher]()
-    for rule in rules:
-        comptime key = rule.pat.op_type._value
-        d.setdefault(key, List[Rule]()).append(rule.copy())
+def build_rule_table[
+    rules: List[Rule]
+    ]()
+ -> Dict[Int, List[Rule]]:
+    var d = Dict[Int, List[Rule]]()
+    comptime for rule in rules:
+        key = rule.pat.op_type._value
+        r = materialize[rule]()
+        d.setdefault(key, List[Rule]()).append(r^)
     return d^
 
 
 struct PatternMatcher[rules: List[Rule]]:
-    var rule_table: Dict[Int, List[Rule], default_comp_time_hasher]
+    var rule_table: Dict[Int, List[Rule]]
 
     def __init__(out self):
-        comptime ct_table = build_rule_table(Self.rules)
-        self.rule_table = materialize[ct_table]()
+        # comptime ct_table = build_rule_table(Self.rules)
+        # self.rule_table = materialize[ct_table]()
+        self.rule_table = build_rule_table[Self.rules]()
 
     def rewrite(
         self,
@@ -108,10 +110,8 @@ struct PatternMatcher[rules: List[Rule]]:
         upstream: ArcPointer[Op],
     ) raises -> Optional[List[ArcPointer[Op]]]:
         var matches = self.rule_table.get(node[].op_type._value, List[Rule]())
-        print(len(matches))
         for rule in matches:
             if rule.pat.matches(node):
-                print("matched, calling func")
                 return rule.func(node, upstream)
         return None
 
@@ -164,7 +164,6 @@ struct Grad:
         var topo = Self.toposort(root)
         for i in reversed(range(len(topo))):
             var node = topo[i]
-            print("processing node:", node[].__str__())
             var addr = Int(node.unsafe_ptr())
             var upstream = grad.grad_map.get(addr)
             if not upstream:
@@ -172,7 +171,6 @@ struct Grad:
 
             var up = upstream.value()
             var src_grads = pm.rewrite(node, up)
-            print("GET HERE!")
             if src_grads:
                 ref sg = src_grads.value()
                 for j in range(len(node[].srcs)):
