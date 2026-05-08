@@ -6,6 +6,7 @@ from std.memory import ArcPointer
 
 
 # TODO: Lets rather have a op registry that is defined and built at comptime.
+#       Main motivation here is for custom rewrites.
 @fieldwise_init
 struct OpType(Copyable, Equatable, ImplicitlyCopyable, Movable):
     var _value: Int
@@ -20,14 +21,14 @@ struct Op(Copyable, Movable, Writable):
     var op_type: OpType
     var shape: List[Int]
     var dtype: DType
-    var srcs: List[ArcPointer[Op]]
+    var srcs: List[OpRef]
 
     def __init__(
         out self,
         op_type: OpType,
         var shape: List[Int],
         dtype: DType,
-        var srcs: List[ArcPointer[Op]],
+        var srcs: List[OpRef],
     ):
         self.op_type = op_type
         self.shape = shape^
@@ -37,23 +38,32 @@ struct Op(Copyable, Movable, Writable):
     def __str__(self) -> String:
         return self.op_type._name
 
+struct OpRef(Copyable, Movable, ImplicitlyCopyable):
+    var _ptr: ArcPointer[Op]
 
-def mul_node(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
-    var srcs = [lhs, rhs]
-    return ArcPointer(Op(OpType.MUL, lhs[].shape.copy(), lhs[].dtype, srcs^))
+    def __init__(out self, var op: Op):
+        self._ptr = ArcPointer(op^)
 
+    def op(ref self) -> ref [self._ptr[]] Op:
+        return self._ptr[]
 
-def add_node(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
-    var srcs = [lhs, rhs]
-    return ArcPointer(Op(OpType.ADD, lhs[].shape.copy(), lhs[].dtype, srcs^))
+    def id(self) -> Int:
+        return Int(self._ptr.unsafe_ptr())
+
+    def __add__(self, rhs: OpRef) -> OpRef:
+        return OpRef(Op(OpType.ADD, self.op().shape.copy(), self.op().dtype, [self, rhs]))
+
+    def __mul__(self, rhs: OpRef) -> OpRef:
+        return OpRef(Op(OpType.MUL, self.op().shape.copy(), self.op().dtype, [self, rhs]))
+
 
 
 # ===-------------------------------------------------------------------===#
 # PatternMatcher
 # ===-------------------------------------------------------------------===#
 
-comptime RuleFn = def(ArcPointer[Op], ArcPointer[Op]) raises thin -> List[
-    ArcPointer[Op]
+comptime RuleFn = def(OpRef, OpRef) raises thin -> List[
+   OpRef 
 ]
 
 
@@ -71,15 +81,15 @@ struct Pat(Copyable, Movable):
         self.op_type = op_type
         self.srcs = List[Pat]()
 
-    def matches(self, node: ArcPointer[Op]) -> Bool:
-        if node[].op_type != self.op_type:
+    def matches(self, node: OpRef) -> Bool:
+        if node.op().op_type != self.op_type:
             return False
         if len(self.srcs) == 0:
             return True
-        if len(self.srcs) != len(node[].srcs):
+        if len(self.srcs) != len(node.op().srcs):
             return False
         for i in range(len(self.srcs)):
-            if not self.srcs[i].matches(node[].srcs[i]):
+            if not self.srcs[i].matches(node.op().srcs[i]):
                 return False
         return True
 
@@ -100,16 +110,19 @@ struct PatternMatcher[rules: List[Rule]]:
     var rule_table: Dict[Int, List[Rule]]
 
     def __init__(out self):
+        # TODO: Is the below possible? Maybe `global_constant()` eventually?
+        # https://mojolang.org/docs/manual/metaprogramming/materialization/
+        # https://github.com/modular/modular/issues/6505
         # comptime ct_table = build_rule_table(Self.rules)
         # self.rule_table = materialize[ct_table]()
         self.rule_table = build_rule_table[Self.rules]()
 
     def rewrite(
         self,
-        node: ArcPointer[Op],
-        upstream: ArcPointer[Op],
-    ) raises -> Optional[List[ArcPointer[Op]]]:
-        var matches = self.rule_table.get(node[].op_type._value)
+        node: OpRef,
+        upstream: OpRef,
+    ) raises -> Optional[List[OpRef]]:
+        var matches = self.rule_table.get(node.op().op_type._value)
         if matches:
             for rule in matches.value():
                 if rule.pat.matches(node):
@@ -122,38 +135,28 @@ struct PatternMatcher[rules: List[Rule]]:
 # ===-------------------------------------------------------------------===#
 
 
-def mul_grad(
-    node: ArcPointer[Op], upstream: ArcPointer[Op]
-) -> List[ArcPointer[Op]]:
-    var grads = List[ArcPointer[Op]]()
-    grads.append(mul_node(node[].srcs[1], upstream.copy()))
-    grads.append(mul_node(node[].srcs[0], upstream.copy()))
-    return grads^
+def mul_grad(node: OpRef, upstream: OpRef) -> List[OpRef]:
+    return [node.op().srcs[1] * upstream, node.op().srcs[0] * upstream]
 
 
-def add_grad(
-    node: ArcPointer[Op], upstream: ArcPointer[Op]
-) -> List[ArcPointer[Op]]:
-    var grads = List[ArcPointer[Op]]()
-    for _ in range(len(node[].srcs)):
-        grads.append(upstream.copy())
-    return grads^
+def add_grad(node: OpRef, upstream: OpRef) -> List[OpRef]:
+    return [upstream] * len(node.op().srcs)
 
 
 struct Grad:
-    var grad_map: Dict[Int, ArcPointer[Op]]
+    var grad_map: Dict[Int, OpRef]
 
     def __init__(out self):
-        self.grad_map = Dict[Int, ArcPointer[Op]]()
+        self.grad_map = Dict[Int, OpRef]()
 
     @staticmethod
     def compute(
-        root: ArcPointer[Op],
-        initial_grad: ArcPointer[Op],
-        target_ops: List[ArcPointer[Op]],
-    ) raises -> List[Optional[ArcPointer[Op]]]:
+        root: OpRef,
+        initial_grad: OpRef,
+        target_ops: List[OpRef],
+    ) raises -> List[Optional[OpRef]]:
         var grad = Grad()
-        grad.grad_map[Int(root.unsafe_ptr())] = initial_grad
+        grad.grad_map[root.id()] = initial_grad
 
         var pm = PatternMatcher[
             [
@@ -165,7 +168,7 @@ struct Grad:
         var topo = Self.toposort(root)
         for i in reversed(range(len(topo))):
             var node = topo[i]
-            var addr = Int(node.unsafe_ptr())
+            var addr = node.id()
             var upstream = grad.grad_map.get(addr)
             if not upstream:
                 continue
@@ -174,45 +177,37 @@ struct Grad:
             var src_grads = pm.rewrite(node, up)
             if src_grads:
                 ref sg = src_grads.value()
-                for j in range(len(node[].srcs)):
-                    grad.accum_into(node[].srcs[j], sg[j])
+                for j in range(len(node.op().srcs)):
+                    grad.accum(node.op().srcs[j], sg[j])
 
-        var result = List[Optional[ArcPointer[Op]]]()
+        var result = List[Optional[OpRef]]()
         for i in range(len(target_ops)):
-            result.append(grad.grad_map.get(Int(target_ops[i].unsafe_ptr())))
+            result.append(grad.grad_map.get(target_ops[i].id()))
         return result^
 
-    def accum_into(
-        mut self,
-        op: ArcPointer[Op],
-        grad: ArcPointer[Op],
-    ) raises:
-        var addr = Int(op.unsafe_ptr())
-        var existing = self.grad_map.get(addr)
-        if existing:
-            self.grad_map[addr] = add_node(existing.value(), grad)
-        else:
-            self.grad_map[addr] = grad
+    def accum(mut self, op: OpRef, g: OpRef) raises:
+        var addr = op.id()
+        self.grad_map[addr] = self.grad_map[addr] + g if addr in self.grad_map else g
 
     @staticmethod
-    def toposort(root: ArcPointer[Op]) -> List[ArcPointer[Op]]:
+    def toposort(root: OpRef) -> List[OpRef]:
         var visited = Dict[Int, Bool]()
-        var result = List[ArcPointer[Op]]()
+        var result = List[OpRef]()
         Self._dfs(root, visited, result)
         return result^
 
     @staticmethod
     def _dfs(
-        node: ArcPointer[Op],
+        node: OpRef,
         mut visited: Dict[Int, Bool],
-        mut result: List[ArcPointer[Op]],
+        mut result: List[OpRef],
     ):
-        var addr = Int(node.unsafe_ptr())
+        var addr = node.id()
         if addr in visited:
             return
         visited[addr] = True
-        for i in range(len(node[].srcs)):
-            Self._dfs(node[].srcs[i], visited, result)
+        for i in range(len(node.op().srcs)):
+            Self._dfs(node.op().srcs[i], visited, result)
         result.append(node)
 
 
@@ -221,29 +216,30 @@ struct Grad:
 # ===-------------------------------------------------------------------===#
 
 
+# TODO: Make factory methods for tensor constructors.
 struct Tensor(Copyable, Movable):
-    var op: ArcPointer[Op]
+    var op: OpRef
     var requires_grad: Bool
     # TODO: Use ArcPointer when Optional[ArcPointer] is resolved:
     # https://github.com/modular/modular/issues/3293
     var _grad: ArcPointer[Optional[Tensor]]
 
-    def __init__(out self, var op: ArcPointer[Op], requires_grad: Bool = False):
+    def __init__(out self, var op: OpRef, requires_grad: Bool = False):
         self.op = op^
         self.requires_grad = requires_grad
         self._grad = ArcPointer(Optional[Tensor](None))
 
     @implicit
     def __init__(out self, var op: Op, requires_grad: Bool = False):
-        self.op = ArcPointer(op^)
+        self.op = OpRef(op^)
         self.requires_grad = requires_grad
         self._grad = ArcPointer(Optional[Tensor](None))
 
     @staticmethod
     def ones_like(other: Tensor, requires_grad: Bool = False) -> Tensor:
-        srcs = List[ArcPointer[Op]]()
-        op = Op(OpType.ONES, other.op[].shape.copy(), other.op[].dtype, srcs^)
-        return Tensor(ArcPointer(op^), requires_grad)
+        var srcs: List[OpRef] = []
+        return Tensor(OpRef(Op(OpType.ONES, other.op.op().shape.copy(), other.op.op().dtype, srcs^)), requires_grad)
+
 
     @staticmethod
     def empty(
@@ -251,10 +247,9 @@ struct Tensor(Copyable, Movable):
         dtype: DType = DType.float32,
         requires_grad: Bool = False,
     ) -> Tensor:
-        s = shape.copy()
-        srcs = List[ArcPointer[Op]]()
-        op = ArcPointer(Op(OpType.BUFFER, s^, dtype, srcs^))
-        return Tensor(op, requires_grad)
+        var srcs: List[OpRef] = []
+        return Tensor(OpRef(Op(OpType.BUFFER, shape.copy(), dtype, srcs^)), requires_grad)
+
 
     def __add__(self, other: Self) -> Self:
         return self.add(other)
@@ -265,14 +260,14 @@ struct Tensor(Copyable, Movable):
     def gradient(
         mut self, *targets: Tensor, var gradient: Optional[Tensor] = None
     ) raises -> List[Tensor]:
-        var initial_grad: Tensor
+        var initial_grad: OpRef 
         if gradient:
-            initial_grad = gradient.take()
+            initial_grad = gradient.take().op
         else:
-            initial_grad = Self.ones_like(self)
-        target_ops: List[ArcPointer[Op]] = [t.op for t in targets]
+            initial_grad = Self.ones_like(self).op
+        target_ops: List[OpRef] = [t.op for t in targets]
 
-        var grads = Grad.compute(self.op, initial_grad.op, target_ops)
+        var grads = Grad.compute(self.op, initial_grad, target_ops)
 
         var result = List[Tensor]()
         for i in range(len(grads)):
@@ -281,34 +276,34 @@ struct Tensor(Copyable, Movable):
             else:
                 result.append(
                     Self.empty(
-                        targets[i].op[].shape.copy(), targets[i].op[].dtype
+                        targets[i].op.op().shape.copy(), targets[i].op.op().dtype
                     )
                 )
         return result^
 
     def add(self, other: Self) -> Self:
         return Tensor(
-            add_node(self.op, other.op),
+            self.op + other.op,
             self.requires_grad or other.requires_grad,
         )
 
     def mul(self, other: Self) -> Self:
         return Tensor(
-            mul_node(self.op, other.op),
+            self.op * other.op,
             self.requires_grad or other.requires_grad,
         )
 
     @staticmethod
-    def _str_op(op: ArcPointer[Op]) -> String:
-        var op_name = op[].__str__()
+    def _str_op(op: OpRef) -> String:
+        var op_name = op.op().__str__()
 
-        if len(op[].srcs) == 0:
+        if len(op.op().srcs) == 0:
             return op_name
 
         var result = op_name + "("
-        for i in range(len(op[].srcs)):
-            result = result + Tensor._str_op(op[].srcs[i])
-            if i < len(op[].srcs) - 1:
+        for i in range(len(op.op().srcs)):
+            result = result + Tensor._str_op(op.op().srcs[i])
+            if i < len(op.op().srcs) - 1:
                 result = result + ", "
         result = result + ")"
         return result
