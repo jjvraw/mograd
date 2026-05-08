@@ -1,71 +1,5 @@
 from std.memory import ArcPointer
-
-# ===-------------------------------------------------------------------===#
-# PatternMatcher
-# ===-------------------------------------------------------------------===#
-
-comptime RuleFn = def(ArcPointer[Op], ArcPointer[Op]) raises thin -> List[ArcPointer[Op]]
-
-
-trait Rule:
-    def matches(self, node: ArcPointer[Op]) -> Bool:
-        ...
-
-    def apply(
-        self, node: ArcPointer[Op], upstream: ArcPointer[Op]
-    ) raises -> List[ArcPointer[Op]]:
-        ...
-
-
-struct Pat(Copyable, Movable):
-    var op_type: OpType
-    var srcs: List[Pat]  # empty = match any srcs
-
-    def __init__(out self, op_type: OpType):
-        self.op_type = op_type
-        self.srcs = List[Pat]()
-
-    def matches(self, node: ArcPointer[Op]) -> Bool:
-        if node[].op_type != self.op_type:
-            return False
-        if len(self.srcs) == 0:
-            return True
-        if len(self.srcs) != len(node[].srcs):
-            return False
-        for i in range(len(self.srcs)):
-            if not self.srcs[i].matches(node[].srcs[i]):
-                return False
-        return True
-
-
-@fieldwise_init
-struct PatRule[F: RuleFn](Rule):
-    var pat: Pat
-
-    def matches(self, node: ArcPointer[Op]) -> Bool:
-        return self.pat.matches(node)
-
-    def apply(
-        self, node: ArcPointer[Op], upstream: ArcPointer[Op]
-    ) raises -> List[ArcPointer[Op]]:
-        return Self.F(node, upstream)
-
-
-struct PatternMatcher:
-    # TODO: Can we build a dict at comptime?
-    @staticmethod
-    def match[
-        *RuleTypes: Rule
-    ](
-        *rules: *RuleTypes,
-        node: ArcPointer[Op],
-        upstream: ArcPointer[Op],
-    ) raises -> Optional[List[ArcPointer[Op]]]:
-        comptime for i in range(len(RuleTypes)):
-            if rules[i].matches(node):
-                return rules[i].apply(node, upstream)
-        return None
-
+from std.hashlib import default_comp_time_hasher
 
 # ===-------------------------------------------------------------------===#
 # Op
@@ -116,8 +50,93 @@ def add_node(lhs: ArcPointer[Op], rhs: ArcPointer[Op]) -> ArcPointer[Op]:
 
 
 # ===-------------------------------------------------------------------===#
+# PatternMatcher
+# ===-------------------------------------------------------------------===#
+
+comptime RuleFn = def(ArcPointer[Op], ArcPointer[Op]) raises thin -> List[
+    ArcPointer[Op]
+]
+
+
+@fieldwise_init
+struct Rule(Copyable, Movable):
+    var pat: Pat
+    var func: RuleFn
+
+
+struct Pat(Copyable, Movable):
+    var op_type: OpType
+    var srcs: List[Pat]  # empty = match any srcs
+
+    def __init__(out self, op_type: OpType):
+        self.op_type = op_type
+        self.srcs = List[Pat]()
+
+    def matches(self, node: ArcPointer[Op]) -> Bool:
+        if node[].op_type != self.op_type:
+            return False
+        if len(self.srcs) == 0:
+            return True
+        if len(self.srcs) != len(node[].srcs):
+            return False
+        for i in range(len(self.srcs)):
+            if not self.srcs[i].matches(node[].srcs[i]):
+                return False
+        return True
+
+
+def build_rule_table(
+    var rules: List[Rule],
+) -> Dict[Int, List[Rule], default_comp_time_hasher]:
+    var d = Dict[Int, List[Rule], default_comp_time_hasher]()
+    for rule in rules:
+        comptime key = rule.pat.op_type._value
+        d.setdefault(key, List[Rule]()).append(rule.copy())
+    return d^
+
+
+struct PatternMatcher[rules: List[Rule]]:
+    var rule_table: Dict[Int, List[Rule], default_comp_time_hasher]
+
+    def __init__(out self):
+        comptime ct_table = build_rule_table(Self.rules)
+        self.rule_table = materialize[ct_table]()
+
+    def rewrite(
+        self,
+        node: ArcPointer[Op],
+        upstream: ArcPointer[Op],
+    ) raises -> Optional[List[ArcPointer[Op]]]:
+        var matches = self.rule_table.get(node[].op_type._value, List[Rule]())
+        print(len(matches))
+        for rule in matches:
+            if rule.pat.matches(node):
+                print("matched, calling func")
+                return rule.func(node, upstream)
+        return None
+
+
+# ===-------------------------------------------------------------------===#
 # Grad
 # ===-------------------------------------------------------------------===#
+
+
+def mul_grad(
+    node: ArcPointer[Op], upstream: ArcPointer[Op]
+) -> List[ArcPointer[Op]]:
+    var grads = List[ArcPointer[Op]]()
+    grads.append(mul_node(node[].srcs[1], upstream.copy()))
+    grads.append(mul_node(node[].srcs[0], upstream.copy()))
+    return grads^
+
+
+def add_grad(
+    node: ArcPointer[Op], upstream: ArcPointer[Op]
+) -> List[ArcPointer[Op]]:
+    var grads = List[ArcPointer[Op]]()
+    for _ in range(len(node[].srcs)):
+        grads.append(upstream.copy())
+    return grads^
 
 
 struct Grad:
@@ -135,50 +154,33 @@ struct Grad:
         var grad = Grad()
         grad.grad_map[Int(root.unsafe_ptr())] = initial_grad
 
-        @always_inline
-        def mul_grad(
-            node: ArcPointer[Op], upstream: ArcPointer[Op]
-        ) raises -> List[ArcPointer[Op]]:
-            var s0 = node[].srcs[0]
-            var s1 = node[].srcs[1]
-            var grads = List[ArcPointer[Op]]()
-            grads.append(mul_node(s1, upstream))
-            grads.append(mul_node(s0, upstream))
-            return grads^
-
-        @always_inline
-        def add_grad(
-            node: ArcPointer[Op], upstream: ArcPointer[Op]
-        ) raises -> List[ArcPointer[Op]]:
-            var grads = List[ArcPointer[Op]]()
-            for _ in range(len(node[].srcs)):
-                grads.append(upstream)
-            return grads^
+        var pm = PatternMatcher[
+            [
+                Rule(Pat(OpType.MUL), mul_grad),
+                Rule(Pat(OpType.ADD), add_grad),
+            ]
+        ]()
 
         var topo = Self.toposort(root)
-
         for i in reversed(range(len(topo))):
             var node = topo[i]
+            print("processing node:", node[].__str__())
             var addr = Int(node.unsafe_ptr())
             var upstream = grad.grad_map.get(addr)
             if not upstream:
                 continue
-            var up = upstream.unsafe_value()
-            var src_grads = PatternMatcher.match(
-                PatRule[mul_grad](Pat(OpType.MUL)),
-                PatRule[add_grad](Pat(OpType.ADD)),
-                node=node,
-                upstream=up,
-            )
+
+            var up = upstream.value()
+            var src_grads = pm.rewrite(node, up)
+            print("GET HERE!")
             if src_grads:
-                ref sg = src_grads.unsafe_value()
+                ref sg = src_grads.value()
                 for j in range(len(node[].srcs)):
                     grad.accum_into(node[].srcs[j], sg[j])
 
         var result = List[Optional[ArcPointer[Op]]]()
         for i in range(len(target_ops)):
-            var taddr = Int(target_ops[i].unsafe_ptr())
-            result.append(grad.grad_map.get(taddr))
+            result.append(grad.grad_map.get(Int(target_ops[i].unsafe_ptr())))
         return result^
 
     def accum_into(
@@ -189,7 +191,7 @@ struct Grad:
         var addr = Int(op.unsafe_ptr())
         var existing = self.grad_map.get(addr)
         if existing:
-            self.grad_map[addr] = add_node(existing.unsafe_value(), grad)
+            self.grad_map[addr] = add_node(existing.value(), grad)
         else:
             self.grad_map[addr] = grad
 
