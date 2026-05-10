@@ -20,6 +20,12 @@ struct OpType(Copyable, ImplicitlyCopyable, Movable, KeyElement):
     def __hash__[H: Hasher](self, mut hasher: H):
         hasher.update(self._value)
 
+    def __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    def __ne__(self, other: Self) -> Bool:
+        return self._value != other._value
+
 
 struct Op(Copyable, Movable, Writable):
     var op_type: OpType
