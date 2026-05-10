@@ -48,7 +48,7 @@ struct Op(Copyable, Movable, Writable):
     def __str__(self) -> String:
         return self.op_type._name
 
-struct OpRef(Copyable, Movable, ImplicitlyCopyable,  KeyElement):
+struct OpRef(Copyable, Movable, ImplicitlyCopyable,  KeyElement, Writable):
     var _ptr: ArcPointer[Op]
 
     def __init__(out self, var op: Op):
@@ -83,6 +83,26 @@ struct OpRef(Copyable, Movable, ImplicitlyCopyable,  KeyElement):
 
     def __mul__(self, rhs: OpRef) -> OpRef:
         return OpRef(Op(OpType.MUL, self.shape().copy(), self.dtype(), [self, rhs]))
+
+    def write_to(self, mut writer: Some[Writer]):
+        self._write_indented(writer, 0)
+
+    def _write_indented(self, mut writer: Some[Writer], indent: Int):
+        var pad = String(" ") * indent
+        writer.write(pad + self.op_type()._name + "(shape=[")
+        for i in range(len(self.shape())):
+            writer.write(String(self.shape()[i]))
+            if i < len(self.shape()) - 1:
+                writer.write(", ")
+        writer.write("], dtype=" + String(self.dtype()))
+        if len(self.srcs()) == 0:
+            writer.write(")")
+        else:
+            writer.write(", srcs=(\n")
+            for i in range(len(self.srcs())):
+                self.srcs()[i]._write_indented(writer, indent + 4)
+                writer.write("\n")
+            writer.write(pad + "))")
 
 
 
@@ -243,7 +263,7 @@ struct Grad:
 
 
 # TODO: Make factory methods for tensor constructors.
-struct Tensor(Copyable, Movable):
+struct Tensor(Copyable, Movable, Writable):
     var op: OpRef
     var requires_grad: Bool
     # TODO: Use ArcPointer when Optional[ArcPointer] is resolved:
@@ -335,8 +355,8 @@ struct Tensor(Copyable, Movable):
         result = result + ")"
         return result
 
-    def __str__(self) -> String:
-        return Tensor._str_op(self.op)
+    def write_to(self, mut writer: Some[Writer]):
+        self.op.write_to(writer)
 
 
 # ===-------------------------------------------------------------------===#
@@ -349,8 +369,8 @@ def main() raises:
     var w = Tensor.empty([2, 3], requires_grad=True)
     var out = x * w + w
 
-    print(out.__str__())
+    print(out)
     var grads = out.gradient(x, w)
 
     for t in grads:
-        print(t.__str__())
+        print(t)
