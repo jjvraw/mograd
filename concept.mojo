@@ -9,13 +9,16 @@ from std.hashlib.hasher import Hasher
 # TODO: Lets rather have a op registry that is defined and built at comptime.
 #       Main motivation here is for custom rewrites.
 @fieldwise_init
-struct OpType(Copyable, Equatable, ImplicitlyCopyable, Movable):
+struct OpType(Copyable, ImplicitlyCopyable, Movable, KeyElement):
     var _value: Int
     var _name: String
-    comptime BUFFER = OpType(2, "BUFFER")
-    comptime ONES = OpType(3, "ONES")
-    comptime ADD = OpType(5, "ADD")
-    comptime MUL = OpType(7, "MUL")
+    comptime BUFFER = OpType(1, "BUFFER")
+    comptime ONES = OpType(2, "ONES")
+    comptime ADD = OpType(3, "ADD")
+    comptime MUL = OpType(4, "MUL")
+
+    def __hash__[H: Hasher](self, mut hasher: H):
+        hasher.update(self._value)
 
 
 struct Op(Copyable, Movable, Writable):
@@ -116,17 +119,17 @@ struct Pat(Copyable, Movable):
 def build_rule_table[
     rules: List[Rule]
     ]()
- -> Dict[Int, List[Rule]]:
-    var d = Dict[Int, List[Rule]]()
+ -> Dict[OpType, List[Rule]]:
+    var d = Dict[OpType, List[Rule]]()
     comptime for rule in rules:
-        key = rule.pat.op_type._value
+        key = rule.pat.op_type
         r = materialize[rule]()
         d.setdefault(key, List[Rule]()).append(r^)
     return d^
 
 
 struct PatternMatcher[rules: List[Rule]]:
-    var rule_table: Dict[Int, List[Rule]]
+    var rule_table: Dict[OpType, List[Rule]]
 
     def __init__(out self):
         # TODO: Is the below possible? Maybe `global_constant()` eventually?
@@ -141,7 +144,7 @@ struct PatternMatcher[rules: List[Rule]]:
         node: OpRef,
         upstream: OpRef,
     ) raises -> Optional[List[OpRef]]:
-        var matches = self.rule_table.get(node.op_type()._value)
+        var matches = self.rule_table.get(node.op_type())
         if matches:
             for rule in matches.value():
                 if rule.pat.matches(node):
