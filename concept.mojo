@@ -47,14 +47,26 @@ struct OpRef(Copyable, Movable, ImplicitlyCopyable):
     def op(ref self) -> ref [self._ptr[]] Op:
         return self._ptr[]
 
+    def shape(ref self) -> ref [self._ptr[].shape] List[Int]:
+        return self._ptr[].shape
+
+    def dtype(ref self) -> ref [self._ptr[].dtype] DType:
+        return self._ptr[].dtype
+
+    def op_type(ref self) -> ref [self._ptr[].op_type] OpType:
+        return self._ptr[].op_type
+
+    def srcs(ref self) -> ref [self._ptr[].srcs] List[OpRef]:
+        return self._ptr[].srcs
+
     def id(self) -> Int:
         return Int(self._ptr.unsafe_ptr())
 
     def __add__(self, rhs: OpRef) -> OpRef:
-        return OpRef(Op(OpType.ADD, self.op().shape.copy(), self.op().dtype, [self, rhs]))
+        return OpRef(Op(OpType.ADD, self.shape().copy(), self.dtype(), [self, rhs]))
 
     def __mul__(self, rhs: OpRef) -> OpRef:
-        return OpRef(Op(OpType.MUL, self.op().shape.copy(), self.op().dtype, [self, rhs]))
+        return OpRef(Op(OpType.MUL, self.shape().copy(), self.dtype(), [self, rhs]))
 
 
 
@@ -82,14 +94,14 @@ struct Pat(Copyable, Movable):
         self.srcs = List[Pat]()
 
     def matches(self, node: OpRef) -> Bool:
-        if node.op().op_type != self.op_type:
+        if node.op_type() != self.op_type:
             return False
         if len(self.srcs) == 0:
             return True
-        if len(self.srcs) != len(node.op().srcs):
+        if len(self.srcs) != len(node.srcs()):
             return False
         for i in range(len(self.srcs)):
-            if not self.srcs[i].matches(node.op().srcs[i]):
+            if not self.srcs[i].matches(node.srcs()[i]):
                 return False
         return True
 
@@ -122,7 +134,7 @@ struct PatternMatcher[rules: List[Rule]]:
         node: OpRef,
         upstream: OpRef,
     ) raises -> Optional[List[OpRef]]:
-        var matches = self.rule_table.get(node.op().op_type._value)
+        var matches = self.rule_table.get(node.op_type()._value)
         if matches:
             for rule in matches.value():
                 if rule.pat.matches(node):
@@ -136,11 +148,11 @@ struct PatternMatcher[rules: List[Rule]]:
 
 
 def mul_grad(node: OpRef, upstream: OpRef) -> List[OpRef]:
-    return [node.op().srcs[1] * upstream, node.op().srcs[0] * upstream]
+    return [node.srcs()[1] * upstream, node.srcs()[0] * upstream]
 
 
 def add_grad(node: OpRef, upstream: OpRef) -> List[OpRef]:
-    return [upstream] * len(node.op().srcs)
+    return [upstream] * len(node.srcs())
 
 
 struct Grad:
@@ -177,8 +189,8 @@ struct Grad:
             var src_grads = pm.rewrite(node, up)
             if src_grads:
                 ref sg = src_grads.value()
-                for j in range(len(node.op().srcs)):
-                    grad.accum(node.op().srcs[j], sg[j])
+                for j in range(len(node.srcs())):
+                    grad.accum(node.srcs()[j], sg[j])
 
         var result = List[Optional[OpRef]]()
         for i in range(len(target_ops)):
@@ -206,8 +218,8 @@ struct Grad:
         if addr in visited:
             return
         visited[addr] = True
-        for i in range(len(node.op().srcs)):
-            Self._dfs(node.op().srcs[i], visited, result)
+        for i in range(len(node.srcs())):
+            Self._dfs(node.srcs()[i], visited, result)
         result.append(node)
 
 
@@ -238,7 +250,7 @@ struct Tensor(Copyable, Movable):
     @staticmethod
     def ones_like(other: Tensor, requires_grad: Bool = False) -> Tensor:
         var srcs: List[OpRef] = []
-        return Tensor(OpRef(Op(OpType.ONES, other.op.op().shape.copy(), other.op.op().dtype, srcs^)), requires_grad)
+        return Tensor(OpRef(Op(OpType.ONES, other.op.shape().copy(), other.op.dtype(), srcs^)), requires_grad)
 
 
     @staticmethod
@@ -276,7 +288,7 @@ struct Tensor(Copyable, Movable):
             else:
                 result.append(
                     Self.empty(
-                        targets[i].op.op().shape.copy(), targets[i].op.op().dtype
+                        targets[i].op.shape().copy(), targets[i].op.dtype()
                     )
                 )
         return result^
@@ -293,17 +305,18 @@ struct Tensor(Copyable, Movable):
             self.requires_grad or other.requires_grad,
         )
 
+    # TODO: Clean up
     @staticmethod
     def _str_op(op: OpRef) -> String:
         var op_name = op.op().__str__()
 
-        if len(op.op().srcs) == 0:
+        if len(op.srcs()) == 0:
             return op_name
 
         var result = op_name + "("
-        for i in range(len(op.op().srcs)):
-            result = result + Tensor._str_op(op.op().srcs[i])
-            if i < len(op.op().srcs) - 1:
+        for i in range(len(op.srcs())):
+            result = result + Tensor._str_op(op.srcs()[i])
+            if i < len(op.srcs()) - 1:
                 result = result + ", "
         result = result + ")"
         return result
