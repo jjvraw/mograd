@@ -69,7 +69,6 @@ struct OpRef(Copyable, Movable, ImplicitlyCopyable,  KeyElement):
     def srcs(ref self) -> ref [self._ptr[].srcs] List[OpRef]:
         return self._ptr[].srcs
 
-
     def __add__(self, rhs: OpRef) -> OpRef:
         return OpRef(Op(OpType.ADD, self.shape().copy(), self.dtype(), [self, rhs]))
 
@@ -205,7 +204,8 @@ struct Grad:
         return result^
 
     def accum(mut self, op: OpRef, g: OpRef) raises:
-        self.grad_map[op] = self.grad_map[op] + g if op in self.grad_map else g
+        var existing = self.grad_map.get(op)
+        self.grad_map[op] = existing.value() + g if existing else g
 
     @staticmethod
     def toposort(root: OpRef) -> List[OpRef]:
