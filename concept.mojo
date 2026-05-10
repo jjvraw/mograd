@@ -1,4 +1,5 @@
 from std.memory import ArcPointer
+from std.hashlib.hasher import Hasher
 
 # ===-------------------------------------------------------------------===#
 # Op
@@ -38,11 +39,20 @@ struct Op(Copyable, Movable, Writable):
     def __str__(self) -> String:
         return self.op_type._name
 
-struct OpRef(Copyable, Movable, ImplicitlyCopyable):
+struct OpRef(Copyable, Movable, ImplicitlyCopyable,  KeyElement):
     var _ptr: ArcPointer[Op]
 
     def __init__(out self, var op: Op):
         self._ptr = ArcPointer(op^)
+
+    def __hash__[H: Hasher](self, mut hasher: H):
+        hasher.update(Int(self._ptr.unsafe_ptr()))
+
+    def __eq__(self, other: Self) -> Bool:
+        return self._ptr.unsafe_ptr() == other._ptr.unsafe_ptr()
+
+    def __ne__(self, other: Self) -> Bool:
+        return self._ptr.unsafe_ptr() != other._ptr.unsafe_ptr()
 
     def op(ref self) -> ref [self._ptr[]] Op:
         return self._ptr[]
@@ -59,8 +69,6 @@ struct OpRef(Copyable, Movable, ImplicitlyCopyable):
     def srcs(ref self) -> ref [self._ptr[].srcs] List[OpRef]:
         return self._ptr[].srcs
 
-    def id(self) -> Int:
-        return Int(self._ptr.unsafe_ptr())
 
     def __add__(self, rhs: OpRef) -> OpRef:
         return OpRef(Op(OpType.ADD, self.shape().copy(), self.dtype(), [self, rhs]))
@@ -156,10 +164,10 @@ def add_grad(node: OpRef, upstream: OpRef) -> List[OpRef]:
 
 
 struct Grad:
-    var grad_map: Dict[Int, OpRef]
+    var grad_map: Dict[OpRef, OpRef]
 
     def __init__(out self):
-        self.grad_map = Dict[Int, OpRef]()
+        self.grad_map = Dict[OpRef, OpRef]()
 
     @staticmethod
     def compute(
@@ -168,7 +176,7 @@ struct Grad:
         target_ops: List[OpRef],
     ) raises -> List[Optional[OpRef]]:
         var grad = Grad()
-        grad.grad_map[root.id()] = initial_grad
+        grad.grad_map[root] = initial_grad
 
         var pm = PatternMatcher[
             [
@@ -180,8 +188,7 @@ struct Grad:
         var topo = Self.toposort(root)
         for i in reversed(range(len(topo))):
             var node = topo[i]
-            var addr = node.id()
-            var upstream = grad.grad_map.get(addr)
+            var upstream = grad.grad_map.get(node)
             if not upstream:
                 continue
 
@@ -194,16 +201,15 @@ struct Grad:
 
         var result = List[Optional[OpRef]]()
         for i in range(len(target_ops)):
-            result.append(grad.grad_map.get(target_ops[i].id()))
+            result.append(grad.grad_map.get(target_ops[i]))
         return result^
 
     def accum(mut self, op: OpRef, g: OpRef) raises:
-        var addr = op.id()
-        self.grad_map[addr] = self.grad_map[addr] + g if addr in self.grad_map else g
+        self.grad_map[op] = self.grad_map[op] + g if op in self.grad_map else g
 
     @staticmethod
     def toposort(root: OpRef) -> List[OpRef]:
-        var visited = Dict[Int, Bool]()
+        var visited = Dict[OpRef, Bool]()
         var result = List[OpRef]()
         Self._dfs(root, visited, result)
         return result^
@@ -211,13 +217,12 @@ struct Grad:
     @staticmethod
     def _dfs(
         node: OpRef,
-        mut visited: Dict[Int, Bool],
+        mut visited: Dict[OpRef, Bool],
         mut result: List[OpRef],
     ):
-        var addr = node.id()
-        if addr in visited:
+        if node in visited:
             return
-        visited[addr] = True
+        visited[node] = True
         for i in range(len(node.srcs())):
             Self._dfs(node.srcs()[i], visited, result)
         result.append(node)
