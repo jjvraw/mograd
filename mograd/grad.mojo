@@ -1,4 +1,4 @@
-from mograd.op import OpRef, OpType
+from mograd.op import Op, OpRef, OpType
 from mograd.pattern_matcher import PatternMatcher, Rule, Pat
 
 # ===-------------------------------------------------------------------===#
@@ -14,6 +14,77 @@ def mul_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
 
 def add_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     return [upstream] * len(node.srcs())
+
+
+def relu_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    return [
+        OpRef(
+            Op(
+                OpType.RELU_GRAD,
+                node.shape().copy(),
+                node.dtype(),
+                [node.srcs()[0], upstream],
+            )
+        )
+    ]
+
+
+def exp_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    return [node * upstream]
+
+
+def log_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    return [upstream / node.srcs()[0]]
+
+
+def neg_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    return [-upstream]
+
+
+def div_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    var a = node.srcs()[0]
+    var b = node.srcs()[1]
+    return [upstream / b, -(upstream * a / (b * b))]
+
+
+def sum_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    return [
+        OpRef(
+            Op(
+                OpType.SUM_GRAD,
+                node.srcs()[0].shape().copy(),
+                node.dtype(),
+                [upstream],
+            )
+        )
+    ]
+
+
+def reshape_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    return [
+        OpRef(
+            Op(
+                OpType.RESHAPE,
+                node.srcs()[0].shape().copy(),
+                node.dtype(),
+                [upstream],
+            )
+        )
+    ]
+
+
+def softmax_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    # node is the SOFTMAX output y, pass it as first src so exec gets y as inputs[0]
+    return [
+        OpRef(
+            Op(
+                OpType.SOFTMAX_GRAD,
+                node.shape().copy(),
+                node.dtype(),
+                [node, upstream],
+            )
+        )
+    ]
 
 
 struct Grad:
@@ -36,6 +107,14 @@ struct Grad:
             [
                 Rule(Pat(OpType.MUL), mul_grad),
                 Rule(Pat(OpType.ADD), add_grad),
+                Rule(Pat(OpType.RELU), relu_grad),
+                Rule(Pat(OpType.SOFTMAX), softmax_grad),
+                Rule(Pat(OpType.EXP), exp_grad),
+                Rule(Pat(OpType.LOG), log_grad),
+                Rule(Pat(OpType.NEG), neg_grad),
+                Rule(Pat(OpType.DIV), div_grad),
+                Rule(Pat(OpType.SUM), sum_grad),
+                Rule(Pat(OpType.RESHAPE), reshape_grad),
             ],
         ]()
 

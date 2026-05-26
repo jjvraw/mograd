@@ -18,6 +18,17 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime ONES = OpType(2, "ONES")
     comptime ADD = OpType(3, "ADD")
     comptime MUL = OpType(4, "MUL")
+    comptime RELU = OpType(5, "RELU")
+    comptime RELU_GRAD = OpType(6, "RELU_GRAD")
+    comptime SOFTMAX = OpType(7, "SOFTMAX")
+    comptime SOFTMAX_GRAD = OpType(8, "SOFTMAX_GRAD")
+    comptime EXP = OpType(9, "EXP")
+    comptime LOG = OpType(10, "LOG")
+    comptime NEG = OpType(11, "NEG")
+    comptime DIV = OpType(12, "DIV")
+    comptime SUM = OpType(13, "SUM")
+    comptime SUM_GRAD = OpType(14, "SUM_GRAD")
+    comptime RESHAPE = OpType(15, "RESHAPE")
 
     def __hash__[H: Hasher](self, mut hasher: H):
         hasher.update(self._value)
@@ -109,6 +120,37 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return OpRef(
             Op(OpType.MUL, self.shape().copy(), self.dtype(), [self, rhs])
         )
+
+    def __truediv__(self, rhs: OpRef) -> OpRef:
+        return OpRef(
+            Op(OpType.DIV, self.shape().copy(), self.dtype(), [self, rhs])
+        )
+
+    def __neg__(self) -> OpRef:
+        return OpRef(Op(OpType.NEG, self.shape().copy(), self.dtype(), [self]))
+
+    def relu(self) -> OpRef:
+        return OpRef(Op(OpType.RELU, self.shape().copy(), self.dtype(), [self]))
+
+    def softmax(self) -> OpRef:
+        return OpRef(
+            Op(OpType.SOFTMAX, self.shape().copy(), self.dtype(), [self])
+        )
+
+    def exp(self) -> OpRef:
+        return OpRef(Op(OpType.EXP, self.shape().copy(), self.dtype(), [self]))
+
+    def log(self) -> OpRef:
+        return OpRef(Op(OpType.LOG, self.shape().copy(), self.dtype(), [self]))
+
+    def neg(self) -> OpRef:
+        return OpRef(Op(OpType.NEG, self.shape().copy(), self.dtype(), [self]))
+
+    def sum(self) -> OpRef:
+        return OpRef(Op(OpType.SUM, [1], self.dtype(), [self]))
+
+    def reshape(self, var new_shape: List[Int]) -> OpRef:
+        return OpRef(Op(OpType.RESHAPE, new_shape^, self.dtype(), [self]))
 
     def write_to(self, mut writer: Some[Writer]):
         self._write_indented(writer, 0)

@@ -110,6 +110,37 @@ struct Tensor(Copyable, Movable, Writable):
             self.requires_grad or other.requires_grad,
         )
 
+    def __truediv__(self, other: Self) -> Self:
+        return Tensor(
+            self.ctx,
+            self.op / other.op,
+            self.requires_grad or other.requires_grad,
+        )
+
+    def __neg__(self) -> Self:
+        return Tensor(self.ctx, -self.op, self.requires_grad)
+
+    def relu(self) -> Self:
+        return Tensor(self.ctx, self.op.relu(), self.requires_grad)
+
+    def softmax(self) -> Self:
+        return Tensor(self.ctx, self.op.softmax(), self.requires_grad)
+
+    def exp(self) -> Self:
+        return Tensor(self.ctx, self.op.exp(), self.requires_grad)
+
+    def log(self) -> Self:
+        return Tensor(self.ctx, self.op.log(), self.requires_grad)
+
+    def neg(self) -> Self:
+        return Tensor(self.ctx, self.op.neg(), self.requires_grad)
+
+    def sum(self) -> Self:
+        return Tensor(self.ctx, self.op.sum(), self.requires_grad)
+
+    def reshape(self, var shape: List[Int]) -> Self:
+        return Tensor(self.ctx, self.op.reshape(shape^), self.requires_grad)
+
     def gradient(
         mut self, *targets: Tensor, var gradient: Optional[Tensor] = None
     ) raises -> List[Tensor]:
