@@ -29,6 +29,8 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime SUM = OpType(13, "SUM")
     comptime SUM_GRAD = OpType(14, "SUM_GRAD")
     comptime RESHAPE = OpType(15, "RESHAPE")
+    comptime MATMUL = OpType(16, "MATMUL")
+    comptime TRANSPOSE = OpType(17, "TRANSPOSE")
 
     def __hash__[H: Hasher](self, mut hasher: H):
         hasher.update(self._value)
@@ -161,6 +163,26 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
 
     def reshape(self, var new_shape: List[Int]) -> OpRef:
         return OpRef(Op(OpType.RESHAPE, new_shape^, self.dtype(), [self]))
+
+    def matmul(self, rhs: OpRef) -> OpRef:
+        return OpRef(
+            Op(
+                OpType.MATMUL,
+                [self.shape()[0], rhs.shape()[1]],
+                self.dtype(),
+                [self, rhs],
+            )
+        )
+
+    def transpose(self) -> OpRef:
+        return OpRef(
+            Op(
+                OpType.TRANSPOSE,
+                [self.shape()[1], self.shape()[0]],
+                self.dtype(),
+                [self],
+            )
+        )
 
     def write_to(self, mut writer: Some[Writer]):
         self._write_indented(writer, 0)

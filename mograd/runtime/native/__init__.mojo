@@ -16,7 +16,10 @@ from mograd.runtime.native.kernels import (
     div_kernel,
     sum_kernel,
     sum_grad_kernel,
+    matmul_kernel,
+    transpose_kernel,
     BLOCK_SIZE,
+    TILE_DIM,
 )
 from mograd.pattern_matcher import Rule, Pat
 from mograd.runtime import Runtime
@@ -161,6 +164,43 @@ def reshape_exec(
     return b^
 
 
+def matmul_exec(
+    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
+) raises -> Buffer:
+    var M = inputs[0].shape[0]
+    var K = inputs[0].shape[1]
+    var N = inputs[1].shape[1]
+    var out_buf = ctx.enqueue_create_buffer[DType.float32](M * N)
+    ctx.enqueue_function[matmul_kernel](
+        inputs[0].buf().unsafe_ptr(),
+        inputs[1].buf().unsafe_ptr(),
+        out_buf.unsafe_ptr(),
+        M,
+        N,
+        K,
+        grid_dim=(ceildiv(N, TILE_DIM), ceildiv(M, TILE_DIM)),
+        block_dim=(TILE_DIM, TILE_DIM),
+    )
+    return Buffer(out_buf^, [M, N], M * N)
+
+
+def transpose_exec(
+    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
+) raises -> Buffer:
+    var M = inputs[0].shape[0]
+    var N = inputs[0].shape[1]
+    var out_buf = ctx.enqueue_create_buffer[DType.float32](M * N)
+    ctx.enqueue_function[transpose_kernel](
+        inputs[0].buf().unsafe_ptr(),
+        out_buf.unsafe_ptr(),
+        M,
+        N,
+        grid_dim=(ceildiv(N, TILE_DIM), ceildiv(M, TILE_DIM)),
+        block_dim=(TILE_DIM, TILE_DIM),
+    )
+    return Buffer(out_buf^, [N, M], M * N)
+
+
 def relu_exec(
     node: OpRef, inputs: List[Buffer], ctx: DeviceContext
 ) raises -> Buffer:
@@ -259,5 +299,7 @@ struct NativeRuntime(Runtime):
                 Rule(Pat(OpType.SUM), sum_exec),
                 Rule(Pat(OpType.SUM_GRAD), sum_grad_exec),
                 Rule(Pat(OpType.RESHAPE), reshape_exec),
+                Rule(Pat(OpType.MATMUL), matmul_exec),
+                Rule(Pat(OpType.TRANSPOSE), transpose_exec),
             ]
         ].run(root, ctx.value())

@@ -60,6 +60,19 @@ def sum_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     ]
 
 
+def matmul_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    var a = node.srcs()[0]
+    var b = node.srcs()[1]
+    return [
+        upstream.matmul(b.transpose()),
+        a.transpose().matmul(upstream),
+    ]
+
+
+def transpose_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    return [upstream.transpose()]
+
+
 def reshape_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     return [
         OpRef(
@@ -115,6 +128,8 @@ struct Grad:
                 Rule(Pat(OpType.DIV), div_grad),
                 Rule(Pat(OpType.SUM), sum_grad),
                 Rule(Pat(OpType.RESHAPE), reshape_grad),
+                Rule(Pat(OpType.MATMUL), matmul_grad),
+                Rule(Pat(OpType.TRANSPOSE), transpose_grad),
             ],
         ]()
 

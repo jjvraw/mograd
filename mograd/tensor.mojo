@@ -141,6 +141,19 @@ struct Tensor(Copyable, Movable, Writable):
     def reshape(self, var shape: List[Int]) -> Self:
         return Tensor(self.ctx, self.op.reshape(shape^), self.requires_grad)
 
+    def matmul(self, other: Self) -> Self:
+        return Tensor(
+            self.ctx,
+            self.op.matmul(other.op),
+            self.requires_grad or other.requires_grad,
+        )
+
+    def __matmul__(self, other: Self) -> Self:
+        return self.matmul(other)
+
+    def transpose(self) -> Self:
+        return Tensor(self.ctx, self.op.transpose(), self.requires_grad)
+
     def gradient(
         mut self, *targets: Tensor, var gradient: Optional[Tensor] = None
     ) raises -> List[Tensor]:

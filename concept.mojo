@@ -7,58 +7,27 @@ def main() raises:
     comptime assert has_accelerator(), "Requires a GPU"
     var ctx = DeviceContext()
 
-    var x = mg.Tensor(
+    # [2, 3] @ [3, 2] -> [2, 2]
+    var a = mg.Tensor(
         ctx, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3], requires_grad=True
     )
-    var w = mg.Tensor(
-        ctx, [0.5, 1.0, 1.5, 2.0, 2.5, 3.0], [2, 3], requires_grad=True
+    var b = mg.Tensor(
+        ctx, [7.0, 8.0, 9.0, 10.0, 11.0, 12.0], [3, 2], requires_grad=True
     )
 
-    var e = x.exp()
-    print("exp([1..6]):")
-    _print_buffer(e.value())
+    var c = a @ b
+    print("a @ b ([2,3] @ [3,2] -> [2,2], expected [58,64,139,154]):")
+    _print_buffer(c.value())
 
-    var l = x.log()
-    print("\nlog([1..6]):")
-    _print_buffer(l.value())
+    print("\ntranspose(a) ([2,3] -> [3,2], expected [1,4,2,5,3,6]):")
+    _print_buffer(a.transpose().value())
 
-    var n = x.neg()
-    print("\nneg([1..6]):")
-    _print_buffer(n.value())
+    var grads = c.gradient(a, b)
+    print("\nd_c/da (expected [[15,19,23],[15,19,23]]):")
+    _print_buffer(grads[0].value())
 
-    var d = x / w
-    print("\n[1..6] / [0.5,1,1.5,2,2.5,3]:")
-    _print_buffer(d.value())
-
-    var s = x.sum()
-    print("\nsum([1..6]):")
-    _print_buffer(s.value())
-
-    var r = x.reshape([6])
-    print("\nreshape([2,3] -> [6]):")
-    _print_buffer(r.value())
-
-    var exp_grads = e.gradient(x)
-    print("\nd_exp/dx (should equal exp([1..6])):")
-    _print_buffer(exp_grads[0].value())
-
-    var log_grads = l.gradient(x)
-    print("\nd_log/dx (should be 1/[1..6]):")
-    _print_buffer(log_grads[0].value())
-
-    var div_grads = d.gradient(x, w)
-    print("\nd_div/dx (should be 1/w = [2,1,0.667,0.5,0.4,0.333]):")
-    _print_buffer(div_grads[0].value())
-    print("\nd_div/dw (should be -x/w^2):")
-    _print_buffer(div_grads[1].value())
-
-    var sum_grads = s.gradient(x)
-    print("\nd_sum/dx (should be all 1s):")
-    _print_buffer(sum_grads[0].value())
-
-    var reshape_grads = r.gradient(x)
-    print("\nd_reshape/dx (should be all 1s, shape [2,3]):")
-    _print_buffer(reshape_grads[0].value())
+    print("\nd_c/db (expected [[5,5],[7,7],[9,9]]):")
+    _print_buffer(grads[1].value())
 
 
 def _print_buffer(b: mg.Buffer) raises:
