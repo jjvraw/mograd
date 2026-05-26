@@ -13,7 +13,9 @@ from mograd.scheduler import Scheduler, ExecFn
 # ===-------------------------------------------------------------------===#
 
 
-def add_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
+def add_exec(
+    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
+) raises -> Buffer:
     var size = inputs[0].size
     var c_buf = ctx.enqueue_create_buffer[DType.float32](size)
     ctx.enqueue_function[add_kernel](
@@ -27,7 +29,9 @@ def add_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Bu
     return Buffer(c_buf^, node.shape().copy(), size)
 
 
-def mul_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
+def mul_exec(
+    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
+) raises -> Buffer:
     var size = inputs[0].size
     var c_buf = ctx.enqueue_create_buffer[DType.float32](size)
     ctx.enqueue_function[mul_kernel](

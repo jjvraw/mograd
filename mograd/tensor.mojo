@@ -41,7 +41,9 @@ struct Tensor(Copyable, Movable, Writable):
         var srcs: List[OpRef] = []
         var buf = Optional[Buffer](b^)
         self.ctx = ctx
-        self.op = OpRef(Op(OpType.BUFFER, shape.copy(), DType.float32, srcs^, buf^))
+        self.op = OpRef(
+            Op(OpType.BUFFER, shape.copy(), DType.float32, srcs^, buf^)
+        )
         self.requires_grad = requires_grad
         self._grad = ArcPointer(Optional[Tensor](None))
 
@@ -55,7 +57,11 @@ struct Tensor(Copyable, Movable, Writable):
         var b = Buffer.empty(ctx, shape.copy())
         var srcs: List[OpRef] = []
         var buf = Optional[Buffer](b^)
-        return Tensor(Optional[DeviceContext](ctx), OpRef(Op(OpType.BUFFER, shape.copy(), dtype, srcs^, buf^)), requires_grad)
+        return Tensor(
+            Optional[DeviceContext](ctx),
+            OpRef(Op(OpType.BUFFER, shape.copy(), dtype, srcs^, buf^)),
+            requires_grad,
+        )
 
     @staticmethod
     def ones(
@@ -67,13 +73,22 @@ struct Tensor(Copyable, Movable, Writable):
         var b = Buffer.ones(ctx, shape.copy())
         var srcs: List[OpRef] = []
         var buf = Optional[Buffer](b^)
-        return Tensor(Optional[DeviceContext](ctx), OpRef(Op(OpType.BUFFER, shape.copy(), dtype, srcs^, buf^)), requires_grad)
+        return Tensor(
+            Optional[DeviceContext](ctx),
+            OpRef(Op(OpType.BUFFER, shape.copy(), dtype, srcs^, buf^)),
+            requires_grad,
+        )
 
     @staticmethod
     def ones_like(other: Tensor, requires_grad: Bool = False) raises -> Tensor:
         if not other.ctx:
             raise Error("ones_like requires a device context")
-        return Tensor.ones(other.ctx.value(), other.op.shape().copy(), other.op.dtype(), requires_grad)
+        return Tensor.ones(
+            other.ctx.value(),
+            other.op.shape().copy(),
+            other.op.dtype(),
+            requires_grad,
+        )
 
     def __add__(self, other: Self) -> Self:
         return self.add(other)
@@ -115,7 +130,11 @@ struct Tensor(Copyable, Movable, Writable):
                 if not self.ctx:
                     raise Error("gradient requires a device context")
                 result.append(
-                    Self.empty(self.ctx.value(), targets[i].op.shape().copy(), targets[i].op.dtype())
+                    Self.empty(
+                        self.ctx.value(),
+                        targets[i].op.shape().copy(),
+                        targets[i].op.dtype(),
+                    )
                 )
         return result^
 

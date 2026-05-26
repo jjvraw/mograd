@@ -4,8 +4,11 @@ from mograd.op import OpRef, OpType
 # PatternMatcher
 # ===-------------------------------------------------------------------===#
 
+
 @fieldwise_init
-struct Rule[F: TrivialRegisterPassable](Copyable, Movable, ImplicitlyDestructible):
+struct Rule[F: TrivialRegisterPassable](
+    Copyable, ImplicitlyDestructible, Movable
+):
     var pat: Pat
     var func: Self.F
 
@@ -31,7 +34,9 @@ struct Pat(Copyable, Movable):
         return True
 
 
-def build_rule_table[F: TrivialRegisterPassable, rules: List[Rule[F]]]() -> Dict[OpType, List[Rule[F]]]:
+def build_rule_table[
+    F: TrivialRegisterPassable, rules: List[Rule[F]]
+]() -> Dict[OpType, List[Rule[F]]]:
     var d = Dict[OpType, List[Rule[F]]]()
     comptime for rule in rules:
         key = rule.pat.op_type

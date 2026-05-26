@@ -7,8 +7,12 @@ def main() raises:
     comptime assert has_accelerator(), "Requires a GPU"
 
     var ctx = DeviceContext()
-    var x = mg.Tensor(ctx, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3], requires_grad=True)
-    var w = mg.Tensor(ctx, [0.5, 1.0, 1.5, 2.0, 2.5, 3.0], [2, 3], requires_grad=True)
+    var x = mg.Tensor(
+        ctx, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3], requires_grad=True
+    )
+    var w = mg.Tensor(
+        ctx, [0.5, 1.0, 1.5, 2.0, 2.5, 3.0], [2, 3], requires_grad=True
+    )
     var out = x * w + w
 
     print("Graph:")
