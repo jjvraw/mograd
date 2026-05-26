@@ -4,7 +4,7 @@ from std.hashlib.hasher import Hasher
 from mograd.buffer import Buffer
 
 # ===-------------------------------------------------------------------===#
-# Op
+# OpType
 # ===-------------------------------------------------------------------===#
 
 
@@ -38,6 +38,11 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
 
     def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
+
+
+# ===-------------------------------------------------------------------===#
+# Op
+# ===-------------------------------------------------------------------===#
 
 
 struct Op(Copyable, Movable, Writable):
@@ -79,6 +84,11 @@ struct Op(Copyable, Movable, Writable):
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write(self.op_type._name)
+
+
+# ===-------------------------------------------------------------------===#
+# OpRef
+# ===-------------------------------------------------------------------===#
 
 
 struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
