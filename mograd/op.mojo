@@ -1,0 +1,110 @@
+from std.memory import ArcPointer
+from std.hashlib.hasher import Hasher
+
+# ===-------------------------------------------------------------------===#
+# Op
+# ===-------------------------------------------------------------------===#
+
+
+# TODO: Lets rather have a op registry that is defined and built at comptime.
+#       Main motivation here is for custom rewrites.
+@fieldwise_init
+struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
+    var _value: Int
+    var _name: String
+    comptime BUFFER = OpType(1, "BUFFER")
+    comptime ONES = OpType(2, "ONES")
+    comptime ADD = OpType(3, "ADD")
+    comptime MUL = OpType(4, "MUL")
+
+    def __hash__[H: Hasher](self, mut hasher: H):
+        hasher.update(self._value)
+
+    def __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    def __ne__(self, other: Self) -> Bool:
+        return self._value != other._value
+
+
+struct Op(Copyable, Movable, Writable):
+    var op_type: OpType
+    var shape: List[Int]
+    var dtype: DType
+    var srcs: List[OpRef]
+
+    def __init__(
+        out self,
+        op_type: OpType,
+        var shape: List[Int],
+        dtype: DType,
+        var srcs: List[OpRef],
+    ):
+        self.op_type = op_type
+        self.shape = shape^
+        self.dtype = dtype
+        self.srcs = srcs^
+
+    def __str__(self) -> String:
+        return self.op_type._name
+
+
+struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
+    var _ptr: ArcPointer[Op]
+
+    def __init__(out self, var op: Op):
+        self._ptr = ArcPointer(op^)
+
+    def __hash__[H: Hasher](self, mut hasher: H):
+        hasher.update(Int(self._ptr.unsafe_ptr()))
+
+    def __eq__(self, other: Self) -> Bool:
+        return self._ptr.unsafe_ptr() == other._ptr.unsafe_ptr()
+
+    def __ne__(self, other: Self) -> Bool:
+        return self._ptr.unsafe_ptr() != other._ptr.unsafe_ptr()
+
+    def op(ref self) -> ref[self._ptr[]] Op:
+        return self._ptr[]
+
+    def shape(ref self) -> ref[self._ptr[].shape] List[Int]:
+        return self._ptr[].shape
+
+    def dtype(ref self) -> ref[self._ptr[].dtype] DType:
+        return self._ptr[].dtype
+
+    def op_type(ref self) -> ref[self._ptr[].op_type] OpType:
+        return self._ptr[].op_type
+
+    def srcs(ref self) -> ref[self._ptr[].srcs] List[OpRef]:
+        return self._ptr[].srcs
+
+    def __add__(self, rhs: OpRef) -> OpRef:
+        return OpRef(
+            Op(OpType.ADD, self.shape().copy(), self.dtype(), [self, rhs])
+        )
+
+    def __mul__(self, rhs: OpRef) -> OpRef:
+        return OpRef(
+            Op(OpType.MUL, self.shape().copy(), self.dtype(), [self, rhs])
+        )
+
+    def write_to(self, mut writer: Some[Writer]):
+        self._write_indented(writer, 0)
+
+    def _write_indented(self, mut writer: Some[Writer], indent: Int):
+        var pad = String(" ") * indent
+        writer.write(pad + self.op_type()._name + "(shape=[")
+        for i in range(len(self.shape())):
+            writer.write(String(self.shape()[i]))
+            if i < len(self.shape()) - 1:
+                writer.write(", ")
+        writer.write("], dtype=" + String(self.dtype()))
+        if len(self.srcs()) == 0:
+            writer.write(")")
+        else:
+            writer.write(", srcs=(\n")
+            for i in range(len(self.srcs())):
+                self.srcs()[i]._write_indented(writer, indent + 4)
+                writer.write("\n")
+            writer.write(pad + "))")
