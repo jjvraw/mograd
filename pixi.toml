@@ -1,11 +1,29 @@
 [workspace]
 authors = ["Joshua James Venter <venter.joshua@gmail.com>"]
+preview = ["pixi-build"]
 channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
 name = "mograd"
 platforms = ["linux-64"]
 version = "0.1.0"
 
-[tasks]
+[package]
+name = "mograd"
+version = "0.0.0"
+
+[package.build]
+backend = { name = "pixi-build-mojo", version = "0.1.*" }
+
+[package.build-dependencies]
+mojo-compiler = "*"
+
+[package.host-dependencies]
+mojo-compiler = "*"
 
 [dependencies]
 mojo = ">=1.0.0b2.dev2026050306,<2"
+mograd = { path = "." }
+
+
+[tasks]
+
+

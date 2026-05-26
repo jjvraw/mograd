@@ -57,6 +57,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zeromq-4.3.5-h09e67af_11.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zstd-1.5.7-hb78ec9c_6.conda
+      - conda: .
 packages:
 - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
   build_number: 20
@@ -341,6 +342,13 @@ packages:
   license: LicenseRef-Modular-Proprietary
   size: 135025
   timestamp: 1779691376792
+- conda: .
+  name: mograd
+  version: 0.0.0
+  build: hb0f4dca_0
+  subdir: linux-64
+  variants:
+    target_platform: linux-64
 - conda: https://conda.modular.com/max-nightly/linux-64/mojo-1.0.0b2.dev2026052506-release.conda
   sha256: c793dba2e295074e7a325ce5e339b5b83d62d9fed464529ec63666ca82d1467b
   md5: 779c24950c21256dfb94fae604a6fe8e
