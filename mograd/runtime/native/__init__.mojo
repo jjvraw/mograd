@@ -18,6 +18,7 @@ from mograd.runtime.native.kernels import (
     sum_grad_kernel,
     matmul_kernel,
     transpose_kernel,
+    uniform_kernel,
     BLOCK_SIZE,
     TILE_DIM,
 )
@@ -201,6 +202,28 @@ def transpose_exec(
     return Buffer(out_buf^, [N, M], M * N)
 
 
+def uniform_exec(
+    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
+) raises -> Buffer:
+    var size = 1
+    for d in node.shape():
+        size *= d
+    var low = node.attrs()[0]
+    var high = node.attrs()[1]
+    var seed = UInt32(Int(node.attrs()[2]))
+    var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
+    ctx.enqueue_function[uniform_kernel](
+        out_buf.unsafe_ptr(),
+        size,
+        low,
+        high,
+        seed,
+        grid_dim=ceildiv(size, BLOCK_SIZE),
+        block_dim=BLOCK_SIZE,
+    )
+    return Buffer(out_buf^, node.shape().copy(), size)
+
+
 def relu_exec(
     node: OpRef, inputs: List[Buffer], ctx: DeviceContext
 ) raises -> Buffer:
@@ -301,5 +324,6 @@ struct NativeRuntime(Runtime):
                 Rule(Pat(OpType.RESHAPE), reshape_exec),
                 Rule(Pat(OpType.MATMUL), matmul_exec),
                 Rule(Pat(OpType.TRANSPOSE), transpose_exec),
+                Rule(Pat(OpType.UNIFORM), uniform_exec),
             ]
         ].run(root, ctx.value())

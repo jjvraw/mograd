@@ -1,4 +1,5 @@
 import mograd as mg
+from mograd.nn import Linear
 from std.gpu.host import DeviceContext
 from std.sys import has_accelerator
 
@@ -7,26 +8,24 @@ def main() raises:
     comptime assert has_accelerator(), "Requires a GPU"
     var ctx = DeviceContext()
 
-    # [2, 3] @ [3, 2] -> [2, 2]
-    var a = mg.Tensor(
+    # weight: [out=2, in=3], x: [batch=2, in=3]
+    var weight = mg.Tensor(
+        ctx, [1.0, 0.0, -1.0, 0.0, 1.0, 0.0], [2, 3], requires_grad=True
+    )
+    var layer = Linear(weight)
+
+    var x = mg.Tensor(
         ctx, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3], requires_grad=True
     )
-    var b = mg.Tensor(
-        ctx, [7.0, 8.0, 9.0, 10.0, 11.0, 12.0], [3, 2], requires_grad=True
-    )
 
-    var c = a @ b
-    print("a @ b ([2,3] @ [3,2] -> [2,2], expected [58,64,139,154]):")
-    _print_buffer(c.value())
+    var y = layer(x)
+    print("y = x @ W.T  (shape [2,2]):")
+    _print_buffer(y.value())
 
-    print("\ntranspose(a) ([2,3] -> [3,2], expected [1,4,2,5,3,6]):")
-    _print_buffer(a.transpose().value())
-
-    var grads = c.gradient(a, b)
-    print("\nd_c/da (expected [[15,19,23],[15,19,23]]):")
+    var grads = y.gradient(x, weight)
+    print("\nd_y/dx:")
     _print_buffer(grads[0].value())
-
-    print("\nd_c/db (expected [[5,5],[7,7],[9,9]]):")
+    print("\nd_y/dW:")
     _print_buffer(grads[1].value())
 
 

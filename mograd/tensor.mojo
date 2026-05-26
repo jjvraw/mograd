@@ -80,6 +80,25 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         )
 
     @staticmethod
+    def uniform(
+        ctx: DeviceContext,
+        shape: List[Int],
+        low: Float32 = 0.0,
+        high: Float32 = 1.0,
+        seed: UInt32 = 42,
+        requires_grad: Bool = False,
+    ) -> Tensor:
+        var srcs: List[OpRef] = []
+        var attrs: List[Float32] = [low, high, Float32(seed)]
+        return Tensor(
+            Optional[DeviceContext](ctx),
+            OpRef(
+                Op(OpType.UNIFORM, shape.copy(), DType.float32, srcs^, attrs^)
+            ),
+            requires_grad,
+        )
+
+    @staticmethod
     def ones_like(other: Tensor, requires_grad: Bool = False) raises -> Tensor:
         if not other.ctx:
             raise Error("ones_like requires a device context")
@@ -137,6 +156,9 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
 
     def sum(self) -> Self:
         return Tensor(self.ctx, self.op.sum(), self.requires_grad)
+
+    def shape(self) -> List[Int]:
+        return self.op.shape().copy()
 
     def reshape(self, var shape: List[Int]) -> Self:
         return Tensor(self.ctx, self.op.reshape(shape^), self.requires_grad)

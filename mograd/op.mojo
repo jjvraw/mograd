@@ -31,6 +31,7 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime RESHAPE = OpType(15, "RESHAPE")
     comptime MATMUL = OpType(16, "MATMUL")
     comptime TRANSPOSE = OpType(17, "TRANSPOSE")
+    comptime UNIFORM = OpType(18, "UNIFORM")
 
     def __hash__[H: Hasher](self, mut hasher: H):
         hasher.update(self._value)
@@ -53,6 +54,7 @@ struct Op(Copyable, Movable, Writable):
     var dtype: DType
     var srcs: List[OpRef]
     var buf: Optional[Buffer]
+    var attrs: List[Float32]
 
     def __init__(
         out self,
@@ -66,6 +68,7 @@ struct Op(Copyable, Movable, Writable):
         self.dtype = dtype
         self.srcs = srcs^
         self.buf = Optional[Buffer](None)
+        self.attrs = []
 
     def __init__(
         out self,
@@ -80,6 +83,22 @@ struct Op(Copyable, Movable, Writable):
         self.dtype = dtype
         self.srcs = srcs^
         self.buf = buf^
+        self.attrs = []
+
+    def __init__(
+        out self,
+        op_type: OpType,
+        var shape: List[Int],
+        dtype: DType,
+        var srcs: List[OpRef],
+        var attrs: List[Float32],
+    ):
+        self.op_type = op_type
+        self.shape = shape^
+        self.dtype = dtype
+        self.srcs = srcs^
+        self.buf = Optional[Buffer](None)
+        self.attrs = attrs^
 
     def __str__(self) -> String:
         return self.op_type._name
@@ -123,6 +142,9 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     def srcs(ref self) -> ref[self._ptr[].srcs] List[OpRef]:
         return self._ptr[].srcs
 
+    def attrs(ref self) -> ref[self._ptr[].attrs] List[Float32]:
+        return self._ptr[].attrs
+
     def __add__(self, rhs: OpRef) -> OpRef:
         return OpRef(
             Op(OpType.ADD, self.shape().copy(), self.dtype(), [self, rhs])
@@ -162,6 +184,18 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return OpRef(Op(OpType.SUM, [1], self.dtype(), [self]))
 
     def reshape(self, var new_shape: List[Int]) -> OpRef:
+        var neg_idx = -1
+        var known_product = 1
+        var total = 1
+        for d in self.shape():
+            total *= d
+        for i in range(len(new_shape)):
+            if new_shape[i] == -1:
+                neg_idx = i
+            else:
+                known_product *= new_shape[i]
+        if neg_idx >= 0:
+            new_shape[neg_idx] = total // known_product
         return OpRef(Op(OpType.RESHAPE, new_shape^, self.dtype(), [self]))
 
     def matmul(self, rhs: OpRef) -> OpRef:
