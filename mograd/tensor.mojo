@@ -12,7 +12,7 @@ from mograd.grad import Grad
 
 
 struct Tensor(Copyable, Movable, Writable):
-    var ctx: DeviceContext
+    var ctx: Optional[DeviceContext]
     var op: OpRef
     var requires_grad: Bool
     # TODO: Use ArcPointer when Optional[ArcPointer] is resolved:
@@ -21,7 +21,7 @@ struct Tensor(Copyable, Movable, Writable):
 
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: Optional[DeviceContext],
         var op: OpRef,
         requires_grad: Bool = False,
     ):
@@ -55,7 +55,7 @@ struct Tensor(Copyable, Movable, Writable):
         var b = Buffer.empty(ctx, shape.copy())
         var srcs: List[OpRef] = []
         var buf = Optional[Buffer](b^)
-        return Tensor(ctx, OpRef(Op(OpType.BUFFER, shape.copy(), dtype, srcs^, buf^)), requires_grad)
+        return Tensor(Optional[DeviceContext](ctx), OpRef(Op(OpType.BUFFER, shape.copy(), dtype, srcs^, buf^)), requires_grad)
 
     @staticmethod
     def ones(
@@ -67,11 +67,13 @@ struct Tensor(Copyable, Movable, Writable):
         var b = Buffer.ones(ctx, shape.copy())
         var srcs: List[OpRef] = []
         var buf = Optional[Buffer](b^)
-        return Tensor(ctx, OpRef(Op(OpType.BUFFER, shape.copy(), dtype, srcs^, buf^)), requires_grad)
+        return Tensor(Optional[DeviceContext](ctx), OpRef(Op(OpType.BUFFER, shape.copy(), dtype, srcs^, buf^)), requires_grad)
 
     @staticmethod
     def ones_like(other: Tensor, requires_grad: Bool = False) raises -> Tensor:
-        return Tensor.ones(other.ctx, other.op.shape().copy(), other.op.dtype(), requires_grad)
+        if not other.ctx:
+            raise Error("ones_like requires a device context")
+        return Tensor.ones(other.ctx.value(), other.op.shape().copy(), other.op.dtype(), requires_grad)
 
     def __add__(self, other: Self) -> Self:
         return self.add(other)
@@ -110,8 +112,10 @@ struct Tensor(Copyable, Movable, Writable):
             if grads[i]:
                 result.append(Tensor(self.ctx, grads[i].value()))
             else:
+                if not self.ctx:
+                    raise Error("gradient requires a device context")
                 result.append(
-                    Self.empty(self.ctx, targets[i].op.shape().copy(), targets[i].op.dtype())
+                    Self.empty(self.ctx.value(), targets[i].op.shape().copy(), targets[i].op.dtype())
                 )
         return result^
 

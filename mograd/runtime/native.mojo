@@ -5,6 +5,7 @@ from mograd.op import OpRef, OpType
 from mograd.buffer import Buffer
 from mograd.kernels import add_kernel, mul_kernel, BLOCK_SIZE
 from mograd.pattern_matcher import Rule, Pat
+from mograd.runtime import Runtime
 from mograd.scheduler import Scheduler, ExecFn
 
 # ===-------------------------------------------------------------------===#
@@ -40,12 +41,14 @@ def mul_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Bu
     return Buffer(c_buf^, node.shape().copy(), size)
 
 
-struct NativeRuntime:
+struct NativeRuntime(Runtime):
     @staticmethod
-    def run(root: OpRef, ctx: DeviceContext) raises -> Buffer:
+    def run(root: OpRef, ctx: Optional[DeviceContext]) raises -> Buffer:
+        if not ctx:
+            raise Error("NativeRuntime requires a DeviceContext")
         return Scheduler[
             [
                 Rule(Pat(OpType.ADD), add_exec),
                 Rule(Pat(OpType.MUL), mul_exec),
             ]
-        ].run(root, ctx)
+        ].run(root, ctx.value())
