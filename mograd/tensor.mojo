@@ -3,7 +3,7 @@ from std.gpu.host import DeviceContext
 
 from mograd.op import Op, OpRef, OpType
 from mograd.buffer import Buffer
-from mograd.scheduler import Scheduler
+from mograd.runtime.native import NativeRuntime
 from mograd.grad import Grad
 
 # ===-------------------------------------------------------------------===#
@@ -116,7 +116,7 @@ struct Tensor(Copyable, Movable, Writable):
         return result^
 
     def value(self) raises -> Buffer:
-        return Scheduler.run(self.op, self.ctx)
+        return NativeRuntime.run(self.op, self.ctx)
 
     @staticmethod
     def _str_op(op: OpRef) -> String:
