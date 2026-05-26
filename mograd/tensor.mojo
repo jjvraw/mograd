@@ -11,7 +11,7 @@ from mograd.grad import Grad
 # ===-------------------------------------------------------------------===#
 
 
-struct Tensor(Copyable, Movable, Writable):
+struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
     var ctx: Optional[DeviceContext]
     var op: OpRef
     var requires_grad: Bool
