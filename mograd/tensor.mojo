@@ -1,6 +1,9 @@
 from std.memory import ArcPointer
+from std.gpu.host import DeviceContext
 
 from mograd.op import Op, OpRef, OpType
+from mograd.buffer import Buffer
+from mograd.scheduler import Scheduler
 from mograd.grad import Grad
 
 # ===-------------------------------------------------------------------===#
@@ -8,56 +11,87 @@ from mograd.grad import Grad
 # ===-------------------------------------------------------------------===#
 
 
-# TODO: Make factory methods for tensor constructors.
 struct Tensor(Copyable, Movable, Writable):
+    var ctx: DeviceContext
     var op: OpRef
     var requires_grad: Bool
     # TODO: Use ArcPointer when Optional[ArcPointer] is resolved:
     # https://github.com/modular/modular/issues/3293
     var _grad: ArcPointer[Optional[Tensor]]
 
-    def __init__(out self, var op: OpRef, requires_grad: Bool = False):
+    def __init__(
+        out self,
+        ctx: DeviceContext,
+        var op: OpRef,
+        requires_grad: Bool = False,
+    ):
+        self.ctx = ctx
         self.op = op^
         self.requires_grad = requires_grad
         self._grad = ArcPointer(Optional[Tensor](None))
 
-    @implicit
-    def __init__(out self, var op: Op, requires_grad: Bool = False):
-        self.op = OpRef(op^)
+    def __init__(
+        out self,
+        ctx: DeviceContext,
+        data: List[Float32],
+        shape: List[Int],
+        requires_grad: Bool = False,
+    ) raises:
+        var b = Buffer.from_data(ctx, data, shape.copy())
+        var srcs: List[OpRef] = []
+        var buf = Optional[Buffer](b^)
+        self.ctx = ctx
+        self.op = OpRef(Op(OpType.BUFFER, shape.copy(), DType.float32, srcs^, buf^))
         self.requires_grad = requires_grad
         self._grad = ArcPointer(Optional[Tensor](None))
 
     @staticmethod
-    def ones_like(other: Tensor, requires_grad: Bool = False) -> Tensor:
-        var srcs: List[OpRef] = []
-        return Tensor(
-            OpRef(
-                Op(
-                    OpType.ONES,
-                    other.op.shape().copy(),
-                    other.op.dtype(),
-                    srcs^,
-                )
-            ),
-            requires_grad,
-        )
-
-    @staticmethod
     def empty(
+        ctx: DeviceContext,
         shape: List[Int],
         dtype: DType = DType.float32,
         requires_grad: Bool = False,
-    ) -> Tensor:
+    ) raises -> Tensor:
+        var b = Buffer.empty(ctx, shape.copy())
         var srcs: List[OpRef] = []
-        return Tensor(
-            OpRef(Op(OpType.BUFFER, shape.copy(), dtype, srcs^)), requires_grad
-        )
+        var buf = Optional[Buffer](b^)
+        return Tensor(ctx, OpRef(Op(OpType.BUFFER, shape.copy(), dtype, srcs^, buf^)), requires_grad)
+
+    @staticmethod
+    def ones(
+        ctx: DeviceContext,
+        shape: List[Int],
+        dtype: DType = DType.float32,
+        requires_grad: Bool = False,
+    ) raises -> Tensor:
+        var b = Buffer.ones(ctx, shape.copy())
+        var srcs: List[OpRef] = []
+        var buf = Optional[Buffer](b^)
+        return Tensor(ctx, OpRef(Op(OpType.BUFFER, shape.copy(), dtype, srcs^, buf^)), requires_grad)
+
+    @staticmethod
+    def ones_like(other: Tensor, requires_grad: Bool = False) raises -> Tensor:
+        return Tensor.ones(other.ctx, other.op.shape().copy(), other.op.dtype(), requires_grad)
 
     def __add__(self, other: Self) -> Self:
         return self.add(other)
 
     def __mul__(self, other: Self) -> Self:
         return self.mul(other)
+
+    def add(self, other: Self) -> Self:
+        return Tensor(
+            self.ctx,
+            self.op + other.op,
+            self.requires_grad or other.requires_grad,
+        )
+
+    def mul(self, other: Self) -> Self:
+        return Tensor(
+            self.ctx,
+            self.op * other.op,
+            self.requires_grad or other.requires_grad,
+        )
 
     def gradient(
         mut self, *targets: Tensor, var gradient: Optional[Tensor] = None
@@ -74,28 +108,16 @@ struct Tensor(Copyable, Movable, Writable):
         var result = List[Tensor]()
         for i in range(len(grads)):
             if grads[i]:
-                result.append(Tensor(grads[i].value()))
+                result.append(Tensor(self.ctx, grads[i].value()))
             else:
                 result.append(
-                    Self.empty(
-                        targets[i].op.shape().copy(), targets[i].op.dtype()
-                    )
+                    Self.empty(self.ctx, targets[i].op.shape().copy(), targets[i].op.dtype())
                 )
         return result^
 
-    def add(self, other: Self) -> Self:
-        return Tensor(
-            self.op + other.op,
-            self.requires_grad or other.requires_grad,
-        )
+    def value(self) raises -> Buffer:
+        return Scheduler.run(self.op, self.ctx)
 
-    def mul(self, other: Self) -> Self:
-        return Tensor(
-            self.op * other.op,
-            self.requires_grad or other.requires_grad,
-        )
-
-    # TODO: Clean up
     @staticmethod
     def _str_op(op: OpRef) -> String:
         var op_name = op.op().__str__()

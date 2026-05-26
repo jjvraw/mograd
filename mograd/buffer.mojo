@@ -1,0 +1,76 @@
+from std.math import ceildiv
+from std.memory import ArcPointer
+from std.gpu.host import DeviceContext, DeviceBuffer
+
+from mograd.kernels import ones_kernel, BLOCK_SIZE
+
+# ===-------------------------------------------------------------------===#
+# Buffer
+# ===-------------------------------------------------------------------===#
+
+
+struct Buffer(Copyable, Movable, Writable):
+    var _ptr: ArcPointer[DeviceBuffer[DType.float32]]
+    var shape: List[Int]
+    var size: Int
+
+    def __init__(
+        out self,
+        var buf: DeviceBuffer[DType.float32],
+        var shape: List[Int],
+        size: Int,
+    ):
+        self._ptr = ArcPointer(buf^)
+        self.shape = shape^
+        self.size = size
+
+    def buf(ref self) -> ref[self._ptr[]] DeviceBuffer[DType.float32]:
+        return self._ptr[]
+
+    @staticmethod
+    def _compute_size(shape: List[Int]) -> Int:
+        var size = 1
+        for i in range(len(shape)):
+            size *= shape[i]
+        return size
+
+    @staticmethod
+    def empty(ctx: DeviceContext, shape: List[Int]) raises -> Self:
+        var size = Self._compute_size(shape)
+        var dev_buf = ctx.enqueue_create_buffer[DType.float32](size)
+        return Self(dev_buf^, shape.copy(), size)
+
+    @staticmethod
+    def ones(ctx: DeviceContext, shape: List[Int]) raises -> Self:
+        var size = Self._compute_size(shape)
+        var dev_buf = ctx.enqueue_create_buffer[DType.float32](size)
+        ctx.enqueue_function[ones_kernel](
+            dev_buf.unsafe_ptr(),
+            size,
+            grid_dim=ceildiv(size, BLOCK_SIZE),
+            block_dim=BLOCK_SIZE,
+        )
+        return Self(dev_buf^, shape.copy(), size)
+
+    @staticmethod
+    def from_data(
+        ctx: DeviceContext,
+        data: List[Float32],
+        var shape: List[Int],
+    ) raises -> Self:
+        var size = len(data)
+        var host_buf = ctx.enqueue_create_host_buffer[DType.float32](size)
+        var host_ptr = host_buf.unsafe_ptr()
+        for i in range(size):
+            host_ptr[i] = data[i]
+        var dev_buf = ctx.enqueue_create_buffer[DType.float32](size)
+        ctx.enqueue_copy(dst_buf=dev_buf, src_buf=host_buf)
+        return Self(dev_buf^, shape^, size)
+
+    def write_to(self, mut writer: Some[Writer]):
+        writer.write("Buffer(shape=[")
+        for i in range(len(self.shape)):
+            writer.write(String(self.shape[i]))
+            if i < len(self.shape) - 1:
+                writer.write(", ")
+        writer.write("], size=", String(self.size), ")")

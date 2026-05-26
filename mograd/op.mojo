@@ -1,6 +1,8 @@
 from std.memory import ArcPointer
 from std.hashlib.hasher import Hasher
 
+from mograd.buffer import Buffer
+
 # ===-------------------------------------------------------------------===#
 # Op
 # ===-------------------------------------------------------------------===#
@@ -32,6 +34,7 @@ struct Op(Copyable, Movable, Writable):
     var shape: List[Int]
     var dtype: DType
     var srcs: List[OpRef]
+    var buf: Optional[Buffer]
 
     def __init__(
         out self,
@@ -44,9 +47,27 @@ struct Op(Copyable, Movable, Writable):
         self.shape = shape^
         self.dtype = dtype
         self.srcs = srcs^
+        self.buf = Optional[Buffer](None)
+
+    def __init__(
+        out self,
+        op_type: OpType,
+        var shape: List[Int],
+        dtype: DType,
+        var srcs: List[OpRef],
+        var buf: Optional[Buffer],
+    ):
+        self.op_type = op_type
+        self.shape = shape^
+        self.dtype = dtype
+        self.srcs = srcs^
+        self.buf = buf^
 
     def __str__(self) -> String:
         return self.op_type._name
+
+    def write_to(self, mut writer: Some[Writer]):
+        writer.write(self.op_type._name)
 
 
 struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):

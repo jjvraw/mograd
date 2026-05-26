@@ -4,13 +4,10 @@ from mograd.op import OpRef, OpType
 # PatternMatcher
 # ===-------------------------------------------------------------------===#
 
-comptime RuleFn = def(OpRef, OpRef) raises thin -> List[OpRef]
-
-
 @fieldwise_init
-struct Rule(Copyable, Movable):
+struct Rule[F: TrivialRegisterPassable](Copyable, Movable, ImplicitlyDestructible):
     var pat: Pat
-    var func: RuleFn
+    var func: Self.F
 
 
 struct Pat(Copyable, Movable):
@@ -34,34 +31,30 @@ struct Pat(Copyable, Movable):
         return True
 
 
-def build_rule_table[rules: List[Rule]]() -> Dict[OpType, List[Rule]]:
-    var d = Dict[OpType, List[Rule]]()
+def build_rule_table[F: TrivialRegisterPassable, rules: List[Rule[F]]]() -> Dict[OpType, List[Rule[F]]]:
+    var d = Dict[OpType, List[Rule[F]]]()
     comptime for rule in rules:
         key = rule.pat.op_type
         r = materialize[rule]()
-        d.setdefault(key, List[Rule]()).append(r^)
+        d.setdefault(key, List[Rule[F]]()).append(r^)
     return d^
 
 
-struct PatternMatcher[rules: List[Rule]]:
-    var rule_table: Dict[OpType, List[Rule]]
+struct PatternMatcher[F: TrivialRegisterPassable, rules: List[Rule[F]]]:
+    var rule_table: Dict[OpType, List[Rule[Self.F]]]
 
     def __init__(out self):
-        # TODO: Is the below possible? Maybe `global_constant()` eventually?
+        # TODO: Is the below possible? Maybe `global_constant()` somewhere eventually?
         # https://mojolang.org/docs/manual/metaprogramming/materialization/
         # https://github.com/modular/modular/issues/6505
         # comptime ct_table = build_rule_table(Self.rules)
         # self.rule_table = materialize[ct_table]()
-        self.rule_table = build_rule_table[Self.rules]()
+        self.rule_table = build_rule_table[Self.F, Self.rules]()
 
-    def rewrite(
-        self,
-        node: OpRef,
-        upstream: OpRef,
-    ) raises -> Optional[List[OpRef]]:
+    def match(self, node: OpRef) -> Optional[Self.F]:
         var matches = self.rule_table.get(node.op_type())
         if matches:
             for rule in matches.value():
                 if rule.pat.matches(node):
-                    return rule.func(node, upstream)
+                    return rule.func
         return None

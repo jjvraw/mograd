@@ -5,12 +5,14 @@ from mograd.pattern_matcher import PatternMatcher, Rule, Pat
 # Grad
 # ===-------------------------------------------------------------------===#
 
+comptime GradFn = def(node: OpRef, upstream: OpRef) thin raises -> List[OpRef]
 
-def mul_grad(node: OpRef, upstream: OpRef) -> List[OpRef]:
+
+def mul_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     return [node.srcs()[1] * upstream, node.srcs()[0] * upstream]
 
 
-def add_grad(node: OpRef, upstream: OpRef) -> List[OpRef]:
+def add_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     return [upstream] * len(node.srcs())
 
 
@@ -30,10 +32,11 @@ struct Grad:
         grad.grad_map[root] = initial_grad
 
         var pm = PatternMatcher[
+            GradFn,
             [
                 Rule(Pat(OpType.MUL), mul_grad),
                 Rule(Pat(OpType.ADD), add_grad),
-            ]
+            ],
         ]()
 
         var topo = Self.toposort(root)
@@ -44,11 +47,11 @@ struct Grad:
                 continue
 
             var up = upstream.value()
-            var src_grads = pm.rewrite(node, up)
-            if src_grads:
-                ref sg = src_grads.value()
+            var rule = pm.match(node)
+            if rule:
+                var src_grads = rule.value()(node, up)
                 for j in range(len(node.srcs())):
-                    grad.accum(node.srcs()[j], sg[j])
+                    grad.accum(node.srcs()[j], src_grads[j])
 
         var result = List[Optional[OpRef]]()
         for i in range(len(target_ops)):
