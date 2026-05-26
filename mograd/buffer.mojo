@@ -2,7 +2,6 @@ from std.math import ceildiv
 from std.memory import ArcPointer
 from std.gpu.host import DeviceContext, DeviceBuffer
 
-from mograd.kernels import ones_kernel, BLOCK_SIZE
 
 # ===-------------------------------------------------------------------===#
 # Buffer
@@ -44,12 +43,7 @@ struct Buffer(Copyable, Movable, Writable):
     def ones(ctx: DeviceContext, shape: List[Int]) raises -> Self:
         var size = Self._compute_size(shape)
         var dev_buf = ctx.enqueue_create_buffer[DType.float32](size)
-        ctx.enqueue_function[ones_kernel](
-            dev_buf.unsafe_ptr(),
-            size,
-            grid_dim=ceildiv(size, BLOCK_SIZE),
-            block_dim=BLOCK_SIZE,
-        )
+        dev_buf.enqueue_fill(1.0)
         return Self(dev_buf^, shape.copy(), size)
 
     @staticmethod

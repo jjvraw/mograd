@@ -3,7 +3,7 @@ from std.gpu.host import DeviceContext
 
 from mograd.op import OpRef, OpType
 from mograd.buffer import Buffer
-from mograd.kernels import add_kernel, mul_kernel, BLOCK_SIZE
+from mograd.runtime.native.kernels import add_kernel, mul_kernel, BLOCK_SIZE
 from mograd.pattern_matcher import Rule, Pat
 from mograd.runtime import Runtime
 from mograd.scheduler import Scheduler, ExecFn

@@ -27,12 +27,3 @@ def mul_kernel(
     var tid = global_idx.x
     if tid < size:
         c[tid] = a[tid] * b[tid]
-
-
-def ones_kernel(
-    c: UnsafePointer[Float32, MutAnyOrigin],
-    size: Int,
-):
-    var tid = global_idx.x
-    if tid < size:
-        c[tid] = 1.0
