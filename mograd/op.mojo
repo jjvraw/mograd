@@ -1,5 +1,6 @@
 from std.memory import ArcPointer
 from std.hashlib.hasher import Hasher
+from std.utils import Variant
 
 from mograd.buffer import Buffer
 
@@ -49,14 +50,16 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
 # ===-------------------------------------------------------------------===#
 
 
+comptime AttrVal = Variant[Float32, String]
+
+
 struct Op(Copyable, Movable, Writable):
     var op_type: OpType
     var shape: List[Int]
     var dtype: DType
     var srcs: List[OpRef]
     var buf: Optional[Buffer]
-    var attrs: List[Float32]
-    var str_attrs: List[String]
+    var attrs: Dict[String, AttrVal]
 
     def __init__(
         out self,
@@ -70,8 +73,7 @@ struct Op(Copyable, Movable, Writable):
         self.dtype = dtype
         self.srcs = srcs^
         self.buf = Optional[Buffer](None)
-        self.attrs = []
-        self.str_attrs = []
+        self.attrs = {}
 
     def __init__(
         out self,
@@ -86,8 +88,7 @@ struct Op(Copyable, Movable, Writable):
         self.dtype = dtype
         self.srcs = srcs^
         self.buf = buf^
-        self.attrs = []
-        self.str_attrs = []
+        self.attrs = {}
 
     def __init__(
         out self,
@@ -95,7 +96,7 @@ struct Op(Copyable, Movable, Writable):
         var shape: List[Int],
         dtype: DType,
         var srcs: List[OpRef],
-        var attrs: List[Float32],
+        var attrs: Dict[String, AttrVal],
     ):
         self.op_type = op_type
         self.shape = shape^
@@ -103,23 +104,6 @@ struct Op(Copyable, Movable, Writable):
         self.srcs = srcs^
         self.buf = Optional[Buffer](None)
         self.attrs = attrs^
-        self.str_attrs = []
-
-    def __init__(
-        out self,
-        op_type: OpType,
-        var shape: List[Int],
-        dtype: DType,
-        var srcs: List[OpRef],
-        var str_attrs: List[String],
-    ):
-        self.op_type = op_type
-        self.shape = shape^
-        self.dtype = dtype
-        self.srcs = srcs^
-        self.buf = Optional[Buffer](None)
-        self.attrs = []
-        self.str_attrs = str_attrs^
 
     def __str__(self) -> String:
         return self.op_type._name
@@ -163,11 +147,8 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     def srcs(ref self) -> ref[self._ptr[].srcs] List[OpRef]:
         return self._ptr[].srcs
 
-    def attrs(ref self) -> ref[self._ptr[].attrs] List[Float32]:
+    def attrs(ref self) -> ref[self._ptr[].attrs] Dict[String, AttrVal]:
         return self._ptr[].attrs
-
-    def str_attrs(ref self) -> ref[self._ptr[].str_attrs] List[String]:
-        return self._ptr[].str_attrs
 
     def __add__(self, rhs: OpRef) -> OpRef:
         return OpRef(

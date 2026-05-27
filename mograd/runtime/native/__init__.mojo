@@ -209,7 +209,8 @@ def disk_exec(
     var size = 1
     for d in node.shape():
         size *= d
-    var bytes = Path(node.str_attrs()[0]).read_bytes()
+    var path_attr = node.attrs()["path"]
+    var bytes = Path(path_attr[String]).read_bytes()
     var float_ptr = bytes.unsafe_ptr().bitcast[Float32]()
     var data = List[Float32]()
     data.reserve(size)
@@ -224,9 +225,12 @@ def uniform_exec(
     var size = 1
     for d in node.shape():
         size *= d
-    var low = node.attrs()[0]
-    var high = node.attrs()[1]
-    var seed = UInt32(Int(node.attrs()[2]))
+    var low_attr = node.attrs()["low"]
+    var high_attr = node.attrs()["high"]
+    var seed_attr = node.attrs()["seed"]
+    var low = low_attr[Float32]
+    var high = high_attr[Float32]
+    var seed = UInt32(Int(seed_attr[Float32]))
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
     ctx.enqueue_function[uniform_kernel](
         out_buf.unsafe_ptr(),

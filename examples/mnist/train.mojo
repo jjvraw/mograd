@@ -7,7 +7,6 @@ def main() raises:
     var ctx = DeviceContext()
 
     var data = mnist(ctx)
-    print("MNIST loaded (deferred)")
 
     var batch_size = 4
     var dummy = List[Float32]()
@@ -30,4 +29,3 @@ def main() raises:
     for i in range(len(grads)):
         var g = grads[i].value()
         print("grad", i, "shape:", g.shape[0], "x", g.shape[1])
-    print("backward pass OK")

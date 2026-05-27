@@ -6,10 +6,10 @@ from mograd.data.lazy_loader import LazyLoader
 
 @fieldwise_init
 struct MNISTData(Copyable, Movable):
-    var x_train: Tensor  # [60000, 784] float32
-    var y_train: Tensor  # [60000] float32
-    var x_test: Tensor  # [10000, 784] float32
-    var y_test: Tensor  # [10000] float32
+    var x_train: Tensor  # [60000, 784]
+    var y_train: Tensor  # [60000]
+    var x_test: Tensor  # [10000, 784]
+    var y_test: Tensor  # [10000]
 
 
 comptime _BASE = "https://storage.googleapis.com/cvdf-datasets/mnist/"

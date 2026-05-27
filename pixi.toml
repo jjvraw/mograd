@@ -11,7 +11,7 @@ name = "mograd"
 version = "0.0.0"
 
 [package.build]
-backend = { name = "pixi-build-mojo", version = "0.1.*" }
+backend = { name = "pixi-build-mojo", version = "*" }
 
 [package.build-dependencies]
 mojo-compiler = "*"
@@ -22,7 +22,7 @@ mojo-compiler = "*"
 [dependencies]
 mojo = ">=1.0.0b2.dev2026050306,<2"
 mograd = { path = "." }
-numpy = "*" # LazyLoader.
+numpy = "*" # (LazyLoader)
 
 
 [tasks]

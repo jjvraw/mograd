@@ -1,7 +1,7 @@
 from std.memory import ArcPointer
 from std.gpu.host import DeviceContext
 
-from mograd.op import Op, OpRef, OpType
+from mograd.op import AttrVal, Op, OpRef, OpType
 from mograd.buffer import Buffer
 from mograd.runtime.native import NativeRuntime
 from mograd.grad import Grad
@@ -89,7 +89,11 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         requires_grad: Bool = False,
     ) -> Tensor:
         var srcs: List[OpRef] = []
-        var attrs: List[Float32] = [low, high, Float32(seed)]
+        var attrs: Dict[String, AttrVal] = {
+            "low": AttrVal(low),
+            "high": AttrVal(high),
+            "seed": AttrVal(Float32(seed)),
+        }
         return Tensor(
             Optional[DeviceContext](ctx),
             OpRef(
@@ -106,10 +110,10 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         dtype: DType = DType.float32,
     ) -> Tensor:
         var srcs: List[OpRef] = []
-        var str_attrs: List[String] = [path]
+        var attrs: Dict[String, AttrVal] = {"path": AttrVal(path)}
         return Tensor(
             Optional[DeviceContext](ctx),
-            OpRef(Op(OpType.DISK, shape^, dtype, srcs^, str_attrs^)),
+            OpRef(Op(OpType.DISK, shape^, dtype, srcs^, attrs^)),
         )
 
     @staticmethod
