@@ -127,11 +127,30 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
             requires_grad,
         )
 
+    @staticmethod
+    def from_buffer(ctx: DeviceContext, var buf: Buffer) -> Tensor:
+        var shape = buf.shape.copy()
+        var srcs: List[OpRef] = []
+        var opt_buf = Optional[Buffer](buf^)
+        return Tensor(
+            Optional[DeviceContext](ctx),
+            OpRef(Op(OpType.BUFFER, shape^, DType.float32, srcs^, opt_buf^)),
+        )
+
     def __add__(self, other: Self) -> Self:
         return self.add(other)
 
+    def __sub__(self, other: Self) -> Self:
+        return self + (-other)
+
     def __mul__(self, other: Self) -> Self:
         return self.mul(other)
+
+    def __mul__(self, scalar: Float32) -> Self:
+        return self.scale(scalar)
+
+    def scale(self, scalar: Float32) -> Self:
+        return Tensor(self.ctx, self.op.scale(scalar), self.requires_grad)
 
     def add(self, other: Self) -> Self:
         return Tensor(
@@ -191,6 +210,34 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
     def __matmul__(self, other: Self) -> Self:
         return self.matmul(other)
 
+    def eq(self, other: Self) -> Self:
+        return Tensor(self.ctx, self.op.eq(other.op), False)
+
+    def __eq__(self, other: Self) -> Self:
+        return self.eq(other)
+
+    def mean(self) -> Self:
+        var n = 1
+        for d in self.op.shape():
+            n *= d
+        return self.sum() * (1.0 / Float32(n))
+
+    def argmax(self) -> Self:
+        return Tensor(self.ctx, self.op.argmax(), self.requires_grad)
+
+    def cross_entropy(self, labels: Self) -> Self:
+        return Tensor(
+            self.ctx, self.op.cross_entropy(labels.op), self.requires_grad
+        )
+
+    def slice(self, start: Int, end: Int) -> Self:
+        return Tensor(self.ctx, self.op.slice(start, end), self.requires_grad)
+
+    def __getitem__(self, s: Slice) -> Self:
+        var start = s.start.value() if s.start else 0
+        var end = s.end.value() if s.end else self.op.shape()[0]
+        return self.slice(start, end)
+
     def transpose(self) -> Self:
         return Tensor(self.ctx, self.op.transpose(), self.requires_grad)
 
@@ -221,6 +268,41 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
                     )
                 )
         return result^
+
+    def gradient(
+        mut self, targets: List[Tensor], var gradient: Optional[Tensor] = None
+    ) raises -> List[Tensor]:
+        var initial_grad: OpRef
+        if gradient:
+            initial_grad = gradient.take().op
+        else:
+            initial_grad = Self.ones_like(self).op
+        var target_ops: List[OpRef] = [t.op for t in targets]
+
+        var grads = Grad.compute(self.op, initial_grad, target_ops)
+
+        var result = List[Tensor]()
+        for i in range(len(grads)):
+            if grads[i]:
+                result.append(Tensor(self.ctx, grads[i].value()))
+            else:
+                if not self.ctx:
+                    raise Error("gradient requires a device context")
+                result.append(
+                    Self.empty(
+                        self.ctx.value(),
+                        targets[i].op.shape().copy(),
+                        targets[i].op.dtype(),
+                    )
+                )
+        return result^
+
+    def item(self) raises -> Float32:
+        var buf = self.value()
+        var result = Float32(0)
+        with buf.buf().map_to_host() as host:
+            result = host.unsafe_ptr()[0]
+        return result
 
     def value(self) raises -> Buffer:
         return NativeRuntime.run(self.op, self.ctx)

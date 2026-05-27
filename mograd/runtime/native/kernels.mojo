@@ -219,6 +219,106 @@ def uniform_kernel(
         dst[tid] = low + (Float32(s) / Float32(4294967296.0)) * (high - low)
 
 
+def eq_kernel(
+    a: UnsafePointer[Float32, MutAnyOrigin],
+    b: UnsafePointer[Float32, MutAnyOrigin],
+    dst: UnsafePointer[Float32, MutAnyOrigin],
+    size: Int,
+):
+    var tid = global_idx.x
+    if tid < size:
+        dst[tid] = Float32(1.0) if a[tid] == b[tid] else Float32(0.0)
+
+
+def argmax_rows_kernel(
+    src: UnsafePointer[Float32, MutAnyOrigin],
+    dst: UnsafePointer[Float32, MutAnyOrigin],
+    N: Int,
+    C: Int,
+):
+    var i = global_idx.x
+    if i < N:
+        var row = i * C
+        var max_val = src[row]
+        var max_idx = 0
+        for j in range(1, C):
+            if src[row + j] > max_val:
+                max_val = src[row + j]
+                max_idx = j
+        dst[i] = Float32(max_idx)
+
+
+def scale_kernel(
+    src: UnsafePointer[Float32, MutAnyOrigin],
+    dst: UnsafePointer[Float32, MutAnyOrigin],
+    scalar: Float32,
+    size: Int,
+):
+    var tid = global_idx.x
+    if tid < size:
+        dst[tid] = src[tid] * scalar
+
+
+def cross_entropy_kernel(
+    logits: UnsafePointer[Float32, MutAnyOrigin],
+    labels: UnsafePointer[Float32, MutAnyOrigin],
+    dst: UnsafePointer[Float32, MutAnyOrigin],
+    N: Int,
+    C: Int,
+):
+    var i = global_idx.x
+    if i < N:
+        var row = i * C
+        var max_val = logits[row]
+        for j in range(1, C):
+            if logits[row + j] > max_val:
+                max_val = logits[row + j]
+        var sum_exp = Float32(0.0)
+        for j in range(C):
+            sum_exp += exp(logits[row + j] - max_val)
+        var label = Int(labels[i])
+        var log_prob = logits[row + label] - max_val - log(sum_exp)
+        _ = Atomic.fetch_add(dst, -log_prob / Float32(N))
+
+
+def cross_entropy_grad_kernel(
+    logits: UnsafePointer[Float32, MutAnyOrigin],
+    labels: UnsafePointer[Float32, MutAnyOrigin],
+    upstream: UnsafePointer[Float32, MutAnyOrigin],
+    dst: UnsafePointer[Float32, MutAnyOrigin],
+    N: Int,
+    C: Int,
+):
+    var tid = global_idx.x
+    if tid < N * C:
+        var i = tid // C
+        var j = tid % C
+        var row = i * C
+        var max_val = logits[row]
+        for k in range(1, C):
+            if logits[row + k] > max_val:
+                max_val = logits[row + k]
+        var sum_exp = Float32(0.0)
+        for k in range(C):
+            sum_exp += exp(logits[row + k] - max_val)
+        var sm = exp(logits[row + j] - max_val) / sum_exp
+        var label = Int(labels[i])
+        var one_hot = Float32(1.0) if j == label else Float32(0.0)
+        dst[tid] = upstream[0] * (sm - one_hot) / Float32(N)
+
+
+def slice_rows_kernel(
+    src: UnsafePointer[Float32, MutAnyOrigin],
+    dst: UnsafePointer[Float32, MutAnyOrigin],
+    start_row: Int,
+    cols: Int,
+    size: Int,
+):
+    var tid = global_idx.x
+    if tid < size:
+        dst[tid] = src[start_row * cols + tid]
+
+
 def softmax_grad_kernel(
     y: UnsafePointer[Float32, MutAnyOrigin],
     upstream: UnsafePointer[Float32, MutAnyOrigin],

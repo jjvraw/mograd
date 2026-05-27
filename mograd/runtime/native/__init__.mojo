@@ -20,6 +20,12 @@ from mograd.runtime.native.kernels import (
     matmul_kernel,
     transpose_kernel,
     uniform_kernel,
+    slice_rows_kernel,
+    cross_entropy_kernel,
+    cross_entropy_grad_kernel,
+    scale_kernel,
+    argmax_rows_kernel,
+    eq_kernel,
     BLOCK_SIZE,
     TILE_DIM,
 )
@@ -322,6 +328,115 @@ def softmax_grad_exec(
     return Buffer(out_buf^, node.shape().copy(), size)
 
 
+def eq_exec(
+    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
+) raises -> Buffer:
+    var size = inputs[0].size
+    var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
+    ctx.enqueue_function[eq_kernel](
+        inputs[0].buf().unsafe_ptr(),
+        inputs[1].buf().unsafe_ptr(),
+        out_buf.unsafe_ptr(),
+        size,
+        grid_dim=ceildiv(size, BLOCK_SIZE),
+        block_dim=BLOCK_SIZE,
+    )
+    return Buffer(out_buf^, node.shape().copy(), size)
+
+
+def argmax_exec(
+    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
+) raises -> Buffer:
+    var N = inputs[0].shape[0]
+    var C = inputs[0].shape[1]
+    var out_buf = ctx.enqueue_create_buffer[DType.float32](N)
+    ctx.enqueue_function[argmax_rows_kernel](
+        inputs[0].buf().unsafe_ptr(),
+        out_buf.unsafe_ptr(),
+        N,
+        C,
+        grid_dim=ceildiv(N, BLOCK_SIZE),
+        block_dim=BLOCK_SIZE,
+    )
+    return Buffer(out_buf^, [N], N)
+
+
+def scale_exec(
+    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
+) raises -> Buffer:
+    var size = inputs[0].size
+    var scalar = node.attrs()["scalar"][Float32]
+    var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
+    ctx.enqueue_function[scale_kernel](
+        inputs[0].buf().unsafe_ptr(),
+        out_buf.unsafe_ptr(),
+        scalar,
+        size,
+        grid_dim=ceildiv(size, BLOCK_SIZE),
+        block_dim=BLOCK_SIZE,
+    )
+    return Buffer(out_buf^, node.shape().copy(), size)
+
+
+def cross_entropy_exec(
+    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
+) raises -> Buffer:
+    var N = inputs[0].shape[0]
+    var C = inputs[0].shape[1]
+    var out_buf = ctx.enqueue_create_buffer[DType.float32](1)
+    out_buf.enqueue_fill(0.0)
+    ctx.enqueue_function[cross_entropy_kernel](
+        inputs[0].buf().unsafe_ptr(),
+        inputs[1].buf().unsafe_ptr(),
+        out_buf.unsafe_ptr(),
+        N,
+        C,
+        grid_dim=ceildiv(N, BLOCK_SIZE),
+        block_dim=BLOCK_SIZE,
+    )
+    return Buffer(out_buf^, [1], 1)
+
+
+def cross_entropy_grad_exec(
+    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
+) raises -> Buffer:
+    var N = inputs[0].shape[0]
+    var C = inputs[0].shape[1]
+    var size = N * C
+    var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
+    ctx.enqueue_function[cross_entropy_grad_kernel](
+        inputs[0].buf().unsafe_ptr(),
+        inputs[1].buf().unsafe_ptr(),
+        inputs[2].buf().unsafe_ptr(),
+        out_buf.unsafe_ptr(),
+        N,
+        C,
+        grid_dim=ceildiv(size, BLOCK_SIZE),
+        block_dim=BLOCK_SIZE,
+    )
+    return Buffer(out_buf^, [N, C], size)
+
+
+def slice_exec(
+    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
+) raises -> Buffer:
+    var start = Int(node.attrs()["start"][Float32])
+    var cols = inputs[0].size // inputs[0].shape[0]
+    var rows = node.shape()[0]
+    var size = rows * cols
+    var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
+    ctx.enqueue_function[slice_rows_kernel](
+        inputs[0].buf().unsafe_ptr(),
+        out_buf.unsafe_ptr(),
+        start,
+        cols,
+        size,
+        grid_dim=ceildiv(size, BLOCK_SIZE),
+        block_dim=BLOCK_SIZE,
+    )
+    return Buffer(out_buf^, node.shape().copy(), size)
+
+
 struct NativeRuntime(Runtime):
     @staticmethod
     def run(root: OpRef, ctx: Optional[DeviceContext]) raises -> Buffer:
@@ -346,5 +461,11 @@ struct NativeRuntime(Runtime):
                 Rule(Pat(OpType.TRANSPOSE), transpose_exec),
                 Rule(Pat(OpType.UNIFORM), uniform_exec),
                 Rule(Pat(OpType.DISK), disk_exec),
+                Rule(Pat(OpType.SLICE), slice_exec),
+                Rule(Pat(OpType.CROSS_ENTROPY), cross_entropy_exec),
+                Rule(Pat(OpType.CROSS_ENTROPY_GRAD), cross_entropy_grad_exec),
+                Rule(Pat(OpType.SCALE), scale_exec),
+                Rule(Pat(OpType.ARGMAX), argmax_exec),
+                Rule(Pat(OpType.EQ), eq_exec),
             ]
         ].run(root, ctx.value())

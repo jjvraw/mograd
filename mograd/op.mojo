@@ -34,6 +34,12 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime TRANSPOSE = OpType(17, "TRANSPOSE")
     comptime UNIFORM = OpType(18, "UNIFORM")
     comptime DISK = OpType(19, "DISK")
+    comptime SLICE = OpType(20, "SLICE")
+    comptime CROSS_ENTROPY = OpType(21, "CROSS_ENTROPY")
+    comptime CROSS_ENTROPY_GRAD = OpType(22, "CROSS_ENTROPY_GRAD")
+    comptime SCALE = OpType(23, "SCALE")
+    comptime ARGMAX = OpType(24, "ARGMAX")
+    comptime EQ = OpType(25, "EQ")
 
     def __hash__[H: Hasher](self, mut hasher: H):
         hasher.update(self._value)
@@ -212,6 +218,34 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
                 [self, rhs],
             )
         )
+
+    def eq(self, other: OpRef) -> OpRef:
+        return OpRef(
+            Op(OpType.EQ, self.shape().copy(), self.dtype(), [self, other])
+        )
+
+    def argmax(self) -> OpRef:
+        return OpRef(Op(OpType.ARGMAX, [self.shape()[0]], self.dtype(), [self]))
+
+    def scale(self, scalar: Float32) -> OpRef:
+        var attrs: Dict[String, AttrVal] = {"scalar": AttrVal(scalar)}
+        return OpRef(
+            Op(OpType.SCALE, self.shape().copy(), self.dtype(), [self], attrs^)
+        )
+
+    def cross_entropy(self, labels: OpRef) -> OpRef:
+        return OpRef(
+            Op(OpType.CROSS_ENTROPY, [1], self.dtype(), [self, labels])
+        )
+
+    def slice(self, start: Int, end: Int) -> OpRef:
+        var new_shape = self.shape().copy()
+        new_shape[0] = end - start
+        var attrs: Dict[String, AttrVal] = {
+            "start": AttrVal(Float32(start)),
+            "end": AttrVal(Float32(end)),
+        }
+        return OpRef(Op(OpType.SLICE, new_shape^, self.dtype(), [self], attrs^))
 
     def transpose(self) -> OpRef:
         return OpRef(

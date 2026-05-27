@@ -22,10 +22,10 @@ struct Scheduler[rules: List[Rule[ExecFn]]]:
 
         for i in range(len(topo)):
             var node = topo[i]
-            if node.op_type() == OpType.BUFFER:
-                if not node.op().buf:
-                    raise Error("uninitialized BUFFER node")
+            if node.op().buf:
                 bufs[node] = node.op().buf.value().copy()
+            elif node.op_type() == OpType.BUFFER:
+                raise Error("uninitialized BUFFER node")
             else:
                 var inputs = List[Buffer]()
                 for j in range(len(node.srcs())):
@@ -33,7 +33,9 @@ struct Scheduler[rules: List[Rule[ExecFn]]]:
                 var rule = pm.match(node)
                 if not rule:
                     raise Error("no exec rule for op: " + node.op_type()._name)
-                bufs[node] = rule.value()(node, inputs, ctx)
+                var result = rule.value()(node, inputs, ctx)
+                node.op().buf = Optional[Buffer](result.copy())
+                bufs[node] = result^
 
         ctx.synchronize()
         return bufs[root].copy()

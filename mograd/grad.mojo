@@ -86,6 +86,29 @@ def reshape_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     ]
 
 
+def scale_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    var scalar = node.attrs()["scalar"][Float32]
+    return [upstream.scale(scalar)]
+
+
+def cross_entropy_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    var logits = node.srcs()[0]
+    var labels = node.srcs()[1]
+    var grad_logits = OpRef(
+        Op(
+            OpType.CROSS_ENTROPY_GRAD,
+            logits.shape().copy(),
+            node.dtype(),
+            [logits, labels, upstream],
+        )
+    )
+    # labels have no meaningful gradient; return a broadcast of upstream as a dummy
+    var dummy = OpRef(
+        Op(OpType.SUM_GRAD, labels.shape().copy(), node.dtype(), [upstream])
+    )
+    return [grad_logits, dummy]
+
+
 def softmax_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     # node is the SOFTMAX output y, pass it as first src so exec gets y as inputs[0]
     return [
@@ -129,6 +152,8 @@ struct Grad:
                 Rule(Pat(OpType.SUM), sum_grad),
                 Rule(Pat(OpType.RESHAPE), reshape_grad),
                 Rule(Pat(OpType.MATMUL), matmul_grad),
+                Rule(Pat(OpType.CROSS_ENTROPY), cross_entropy_grad),
+                Rule(Pat(OpType.SCALE), scale_grad),
                 Rule(Pat(OpType.TRANSPOSE), transpose_grad),
             ],
         ]()
