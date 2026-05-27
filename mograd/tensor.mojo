@@ -99,6 +99,20 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         )
 
     @staticmethod
+    def disk(
+        ctx: DeviceContext,
+        path: String,
+        var shape: List[Int],
+        dtype: DType = DType.float32,
+    ) -> Tensor:
+        var srcs: List[OpRef] = []
+        var str_attrs: List[String] = [path]
+        return Tensor(
+            Optional[DeviceContext](ctx),
+            OpRef(Op(OpType.DISK, shape^, dtype, srcs^, str_attrs^)),
+        )
+
+    @staticmethod
     def ones_like(other: Tensor, requires_grad: Bool = False) raises -> Tensor:
         if not other.ctx:
             raise Error("ones_like requires a device context")

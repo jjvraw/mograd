@@ -32,6 +32,7 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime MATMUL = OpType(16, "MATMUL")
     comptime TRANSPOSE = OpType(17, "TRANSPOSE")
     comptime UNIFORM = OpType(18, "UNIFORM")
+    comptime DISK = OpType(19, "DISK")
 
     def __hash__[H: Hasher](self, mut hasher: H):
         hasher.update(self._value)
@@ -55,6 +56,7 @@ struct Op(Copyable, Movable, Writable):
     var srcs: List[OpRef]
     var buf: Optional[Buffer]
     var attrs: List[Float32]
+    var str_attrs: List[String]
 
     def __init__(
         out self,
@@ -69,6 +71,7 @@ struct Op(Copyable, Movable, Writable):
         self.srcs = srcs^
         self.buf = Optional[Buffer](None)
         self.attrs = []
+        self.str_attrs = []
 
     def __init__(
         out self,
@@ -84,6 +87,7 @@ struct Op(Copyable, Movable, Writable):
         self.srcs = srcs^
         self.buf = buf^
         self.attrs = []
+        self.str_attrs = []
 
     def __init__(
         out self,
@@ -99,6 +103,23 @@ struct Op(Copyable, Movable, Writable):
         self.srcs = srcs^
         self.buf = Optional[Buffer](None)
         self.attrs = attrs^
+        self.str_attrs = []
+
+    def __init__(
+        out self,
+        op_type: OpType,
+        var shape: List[Int],
+        dtype: DType,
+        var srcs: List[OpRef],
+        var str_attrs: List[String],
+    ):
+        self.op_type = op_type
+        self.shape = shape^
+        self.dtype = dtype
+        self.srcs = srcs^
+        self.buf = Optional[Buffer](None)
+        self.attrs = []
+        self.str_attrs = str_attrs^
 
     def __str__(self) -> String:
         return self.op_type._name
@@ -144,6 +165,9 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
 
     def attrs(ref self) -> ref[self._ptr[].attrs] List[Float32]:
         return self._ptr[].attrs
+
+    def str_attrs(ref self) -> ref[self._ptr[].str_attrs] List[String]:
+        return self._ptr[].str_attrs
 
     def __add__(self, rhs: OpRef) -> OpRef:
         return OpRef(

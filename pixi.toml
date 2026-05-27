@@ -22,8 +22,10 @@ mojo-compiler = "*"
 [dependencies]
 mojo = ">=1.0.0b2.dev2026050306,<2"
 mograd = { path = "." }
+numpy = "*" # LazyLoader.
 
 
 [tasks]
+format = { cmd = "mojo format ."}
 
 

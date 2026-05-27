@@ -1,5 +1,6 @@
 from std.math import ceildiv
 from std.gpu.host import DeviceContext
+from std.pathlib import Path
 
 from mograd.op import OpRef, OpType
 from mograd.buffer import Buffer
@@ -202,6 +203,21 @@ def transpose_exec(
     return Buffer(out_buf^, [N, M], M * N)
 
 
+def disk_exec(
+    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
+) raises -> Buffer:
+    var size = 1
+    for d in node.shape():
+        size *= d
+    var bytes = Path(node.str_attrs()[0]).read_bytes()
+    var float_ptr = bytes.unsafe_ptr().bitcast[Float32]()
+    var data = List[Float32]()
+    data.reserve(size)
+    for i in range(size):
+        data.append(float_ptr[i])
+    return Buffer.from_data(ctx, data, node.shape().copy())
+
+
 def uniform_exec(
     node: OpRef, inputs: List[Buffer], ctx: DeviceContext
 ) raises -> Buffer:
@@ -325,5 +341,6 @@ struct NativeRuntime(Runtime):
                 Rule(Pat(OpType.MATMUL), matmul_exec),
                 Rule(Pat(OpType.TRANSPOSE), transpose_exec),
                 Rule(Pat(OpType.UNIFORM), uniform_exec),
+                Rule(Pat(OpType.DISK), disk_exec),
             ]
         ].run(root, ctx.value())
