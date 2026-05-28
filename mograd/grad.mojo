@@ -103,9 +103,7 @@ def cross_entropy_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
         )
     )
     # labels have no meaningful gradient; return a broadcast of upstream as a dummy
-    var dummy = OpRef(
-        Op(OpType.SUM_GRAD, labels.shape().copy(), node.dtype(), [upstream])
-    )
+    var dummy = OpRef(Op(OpType.SUM_GRAD, labels.shape().copy(), node.dtype(), [upstream]))
     return [grad_logits, dummy]
 
 

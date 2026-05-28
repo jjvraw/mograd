@@ -38,9 +38,7 @@ struct LazyLoader:
         self._convert_idx(gz_path, out_path, is_images)
         return out_path
 
-    def _convert_idx(
-        self, gz_path: String, out_path: String, is_images: Bool
-    ) raises:
+    def _convert_idx(self, gz_path: String, out_path: String, is_images: Bool) raises:
         var gzip = Python.import_module("gzip")
         var np = Python.import_module("numpy")
 

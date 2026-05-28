@@ -26,7 +26,7 @@ numpy = "*" # (LazyLoader)
 
 
 [tasks]
-format = { cmd = "mojo format ."}
+format = { cmd = "mojo format -l 110 ."}
 
 # Tests
 test-grad = { cmd = "mojo tests/test_grad.mojo"}

@@ -40,6 +40,7 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime SCALE = OpType(23, "SCALE")
     comptime ARGMAX = OpType(24, "ARGMAX")
     comptime EQ = OpType(25, "EQ")
+    comptime FULL = OpType(26, "FULL")
 
     def __hash__[H: Hasher](self, mut hasher: H):
         hasher.update(self._value)
@@ -157,19 +158,13 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return self._ptr[].attrs
 
     def __add__(self, rhs: OpRef) -> OpRef:
-        return OpRef(
-            Op(OpType.ADD, self.shape().copy(), self.dtype(), [self, rhs])
-        )
+        return OpRef(Op(OpType.ADD, self.shape().copy(), self.dtype(), [self, rhs]))
 
     def __mul__(self, rhs: OpRef) -> OpRef:
-        return OpRef(
-            Op(OpType.MUL, self.shape().copy(), self.dtype(), [self, rhs])
-        )
+        return OpRef(Op(OpType.MUL, self.shape().copy(), self.dtype(), [self, rhs]))
 
     def __truediv__(self, rhs: OpRef) -> OpRef:
-        return OpRef(
-            Op(OpType.DIV, self.shape().copy(), self.dtype(), [self, rhs])
-        )
+        return OpRef(Op(OpType.DIV, self.shape().copy(), self.dtype(), [self, rhs]))
 
     def __neg__(self) -> OpRef:
         return OpRef(Op(OpType.NEG, self.shape().copy(), self.dtype(), [self]))
@@ -178,9 +173,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return OpRef(Op(OpType.RELU, self.shape().copy(), self.dtype(), [self]))
 
     def softmax(self) -> OpRef:
-        return OpRef(
-            Op(OpType.SOFTMAX, self.shape().copy(), self.dtype(), [self])
-        )
+        return OpRef(Op(OpType.SOFTMAX, self.shape().copy(), self.dtype(), [self]))
 
     def exp(self) -> OpRef:
         return OpRef(Op(OpType.EXP, self.shape().copy(), self.dtype(), [self]))
@@ -220,23 +213,17 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         )
 
     def eq(self, other: OpRef) -> OpRef:
-        return OpRef(
-            Op(OpType.EQ, self.shape().copy(), self.dtype(), [self, other])
-        )
+        return OpRef(Op(OpType.EQ, self.shape().copy(), self.dtype(), [self, other]))
 
     def argmax(self) -> OpRef:
         return OpRef(Op(OpType.ARGMAX, [self.shape()[0]], self.dtype(), [self]))
 
     def scale(self, scalar: Float32) -> OpRef:
         var attrs: Dict[String, AttrVal] = {"scalar": AttrVal(scalar)}
-        return OpRef(
-            Op(OpType.SCALE, self.shape().copy(), self.dtype(), [self], attrs^)
-        )
+        return OpRef(Op(OpType.SCALE, self.shape().copy(), self.dtype(), [self], attrs^))
 
     def cross_entropy(self, labels: OpRef) -> OpRef:
-        return OpRef(
-            Op(OpType.CROSS_ENTROPY, [1], self.dtype(), [self, labels])
-        )
+        return OpRef(Op(OpType.CROSS_ENTROPY, [1], self.dtype(), [self, labels]))
 
     def slice(self, start: Int, end: Int) -> OpRef:
         var new_shape = self.shape().copy()

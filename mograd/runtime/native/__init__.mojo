@@ -38,9 +38,7 @@ from mograd.scheduler import Scheduler, ExecFn
 # ===-------------------------------------------------------------------===#
 
 
-def add_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def add_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var c_buf = ctx.enqueue_create_buffer[DType.float32](size)
     ctx.enqueue_function[add_kernel](
@@ -54,9 +52,7 @@ def add_exec(
     return Buffer(c_buf^, node.shape().copy(), size)
 
 
-def mul_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def mul_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var c_buf = ctx.enqueue_create_buffer[DType.float32](size)
     ctx.enqueue_function[mul_kernel](
@@ -70,9 +66,7 @@ def mul_exec(
     return Buffer(c_buf^, node.shape().copy(), size)
 
 
-def exp_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def exp_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
     ctx.enqueue_function[exp_kernel](
@@ -85,9 +79,7 @@ def exp_exec(
     return Buffer(out_buf^, node.shape().copy(), size)
 
 
-def log_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def log_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
     ctx.enqueue_function[log_kernel](
@@ -100,9 +92,7 @@ def log_exec(
     return Buffer(out_buf^, node.shape().copy(), size)
 
 
-def neg_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def neg_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
     ctx.enqueue_function[neg_kernel](
@@ -115,9 +105,7 @@ def neg_exec(
     return Buffer(out_buf^, node.shape().copy(), size)
 
 
-def div_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def div_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
     ctx.enqueue_function[div_kernel](
@@ -131,9 +119,7 @@ def div_exec(
     return Buffer(out_buf^, node.shape().copy(), size)
 
 
-def sum_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def sum_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](1)
     out_buf.enqueue_fill(0.0)
@@ -147,9 +133,7 @@ def sum_exec(
     return Buffer(out_buf^, [1], 1)
 
 
-def sum_grad_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def sum_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = 1
     for i in range(len(node.shape())):
         size *= node.shape()[i]
@@ -164,17 +148,13 @@ def sum_grad_exec(
     return Buffer(out_buf^, node.shape().copy(), size)
 
 
-def reshape_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def reshape_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var b = inputs[0].copy()
     b.shape = node.shape().copy()
     return b^
 
 
-def matmul_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def matmul_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var M = inputs[0].shape[0]
     var K = inputs[0].shape[1]
     var N = inputs[1].shape[1]
@@ -192,9 +172,7 @@ def matmul_exec(
     return Buffer(out_buf^, [M, N], M * N)
 
 
-def transpose_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def transpose_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var M = inputs[0].shape[0]
     var N = inputs[0].shape[1]
     var out_buf = ctx.enqueue_create_buffer[DType.float32](M * N)
@@ -209,9 +187,7 @@ def transpose_exec(
     return Buffer(out_buf^, [N, M], M * N)
 
 
-def disk_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def disk_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = 1
     for d in node.shape():
         size *= d
@@ -225,9 +201,17 @@ def disk_exec(
     return Buffer.from_data(ctx, data, node.shape().copy())
 
 
-def uniform_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def full_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
+    var size = 1
+    for d in node.shape():
+        size *= d
+    var fill_value = node.attrs()["value"][Float32]
+    var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
+    out_buf.enqueue_fill(fill_value)
+    return Buffer(out_buf^, node.shape().copy(), size)
+
+
+def uniform_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = 1
     for d in node.shape():
         size *= d
@@ -250,9 +234,7 @@ def uniform_exec(
     return Buffer(out_buf^, node.shape().copy(), size)
 
 
-def relu_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def relu_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
     ctx.enqueue_function[relu_kernel](
@@ -265,9 +247,7 @@ def relu_exec(
     return Buffer(out_buf^, node.shape().copy(), size)
 
 
-def relu_grad_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def relu_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
     ctx.enqueue_function[relu_grad_kernel](
@@ -281,17 +261,11 @@ def relu_grad_exec(
     return Buffer(out_buf^, node.shape().copy(), size)
 
 
-def softmax_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def softmax_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     if size > BLOCK_SIZE:
         raise Error(
-            "softmax: size "
-            + String(size)
-            + " exceeds single-block limit ("
-            + String(BLOCK_SIZE)
-            + ")"
+            "softmax: size " + String(size) + " exceeds single-block limit (" + String(BLOCK_SIZE) + ")"
         )
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
     ctx.enqueue_function[softmax_kernel](
@@ -304,17 +278,11 @@ def softmax_exec(
     return Buffer(out_buf^, node.shape().copy(), size)
 
 
-def softmax_grad_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def softmax_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     if size > BLOCK_SIZE:
         raise Error(
-            "softmax_grad: size "
-            + String(size)
-            + " exceeds single-block limit ("
-            + String(BLOCK_SIZE)
-            + ")"
+            "softmax_grad: size " + String(size) + " exceeds single-block limit (" + String(BLOCK_SIZE) + ")"
         )
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
     ctx.enqueue_function[softmax_grad_kernel](
@@ -328,9 +296,7 @@ def softmax_grad_exec(
     return Buffer(out_buf^, node.shape().copy(), size)
 
 
-def eq_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def eq_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
     ctx.enqueue_function[eq_kernel](
@@ -344,9 +310,7 @@ def eq_exec(
     return Buffer(out_buf^, node.shape().copy(), size)
 
 
-def argmax_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def argmax_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var N = inputs[0].shape[0]
     var C = inputs[0].shape[1]
     var out_buf = ctx.enqueue_create_buffer[DType.float32](N)
@@ -361,9 +325,7 @@ def argmax_exec(
     return Buffer(out_buf^, [N], N)
 
 
-def scale_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def scale_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var scalar = node.attrs()["scalar"][Float32]
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
@@ -378,9 +340,7 @@ def scale_exec(
     return Buffer(out_buf^, node.shape().copy(), size)
 
 
-def cross_entropy_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def cross_entropy_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var N = inputs[0].shape[0]
     var C = inputs[0].shape[1]
     var out_buf = ctx.enqueue_create_buffer[DType.float32](1)
@@ -397,9 +357,7 @@ def cross_entropy_exec(
     return Buffer(out_buf^, [1], 1)
 
 
-def cross_entropy_grad_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def cross_entropy_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var N = inputs[0].shape[0]
     var C = inputs[0].shape[1]
     var size = N * C
@@ -417,9 +375,7 @@ def cross_entropy_grad_exec(
     return Buffer(out_buf^, [N, C], size)
 
 
-def slice_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def slice_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var start = Int(node.attrs()["start"][Float32])
     var cols = inputs[0].size // inputs[0].shape[0]
     var rows = node.shape()[0]
@@ -467,5 +423,6 @@ struct NativeRuntime(Runtime):
                 Rule(Pat(OpType.SCALE), scale_exec),
                 Rule(Pat(OpType.ARGMAX), argmax_exec),
                 Rule(Pat(OpType.EQ), eq_exec),
+                Rule(Pat(OpType.FULL), full_exec),
             ]
         ].run(root, ctx.value())

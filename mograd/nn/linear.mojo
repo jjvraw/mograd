@@ -11,9 +11,7 @@ from mograd.tensor import Tensor
 struct Linear(Copyable, ImplicitlyCopyable, Movable):
     var in_features: Int
     var out_features: Int
-    var _weight: ArcPointer[
-        Optional[Tensor]
-    ]  # [out_features, in_features], lazy init
+    var _weight: ArcPointer[Optional[Tensor]]  # [out_features, in_features], lazy init
 
     def __init__(out self, in_features: Int, out_features: Int):
         self.in_features = in_features

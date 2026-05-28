@@ -42,12 +42,8 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         requires_grad: Bool = False,
     ) raises:
         var b = Buffer.from_data(ctx, data, shape.copy())
-        var srcs: List[OpRef] = []
-        var buf = Optional[Buffer](b^)
         self.ctx = ctx
-        self.op = OpRef(
-            Op(OpType.BUFFER, shape.copy(), DType.float32, srcs^, buf^)
-        )
+        self.op = OpRef(Op(OpType.BUFFER, shape.copy(), DType.float32, [], b^))
         self.requires_grad = requires_grad
         self._grad = ArcPointer(Optional[Tensor](None))
 
@@ -63,13 +59,7 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         requires_grad: Bool = False,
     ) raises -> Tensor:
         var b = Buffer.empty(ctx, shape.copy())
-        var srcs: List[OpRef] = []
-        var buf = Optional[Buffer](b^)
-        return Tensor(
-            Optional[DeviceContext](ctx),
-            OpRef(Op(OpType.BUFFER, shape.copy(), dtype, srcs^, buf^)),
-            requires_grad,
-        )
+        return Tensor(ctx, OpRef(Op(OpType.BUFFER, shape.copy(), dtype, [], b^)), requires_grad)
 
     @staticmethod
     def ones(
@@ -79,13 +69,7 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         requires_grad: Bool = False,
     ) raises -> Tensor:
         var b = Buffer.ones(ctx, shape.copy())
-        var srcs: List[OpRef] = []
-        var buf = Optional[Buffer](b^)
-        return Tensor(
-            Optional[DeviceContext](ctx),
-            OpRef(Op(OpType.BUFFER, shape.copy(), dtype, srcs^, buf^)),
-            requires_grad,
-        )
+        return Tensor(ctx, OpRef(Op(OpType.BUFFER, shape.copy(), dtype, [], b^)), requires_grad)
 
     @staticmethod
     def uniform(
@@ -96,16 +80,10 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         seed: UInt32 = 42,
         requires_grad: Bool = False,
     ) -> Tensor:
-        var srcs: List[OpRef] = []
-        var attrs: Dict[String, AttrVal] = {
-            "low": AttrVal(low),
-            "high": AttrVal(high),
-            "seed": AttrVal(Float32(seed)),
-        }
         return Tensor(
-            Optional[DeviceContext](ctx),
+            ctx,
             OpRef(
-                Op(OpType.UNIFORM, shape.copy(), DType.float32, srcs^, attrs^)
+                Op(OpType.UNIFORM, shape.copy(), DType.float32, [], {"low": low, "high": high, "seed": seed})
             ),
             requires_grad,
         )
@@ -117,36 +95,29 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         var shape: List[Int],
         dtype: DType = DType.float32,
     ) -> Tensor:
-        var srcs: List[OpRef] = []
-        var attrs: Dict[String, AttrVal] = {"path": AttrVal(path)}
+        return Tensor(ctx, OpRef(Op(OpType.DISK, shape^, dtype, [], {"path": path})))
+
+    @staticmethod
+    def full(
+        ctx: DeviceContext,
+        shape: List[Int],
+        fill_value: Float32,
+        requires_grad: Bool = False,
+    ) -> Tensor:
         return Tensor(
-            Optional[DeviceContext](ctx),
-            OpRef(Op(OpType.DISK, shape^, dtype, srcs^, attrs^)),
+            ctx, OpRef(Op(OpType.FULL, shape.copy(), DType.float32, [], {"value": fill_value})), requires_grad
         )
 
     @staticmethod
     def ones_like(other: Tensor, requires_grad: Bool = False) raises -> Tensor:
-        if not other.ctx:
-            raise Error("ones_like requires a device context")
-        return Tensor.ones(
-            other.ctx.value(),
-            other.op.shape().copy(),
-            other.op.dtype(),
-            requires_grad,
-        )
+        return Tensor.ones(other.ctx.value(), other.op.shape().copy(), other.op.dtype(), requires_grad)
 
     @staticmethod
     def from_buffer(ctx: DeviceContext, var buf: Buffer) -> Tensor:
-        var shape = buf.shape.copy()
-        var srcs: List[OpRef] = []
-        var opt_buf = Optional[Buffer](buf^)
-        return Tensor(
-            Optional[DeviceContext](ctx),
-            OpRef(Op(OpType.BUFFER, shape^, DType.float32, srcs^, opt_buf^)),
-        )
+        return Tensor(ctx, OpRef(Op(OpType.BUFFER, buf.shape.copy(), DType.float32, [], buf^)))
 
     # ===-------------------------------------------------------------------===#
-    # Shape and indexing methods
+    # Layout transformative operations
     # ===-------------------------------------------------------------------===#
 
     def shape(self) -> List[Int]:
@@ -167,18 +138,24 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         return self.slice(start, end)
 
     # ===-------------------------------------------------------------------===#
-    # Elementwise operations
+    # Pointwise operations
     # ===-------------------------------------------------------------------===#
 
     def __add__(self, other: Self) -> Self:
         return self.add(other)
 
+    def __add__(self, scalar: Float32) -> Self:
+        return self.add(scalar)
+
+    def __radd__(self, scalar: Float32) -> Self:
+        return self.add(scalar)
+
     def add(self, other: Self) -> Self:
-        return Tensor(
-            self.ctx,
-            self.op + other.op,
-            self.requires_grad or other.requires_grad,
-        )
+        return Tensor(self.ctx, self.op + other.op, self.requires_grad or other.requires_grad)
+
+    def add(self, scalar: Float32) -> Self:
+        var scalar_op = OpRef(Op(OpType.FULL, self.op.shape().copy(), DType.float32, [], {"value": scalar}))
+        return Tensor(self.ctx, self.op + scalar_op, self.requires_grad)
 
     def __sub__(self, other: Self) -> Self:
         return self + (-other)
@@ -193,24 +170,19 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         return self.mul(other)
 
     def mul(self, other: Self) -> Self:
-        return Tensor(
-            self.ctx,
-            self.op * other.op,
-            self.requires_grad or other.requires_grad,
-        )
+        return Tensor(self.ctx, self.op * other.op, self.requires_grad or other.requires_grad)
 
     def __mul__(self, scalar: Float32) -> Self:
+        return self.scale(scalar)
+
+    def __rmul__(self, scalar: Float32) -> Self:
         return self.scale(scalar)
 
     def scale(self, scalar: Float32) -> Self:
         return Tensor(self.ctx, self.op.scale(scalar), self.requires_grad)
 
     def __truediv__(self, other: Self) -> Self:
-        return Tensor(
-            self.ctx,
-            self.op / other.op,
-            self.requires_grad or other.requires_grad,
-        )
+        return Tensor(self.ctx, self.op / other.op, self.requires_grad or other.requires_grad)
 
     def exp(self) -> Self:
         return Tensor(self.ctx, self.op.exp(), self.requires_grad)
@@ -248,11 +220,7 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         return self.matmul(other)
 
     def matmul(self, other: Self) -> Self:
-        return Tensor(
-            self.ctx,
-            self.op.matmul(other.op),
-            self.requires_grad or other.requires_grad,
-        )
+        return Tensor(self.ctx, self.op.matmul(other.op), self.requires_grad or other.requires_grad)
 
     # ===-------------------------------------------------------------------===#
     # Comparison operations
@@ -269,17 +237,13 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def cross_entropy(self, labels: Self) -> Self:
-        return Tensor(
-            self.ctx, self.op.cross_entropy(labels.op), self.requires_grad
-        )
+        return Tensor(self.ctx, self.op.cross_entropy(labels.op), self.requires_grad)
 
     # ===-------------------------------------------------------------------===#
     # Autograd
     # ===-------------------------------------------------------------------===#
 
-    def gradient(
-        mut self, *targets: Tensor, var gradient: Optional[Tensor] = None
-    ) raises -> List[Tensor]:
+    def gradient(mut self, *targets: Tensor, var gradient: Optional[Tensor] = None) raises -> List[Tensor]:
         var initial_grad: OpRef
         if gradient:
             initial_grad = gradient.take().op

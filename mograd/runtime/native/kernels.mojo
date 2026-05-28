@@ -103,9 +103,7 @@ def sum_kernel(
 ):
     var tid = thread_idx.x
     var gtid = block_idx.x * block_dim.x + tid
-    var shared = stack_allocation[
-        BLOCK_SIZE, Scalar[DType.float32], address_space=AddressSpace.SHARED
-    ]()
+    var shared = stack_allocation[BLOCK_SIZE, Scalar[DType.float32], address_space=AddressSpace.SHARED]()
     shared[tid] = x[gtid] if gtid < size else Float32(0.0)
     barrier()
 
@@ -165,9 +163,7 @@ def softmax_kernel(
     size: Int,
 ):
     var tid = thread_idx.x
-    var shared = stack_allocation[
-        BLOCK_SIZE, Scalar[DType.float32], address_space=AddressSpace.SHARED
-    ]()
+    var shared = stack_allocation[BLOCK_SIZE, Scalar[DType.float32], address_space=AddressSpace.SHARED]()
 
     shared[tid] = x[tid] if tid < size else Float32(-1e38)
     barrier()
@@ -326,9 +322,7 @@ def softmax_grad_kernel(
     size: Int,
 ):
     var tid = thread_idx.x
-    var shared = stack_allocation[
-        BLOCK_SIZE, Scalar[DType.float32], address_space=AddressSpace.SHARED
-    ]()
+    var shared = stack_allocation[BLOCK_SIZE, Scalar[DType.float32], address_space=AddressSpace.SHARED]()
 
     shared[tid] = y[tid] * upstream[tid] if tid < size else Float32(0.0)
     barrier()

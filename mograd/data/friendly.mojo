@@ -15,9 +15,7 @@ struct MNISTData(Copyable, Movable):
 comptime _BASE = "https://storage.googleapis.com/cvdf-datasets/mnist/"
 
 
-def mnist(
-    ctx: DeviceContext, cache_dir: String = "~/.mograd/datasets"
-) raises -> MNISTData:
+def mnist(ctx: DeviceContext, cache_dir: String = "~/.mograd/datasets") raises -> MNISTData:
     var loader = LazyLoader(cache_dir)
 
     var x_train_path = loader.ensure_cached_idx(

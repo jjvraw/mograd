@@ -8,9 +8,7 @@ from mograd.pattern_matcher import Rule, PatternMatcher
 # Scheduler
 # ===-------------------------------------------------------------------===#
 
-comptime ExecFn = def(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) thin raises -> Buffer
+comptime ExecFn = def(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) thin raises -> Buffer
 
 
 struct Scheduler[rules: List[Rule[ExecFn]]]:

@@ -11,10 +11,7 @@ def assert_allclose(
     var vals = actual.to_list()
     if len(vals) != len(expected):
         raise Error(
-            "size mismatch: tensor has "
-            + String(len(vals))
-            + " elements, expected "
-            + String(len(expected))
+            "size mismatch: tensor has " + String(len(vals)) + " elements, expected " + String(len(expected))
         )
     for i in range(len(expected)):
         if abs(vals[i] - expected[i]) >= tol:
@@ -29,6 +26,14 @@ def assert_allclose(
                 + String(tol)
                 + ")"
             )
+
+
+def assert_allclose(
+    actual: Tensor,
+    expected: Tensor,
+    tol: Float32 = 1e-5,
+) raises:
+    assert_allclose(actual, expected.to_list(), tol=tol)
 
 
 def assert_close(actual: Tensor, expected: Float32, tol: Float32 = 1e-5) raises:
