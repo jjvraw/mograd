@@ -19,6 +19,10 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
     # https://github.com/modular/modular/issues/3293
     var _grad: ArcPointer[Optional[Tensor]]
 
+    # ===-------------------------------------------------------------------===#
+    # Life cycle methods
+    # ===-------------------------------------------------------------------===#
+
     def __init__(
         out self,
         ctx: Optional[DeviceContext],
@@ -46,6 +50,10 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         )
         self.requires_grad = requires_grad
         self._grad = ArcPointer(Optional[Tensor](None))
+
+    # ===-------------------------------------------------------------------===#
+    # Factory methods
+    # ===-------------------------------------------------------------------===#
 
     @staticmethod
     def empty(
@@ -137,20 +145,33 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
             OpRef(Op(OpType.BUFFER, shape^, DType.float32, srcs^, opt_buf^)),
         )
 
+    # ===-------------------------------------------------------------------===#
+    # Shape and indexing methods
+    # ===-------------------------------------------------------------------===#
+
+    def shape(self) -> List[Int]:
+        return self.op.shape().copy()
+
+    def reshape(self, var shape: List[Int]) -> Self:
+        return Tensor(self.ctx, self.op.reshape(shape^), self.requires_grad)
+
+    def transpose(self) -> Self:
+        return Tensor(self.ctx, self.op.transpose(), self.requires_grad)
+
+    def slice(self, start: Int, end: Int) -> Self:
+        return Tensor(self.ctx, self.op.slice(start, end), self.requires_grad)
+
+    def __getitem__(self, s: Slice) -> Self:
+        var start = s.start.value() if s.start else 0
+        var end = s.end.value() if s.end else self.op.shape()[0]
+        return self.slice(start, end)
+
+    # ===-------------------------------------------------------------------===#
+    # Elementwise operations
+    # ===-------------------------------------------------------------------===#
+
     def __add__(self, other: Self) -> Self:
         return self.add(other)
-
-    def __sub__(self, other: Self) -> Self:
-        return self + (-other)
-
-    def __mul__(self, other: Self) -> Self:
-        return self.mul(other)
-
-    def __mul__(self, scalar: Float32) -> Self:
-        return self.scale(scalar)
-
-    def scale(self, scalar: Float32) -> Self:
-        return Tensor(self.ctx, self.op.scale(scalar), self.requires_grad)
 
     def add(self, other: Self) -> Self:
         return Tensor(
@@ -159,12 +180,30 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
             self.requires_grad or other.requires_grad,
         )
 
+    def __sub__(self, other: Self) -> Self:
+        return self + (-other)
+
+    def __neg__(self) -> Self:
+        return Tensor(self.ctx, -self.op, self.requires_grad)
+
+    def neg(self) -> Self:
+        return Tensor(self.ctx, self.op.neg(), self.requires_grad)
+
+    def __mul__(self, other: Self) -> Self:
+        return self.mul(other)
+
     def mul(self, other: Self) -> Self:
         return Tensor(
             self.ctx,
             self.op * other.op,
             self.requires_grad or other.requires_grad,
         )
+
+    def __mul__(self, scalar: Float32) -> Self:
+        return self.scale(scalar)
+
+    def scale(self, scalar: Float32) -> Self:
+        return Tensor(self.ctx, self.op.scale(scalar), self.requires_grad)
 
     def __truediv__(self, other: Self) -> Self:
         return Tensor(
@@ -173,48 +212,24 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
             self.requires_grad or other.requires_grad,
         )
 
-    def __neg__(self) -> Self:
-        return Tensor(self.ctx, -self.op, self.requires_grad)
+    def exp(self) -> Self:
+        return Tensor(self.ctx, self.op.exp(), self.requires_grad)
 
     def relu(self) -> Self:
         return Tensor(self.ctx, self.op.relu(), self.requires_grad)
 
-    def softmax(self) -> Self:
-        return Tensor(self.ctx, self.op.softmax(), self.requires_grad)
-
-    def exp(self) -> Self:
-        return Tensor(self.ctx, self.op.exp(), self.requires_grad)
-
     def log(self) -> Self:
         return Tensor(self.ctx, self.op.log(), self.requires_grad)
 
-    def neg(self) -> Self:
-        return Tensor(self.ctx, self.op.neg(), self.requires_grad)
+    def softmax(self) -> Self:
+        return Tensor(self.ctx, self.op.softmax(), self.requires_grad)
+
+    # ===-------------------------------------------------------------------===#
+    # Reduction operations
+    # ===-------------------------------------------------------------------===#
 
     def sum(self) -> Self:
         return Tensor(self.ctx, self.op.sum(), self.requires_grad)
-
-    def shape(self) -> List[Int]:
-        return self.op.shape().copy()
-
-    def reshape(self, var shape: List[Int]) -> Self:
-        return Tensor(self.ctx, self.op.reshape(shape^), self.requires_grad)
-
-    def matmul(self, other: Self) -> Self:
-        return Tensor(
-            self.ctx,
-            self.op.matmul(other.op),
-            self.requires_grad or other.requires_grad,
-        )
-
-    def __matmul__(self, other: Self) -> Self:
-        return self.matmul(other)
-
-    def eq(self, other: Self) -> Self:
-        return Tensor(self.ctx, self.op.eq(other.op), False)
-
-    def __eq__(self, other: Self) -> Self:
-        return self.eq(other)
 
     def mean(self) -> Self:
         var n = 1
@@ -225,21 +240,42 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
     def argmax(self) -> Self:
         return Tensor(self.ctx, self.op.argmax(), self.requires_grad)
 
+    # ===-------------------------------------------------------------------===#
+    # Contraction operations
+    # ===-------------------------------------------------------------------===#
+
+    def __matmul__(self, other: Self) -> Self:
+        return self.matmul(other)
+
+    def matmul(self, other: Self) -> Self:
+        return Tensor(
+            self.ctx,
+            self.op.matmul(other.op),
+            self.requires_grad or other.requires_grad,
+        )
+
+    # ===-------------------------------------------------------------------===#
+    # Comparison operations
+    # ===-------------------------------------------------------------------===#
+
+    def eq(self, other: Self) -> Self:
+        return Tensor(self.ctx, self.op.eq(other.op), False)
+
+    def __eq__(self, other: Self) -> Self:
+        return self.eq(other)
+
+    # ===-------------------------------------------------------------------===#
+    # Loss
+    # ===-------------------------------------------------------------------===#
+
     def cross_entropy(self, labels: Self) -> Self:
         return Tensor(
             self.ctx, self.op.cross_entropy(labels.op), self.requires_grad
         )
 
-    def slice(self, start: Int, end: Int) -> Self:
-        return Tensor(self.ctx, self.op.slice(start, end), self.requires_grad)
-
-    def __getitem__(self, s: Slice) -> Self:
-        var start = s.start.value() if s.start else 0
-        var end = s.end.value() if s.end else self.op.shape()[0]
-        return self.slice(start, end)
-
-    def transpose(self) -> Self:
-        return Tensor(self.ctx, self.op.transpose(), self.requires_grad)
+    # ===-------------------------------------------------------------------===#
+    # Autograd
+    # ===-------------------------------------------------------------------===#
 
     def gradient(
         mut self, *targets: Tensor, var gradient: Optional[Tensor] = None
@@ -297,13 +333,12 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
                 )
         return result^
 
-    def to_list(self) raises -> List[Float32]:
-        var result = List[Float32]()
-        var buf = self.value()
-        with buf.buf().map_to_host() as host:
-            for i in range(buf.size):
-                result.append(host.unsafe_ptr()[i])
-        return result^
+    # ===-------------------------------------------------------------------===#
+    # Device I/O
+    # ===-------------------------------------------------------------------===#
+
+    def value(self) raises -> Buffer:
+        return NativeRuntime.run(self.op, self.ctx)
 
     def item(self) raises -> Float32:
         var buf = self.value()
@@ -312,8 +347,17 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
             result = host.unsafe_ptr()[0]
         return result
 
-    def value(self) raises -> Buffer:
-        return NativeRuntime.run(self.op, self.ctx)
+    def to_list(self) raises -> List[Float32]:
+        var result = List[Float32]()
+        var buf = self.value()
+        with buf.buf().map_to_host() as host:
+            for i in range(buf.size):
+                result.append(host.unsafe_ptr()[i])
+        return result^
+
+    # ===-------------------------------------------------------------------===#
+    # Display
+    # ===-------------------------------------------------------------------===#
 
     @staticmethod
     def _str_op(op: OpRef) -> String:
