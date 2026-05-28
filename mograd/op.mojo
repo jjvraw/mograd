@@ -9,48 +9,79 @@ from mograd.buffer import Buffer
 # ===-------------------------------------------------------------------===#
 
 
-# TODO: Lets rather have a op registry that is defined and built at comptime.
-#       Main motivation here is for custom rewrites.
 @fieldwise_init
 struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
-    var _value: Int
     var _name: String
-    comptime BUFFER = OpType(1, "BUFFER")
-    comptime ONES = OpType(2, "ONES")
-    comptime ADD = OpType(3, "ADD")
-    comptime MUL = OpType(4, "MUL")
-    comptime RELU = OpType(5, "RELU")
-    comptime RELU_GRAD = OpType(6, "RELU_GRAD")
-    comptime SOFTMAX = OpType(7, "SOFTMAX")
-    comptime SOFTMAX_GRAD = OpType(8, "SOFTMAX_GRAD")
-    comptime EXP = OpType(9, "EXP")
-    comptime LOG = OpType(10, "LOG")
-    comptime NEG = OpType(11, "NEG")
-    comptime DIV = OpType(12, "DIV")
-    comptime SUM = OpType(13, "SUM")
-    comptime SUM_GRAD = OpType(14, "SUM_GRAD")
-    comptime RESHAPE = OpType(15, "RESHAPE")
-    comptime MATMUL = OpType(16, "MATMUL")
-    comptime TRANSPOSE = OpType(17, "TRANSPOSE")
-    comptime UNIFORM = OpType(18, "UNIFORM")
-    comptime DISK = OpType(19, "DISK")
-    comptime SLICE = OpType(20, "SLICE")
-    comptime CROSS_ENTROPY = OpType(21, "CROSS_ENTROPY")
-    comptime CROSS_ENTROPY_GRAD = OpType(22, "CROSS_ENTROPY_GRAD")
-    comptime SCALE = OpType(23, "SCALE")
-    comptime ARGMAX = OpType(24, "ARGMAX")
-    comptime EQ = OpType(25, "EQ")
-    comptime FULL = OpType(26, "FULL")
-    comptime RANDN = OpType(27, "RANDN")
+
+    # ===-------------------------------------------------------------------===#
+    # Leaf ops
+    # ===-------------------------------------------------------------------===#
+
+    comptime BUFFER = OpType("BUFFER")
+    comptime ONES = OpType("ONES")
+    comptime FULL = OpType("FULL")
+    comptime UNIFORM = OpType("UNIFORM")
+    comptime RANDN = OpType("RANDN")
+    comptime DISK = OpType("DISK")
+
+    # ===-------------------------------------------------------------------===#
+    # Pointwise ops
+    # ===-------------------------------------------------------------------===#
+
+    comptime ADD = OpType("ADD")
+    comptime MUL = OpType("MUL")
+    comptime DIV = OpType("DIV")
+    comptime NEG = OpType("NEG")
+    comptime SCALE = OpType("SCALE")
+    comptime EXP = OpType("EXP")
+    comptime LOG = OpType("LOG")
+    comptime RELU = OpType("RELU")
+    comptime RELU_GRAD = OpType("RELU_GRAD")
+    comptime EQ = OpType("EQ")
+
+    # ===-------------------------------------------------------------------===#
+    # Reduction ops
+    # ===-------------------------------------------------------------------===#
+
+    comptime SUM = OpType("SUM")
+    comptime SUM_GRAD = OpType("SUM_GRAD")
+    comptime SOFTMAX = OpType("SOFTMAX")
+    comptime SOFTMAX_GRAD = OpType("SOFTMAX_GRAD")
+    comptime ARGMAX = OpType("ARGMAX")
+
+    # ===-------------------------------------------------------------------===#
+    # Shape ops
+    # ===-------------------------------------------------------------------===#
+
+    comptime RESHAPE = OpType("RESHAPE")
+    comptime TRANSPOSE = OpType("TRANSPOSE")
+    comptime SLICE = OpType("SLICE")
+
+    # ===-------------------------------------------------------------------===#
+    # Contraction ops
+    # ===-------------------------------------------------------------------===#
+
+    comptime MATMUL = OpType("MATMUL")
+
+    # ===-------------------------------------------------------------------===#
+    # Loss ops
+    # ===-------------------------------------------------------------------===#
+
+    comptime CROSS_ENTROPY = OpType("CROSS_ENTROPY")
+    comptime CROSS_ENTROPY_GRAD = OpType("CROSS_ENTROPY_GRAD")
+
+    # ===-------------------------------------------------------------------===#
+    # Trait methods
+    # ===-------------------------------------------------------------------===#
 
     def __hash__[H: Hasher](self, mut hasher: H):
-        hasher.update(self._value)
+        hasher.update(self._name)
 
     def __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
+        return self._name == other._name
 
     def __ne__(self, other: Self) -> Bool:
-        return self._value != other._value
+        return self._name != other._name
 
 
 # ===-------------------------------------------------------------------===#
@@ -128,17 +159,16 @@ struct Op(Copyable, Movable, Writable):
 struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     var _ptr: ArcPointer[Op]
 
+    # ===-------------------------------------------------------------------===#
+    # Life cycle methods
+    # ===-------------------------------------------------------------------===#
+
     def __init__(out self, var op: Op):
         self._ptr = ArcPointer(op^)
 
-    def __hash__[H: Hasher](self, mut hasher: H):
-        hasher.update(Int(self._ptr.unsafe_ptr()))
-
-    def __eq__(self, other: Self) -> Bool:
-        return self._ptr.unsafe_ptr() == other._ptr.unsafe_ptr()
-
-    def __ne__(self, other: Self) -> Bool:
-        return self._ptr.unsafe_ptr() != other._ptr.unsafe_ptr()
+    # ===-------------------------------------------------------------------===#
+    # Accessors
+    # ===-------------------------------------------------------------------===#
 
     def op(ref self) -> ref[self._ptr[]] Op:
         return self._ptr[]
@@ -158,6 +188,10 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     def attrs(ref self) -> ref[self._ptr[].attrs] Dict[String, AttrVal]:
         return self._ptr[].attrs
 
+    # ===-------------------------------------------------------------------===#
+    # Pointwise operations
+    # ===-------------------------------------------------------------------===#
+
     def __add__(self, rhs: OpRef) -> OpRef:
         return OpRef(Op(OpType.ADD, self.shape().copy(), self.dtype(), [self, rhs]))
 
@@ -170,11 +204,12 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     def __neg__(self) -> OpRef:
         return OpRef(Op(OpType.NEG, self.shape().copy(), self.dtype(), [self]))
 
-    def relu(self) -> OpRef:
-        return OpRef(Op(OpType.RELU, self.shape().copy(), self.dtype(), [self]))
+    def neg(self) -> OpRef:
+        return OpRef(Op(OpType.NEG, self.shape().copy(), self.dtype(), [self]))
 
-    def softmax(self) -> OpRef:
-        return OpRef(Op(OpType.SOFTMAX, self.shape().copy(), self.dtype(), [self]))
+    def scale(self, scalar: Float32) -> OpRef:
+        var attrs: Dict[String, AttrVal] = {"scalar": AttrVal(scalar)}
+        return OpRef(Op(OpType.SCALE, self.shape().copy(), self.dtype(), [self], attrs^))
 
     def exp(self) -> OpRef:
         return OpRef(Op(OpType.EXP, self.shape().copy(), self.dtype(), [self]))
@@ -182,11 +217,28 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     def log(self) -> OpRef:
         return OpRef(Op(OpType.LOG, self.shape().copy(), self.dtype(), [self]))
 
-    def neg(self) -> OpRef:
-        return OpRef(Op(OpType.NEG, self.shape().copy(), self.dtype(), [self]))
+    def relu(self) -> OpRef:
+        return OpRef(Op(OpType.RELU, self.shape().copy(), self.dtype(), [self]))
+
+    def eq(self, other: OpRef) -> OpRef:
+        return OpRef(Op(OpType.EQ, self.shape().copy(), self.dtype(), [self, other]))
+
+    # ===-------------------------------------------------------------------===#
+    # Reduction operations
+    # ===-------------------------------------------------------------------===#
 
     def sum(self) -> OpRef:
         return OpRef(Op(OpType.SUM, [1], self.dtype(), [self]))
+
+    def softmax(self) -> OpRef:
+        return OpRef(Op(OpType.SOFTMAX, self.shape().copy(), self.dtype(), [self]))
+
+    def argmax(self) -> OpRef:
+        return OpRef(Op(OpType.ARGMAX, [self.shape()[0]], self.dtype(), [self]))
+
+    # ===-------------------------------------------------------------------===#
+    # Shape operations
+    # ===-------------------------------------------------------------------===#
 
     def reshape(self, var new_shape: List[Int]) -> OpRef:
         var neg_idx = -1
@@ -203,28 +255,15 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
             new_shape[neg_idx] = total // known_product
         return OpRef(Op(OpType.RESHAPE, new_shape^, self.dtype(), [self]))
 
-    def matmul(self, rhs: OpRef) -> OpRef:
+    def transpose(self) -> OpRef:
         return OpRef(
             Op(
-                OpType.MATMUL,
-                [self.shape()[0], rhs.shape()[1]],
+                OpType.TRANSPOSE,
+                [self.shape()[1], self.shape()[0]],
                 self.dtype(),
-                [self, rhs],
+                [self],
             )
         )
-
-    def eq(self, other: OpRef) -> OpRef:
-        return OpRef(Op(OpType.EQ, self.shape().copy(), self.dtype(), [self, other]))
-
-    def argmax(self) -> OpRef:
-        return OpRef(Op(OpType.ARGMAX, [self.shape()[0]], self.dtype(), [self]))
-
-    def scale(self, scalar: Float32) -> OpRef:
-        var attrs: Dict[String, AttrVal] = {"scalar": AttrVal(scalar)}
-        return OpRef(Op(OpType.SCALE, self.shape().copy(), self.dtype(), [self], attrs^))
-
-    def cross_entropy(self, labels: OpRef) -> OpRef:
-        return OpRef(Op(OpType.CROSS_ENTROPY, [1], self.dtype(), [self, labels]))
 
     def slice(self, start: Int, end: Int) -> OpRef:
         var new_shape = self.shape().copy()
@@ -235,15 +274,39 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         }
         return OpRef(Op(OpType.SLICE, new_shape^, self.dtype(), [self], attrs^))
 
-    def transpose(self) -> OpRef:
+    # ===-------------------------------------------------------------------===#
+    # Contraction operations
+    # ===-------------------------------------------------------------------===#
+
+    def matmul(self, rhs: OpRef) -> OpRef:
         return OpRef(
             Op(
-                OpType.TRANSPOSE,
-                [self.shape()[1], self.shape()[0]],
+                OpType.MATMUL,
+                [self.shape()[0], rhs.shape()[1]],
                 self.dtype(),
-                [self],
+                [self, rhs],
             )
         )
+
+    # ===-------------------------------------------------------------------===#
+    # Loss operations
+    # ===-------------------------------------------------------------------===#
+
+    def cross_entropy(self, labels: OpRef) -> OpRef:
+        return OpRef(Op(OpType.CROSS_ENTROPY, [1], self.dtype(), [self, labels]))
+
+    # ===-------------------------------------------------------------------===#
+    # Trait methods
+    # ===-------------------------------------------------------------------===#
+
+    def __hash__[H: Hasher](self, mut hasher: H):
+        hasher.update(Int(self._ptr.unsafe_ptr()))
+
+    def __eq__(self, other: Self) -> Bool:
+        return self._ptr.unsafe_ptr() == other._ptr.unsafe_ptr()
+
+    def __ne__(self, other: Self) -> Bool:
+        return self._ptr.unsafe_ptr() != other._ptr.unsafe_ptr()
 
     def write_to(self, mut writer: Some[Writer]):
         self._write_indented(writer, 0)
