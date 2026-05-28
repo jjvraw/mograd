@@ -80,19 +80,8 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         seed: UInt32 = 42,
         requires_grad: Bool = False,
     ) -> Tensor:
-        return Tensor(
-            ctx,
-            OpRef(
-                Op(
-                    OpType.UNIFORM,
-                    shape.copy(),
-                    DType.float32,
-                    [],
-                    {"low": low, "high": high, "seed": Float32(seed)},
-                )
-            ),
-            requires_grad,
-        )
+        attrs: Dict[String, AttrVal] = {"low": low, "high": high, "seed": Float32(seed)}
+        return Tensor(ctx, OpRef(Op(OpType.UNIFORM, shape.copy(), DType.float32, [], attrs^)), requires_grad)
 
     @staticmethod
     def randn(
@@ -103,17 +92,8 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         seed: UInt32 = 42,
         requires_grad: Bool = False,
     ) -> Tensor:
-        var srcs: List[OpRef] = []
-        var attrs: Dict[String, AttrVal] = {
-            "mean": AttrVal(mean),
-            "std": AttrVal(std),
-            "seed": AttrVal(Float32(seed)),
-        }
-        return Tensor(
-            Optional[DeviceContext](ctx),
-            OpRef(Op(OpType.RANDN, shape.copy(), DType.float32, srcs^, attrs^)),
-            requires_grad,
-        )
+        attrs: Dict[String, AttrVal] = {"mean": mean, "std": std, "seed": Float32(seed)}
+        return Tensor(ctx, OpRef(Op(OpType.RANDN, shape.copy(), DType.float32, [], attrs^)), requires_grad)
 
     @staticmethod
     def disk(
