@@ -4,6 +4,26 @@ from std.testing import TestSuite
 from mograd import Tensor, DeviceContext
 from mograd.testing import assert_allclose, assert_close
 
+# ===-------------------------------------------------------------------===#
+# Pointwise operations
+# ===-------------------------------------------------------------------===#
+
+
+def test_basic_mixed_add_sub_neg() raises:
+    var ctx = DeviceContext()
+    var a = Tensor.ones(ctx, [8, 16])
+    var b = Tensor.ones(ctx, [8, 16])
+    var c = ((a + b) * 2) - (3 * a) + (2 + b) + a - a
+    assert_allclose(c, Tensor.full(ctx, [8, 16], 4))
+
+
+def test_basic_mixed_mul_div() raises:
+    var ctx = DeviceContext()
+    var a = Tensor.ones(ctx, [8, 16])
+    var b = Tensor.full(ctx, [8, 16], 2)
+    var c = (((((a * b) + 1) * -b) * a) / a) / b
+    assert_allclose(c, Tensor.full(ctx, [8, 16], -3))
+
 
 def test_matmul() raises:
     var ctx = DeviceContext()

@@ -4,9 +4,7 @@ import mograd.nn as nn
 from model import MLP
 
 
-def accuracy(
-    mut model: MLP, x: Tensor, y: Tensor, batch_size: Int
-) raises -> Float32:
+def accuracy(mut model: MLP, x: Tensor, y: Tensor, batch_size: Int) raises -> Float32:
     var n = x.shape()[0]
     var avg_acc: Float32 = 0.0
     for step in range(n // batch_size):

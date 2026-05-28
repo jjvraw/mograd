@@ -24,12 +24,7 @@ def test_linear_lazy_init() raises:
         raise Error("weight should be initialized after first call")
     var shape = l._weight[].value().shape()
     if shape[0] != 2 or shape[1] != 4:
-        raise Error(
-            "weight shape should be [2, 4], got "
-            + String(shape[0])
-            + "x"
-            + String(shape[1])
-        )
+        raise Error("weight shape should be [2, 4], got " + String(shape[0]) + "x" + String(shape[1]))
 
 
 def test_sgd_updates_weights() raises:
@@ -69,9 +64,7 @@ def test_sgd_arc_sharing() raises:
         if abs(before[i] - after[i]) > Float32(1e-6):
             changed = True
     if not changed:
-        raise Error(
-            "opt.step should update model weights via ArcPointer sharing"
-        )
+        raise Error("opt.step should update model weights via ArcPointer sharing")
 
 
 def main() raises:

@@ -41,6 +41,7 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime ARGMAX = OpType(24, "ARGMAX")
     comptime EQ = OpType(25, "EQ")
     comptime FULL = OpType(26, "FULL")
+    comptime RANDN = OpType(27, "RANDN")
 
     def __hash__[H: Hasher](self, mut hasher: H):
         hasher.update(self._value)

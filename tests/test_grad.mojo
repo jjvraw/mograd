@@ -11,12 +11,7 @@ comptime FwdFn = def(x: Tensor) thin raises -> Tensor
 
 def numerical_grad[
     fwd: FwdFn
-](
-    ctx: DeviceContext,
-    data: List[Float32],
-    shape: List[Int],
-    eps: Float32 = 1e-3,
-) raises -> List[Float32]:
+](ctx: DeviceContext, data: List[Float32], shape: List[Int], eps: Float32 = 1e-3,) raises -> List[Float32]:
     var grads = List[Float32]()
     for i in range(len(data)):
         var d_plus = data.copy()
@@ -126,9 +121,7 @@ def test_cross_entropy_grad_row_sums() raises:
         for col in range(10):
             row_sum += grad_vals[row * 10 + col]
         if abs(row_sum) >= Float32(1e-4):
-            raise Error(
-                "CE grad row " + String(row) + " sum != 0: " + String(row_sum)
-            )
+            raise Error("CE grad row " + String(row) + " sum != 0: " + String(row_sum))
 
 
 def main() raises:

@@ -23,12 +23,14 @@ struct Linear(Copyable, ImplicitlyCopyable, Movable):
             if not x.ctx:
                 raise Error("Linear requires a device context on first call")
             var bound = sqrt(Float32(6) / Float32(self.in_features))
+            var shape = [self.out_features, self.in_features]
+            var seed = UInt32(self.out_features * self.in_features)
             self._weight[] = Tensor.uniform(
                 x.ctx.value(),
-                [self.out_features, self.in_features],
+                shape,
                 low=-bound,
                 high=bound,
-                seed=UInt32(self.out_features * self.in_features),
+                seed=seed,
                 requires_grad=True,
             )
         return x @ self._weight[].value().transpose()

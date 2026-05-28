@@ -1,7 +1,7 @@
 from std.gpu import global_idx, thread_idx, block_idx, block_dim, barrier
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
-from std.math import exp, log
+from std.math import exp, log, sqrt, cos
 from std.atomic import Atomic
 
 # ===-------------------------------------------------------------------===#
@@ -213,6 +213,29 @@ def uniform_kernel(
         s ^= s >> 17
         s ^= s << 5
         dst[tid] = low + (Float32(s) / Float32(4294967296.0)) * (high - low)
+
+
+def randn_kernel(
+    dst: UnsafePointer[Float32, MutAnyOrigin],
+    size: Int,
+    mean: Float32,
+    std: Float32,
+    seed: UInt32,
+):
+    var tid = global_idx.x
+    if tid < size:
+        var s1 = (seed ^ UInt32(2 * tid + 1)) * UInt32(2654435761)
+        s1 ^= s1 << 13
+        s1 ^= s1 >> 17
+        s1 ^= s1 << 5
+        var s2 = (seed ^ UInt32(2 * tid + 2)) * UInt32(2246822519)
+        s2 ^= s2 << 13
+        s2 ^= s2 >> 17
+        s2 ^= s2 << 5
+        var u1 = Float32(s1) / Float32(4294967296.0) + Float32(1e-7)
+        var u2 = Float32(s2) / Float32(4294967296.0)
+        var z = sqrt(-Float32(2.0) * log(u1)) * cos(Float32(6.283185307) * u2)
+        dst[tid] = mean + std * z
 
 
 def eq_kernel(

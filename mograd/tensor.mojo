@@ -83,8 +83,35 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         return Tensor(
             ctx,
             OpRef(
-                Op(OpType.UNIFORM, shape.copy(), DType.float32, [], {"low": low, "high": high, "seed": seed})
+                Op(
+                    OpType.UNIFORM,
+                    shape.copy(),
+                    DType.float32,
+                    [],
+                    {"low": low, "high": high, "seed": Float32(seed)},
+                )
             ),
+            requires_grad,
+        )
+
+    @staticmethod
+    def randn(
+        ctx: DeviceContext,
+        shape: List[Int],
+        mean: Float32 = 0.0,
+        std: Float32 = 1.0,
+        seed: UInt32 = 42,
+        requires_grad: Bool = False,
+    ) -> Tensor:
+        var srcs: List[OpRef] = []
+        var attrs: Dict[String, AttrVal] = {
+            "mean": AttrVal(mean),
+            "std": AttrVal(std),
+            "seed": AttrVal(Float32(seed)),
+        }
+        return Tensor(
+            Optional[DeviceContext](ctx),
+            OpRef(Op(OpType.RANDN, shape.copy(), DType.float32, srcs^, attrs^)),
             requires_grad,
         )
 

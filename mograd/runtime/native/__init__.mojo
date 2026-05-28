@@ -26,6 +26,7 @@ from mograd.runtime.native.kernels import (
     scale_kernel,
     argmax_rows_kernel,
     eq_kernel,
+    randn_kernel,
     BLOCK_SIZE,
     TILE_DIM,
 )
@@ -208,6 +209,26 @@ def full_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> B
     var fill_value = node.attrs()["value"][Float32]
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
     out_buf.enqueue_fill(fill_value)
+    return Buffer(out_buf^, node.shape().copy(), size)
+
+
+def randn_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
+    var size = 1
+    for d in node.shape():
+        size *= d
+    var mean = node.attrs()["mean"][Float32]
+    var std = node.attrs()["std"][Float32]
+    var seed = UInt32(Int(node.attrs()["seed"][Float32]))
+    var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
+    ctx.enqueue_function[randn_kernel](
+        out_buf.unsafe_ptr(),
+        size,
+        mean,
+        std,
+        seed,
+        grid_dim=ceildiv(size, BLOCK_SIZE),
+        block_dim=BLOCK_SIZE,
+    )
     return Buffer(out_buf^, node.shape().copy(), size)
 
 
@@ -424,5 +445,6 @@ struct NativeRuntime(Runtime):
                 Rule(Pat(OpType.ARGMAX), argmax_exec),
                 Rule(Pat(OpType.EQ), eq_exec),
                 Rule(Pat(OpType.FULL), full_exec),
+                Rule(Pat(OpType.RANDN), randn_exec),
             ]
         ].run(root, ctx.value())
