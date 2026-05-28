@@ -44,8 +44,8 @@ def mnist(ctx: DeviceContext, cache_dir: String = "~/.mograd/datasets") raises -
     )
 
     return MNISTData(
-        x_train=Tensor.disk(ctx, x_train_path, [60000, 784]),
-        y_train=Tensor.disk(ctx, y_train_path, [60000]),
-        x_test=Tensor.disk(ctx, x_test_path, [10000, 784]),
-        y_test=Tensor.disk(ctx, y_test_path, [10000]),
+        x_train=Tensor.disk(ctx, x_train_path, (60000, 784)),
+        y_train=Tensor.disk(ctx, y_train_path, (60000,)),
+        x_test=Tensor.disk(ctx, x_test_path, (10000, 784)),
+        y_test=Tensor.disk(ctx, y_test_path, (10000,)),
     )

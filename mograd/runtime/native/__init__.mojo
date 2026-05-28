@@ -50,7 +50,7 @@ def add_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Bu
         grid_dim=ceildiv(size, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
-    return Buffer(c_buf^, node.shape().copy(), size)
+    return Buffer(c_buf^, node.shape(), size)
 
 
 def mul_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
@@ -64,7 +64,7 @@ def mul_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Bu
         grid_dim=ceildiv(size, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
-    return Buffer(c_buf^, node.shape().copy(), size)
+    return Buffer(c_buf^, node.shape(), size)
 
 
 def exp_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
@@ -77,7 +77,7 @@ def exp_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Bu
         grid_dim=ceildiv(size, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
-    return Buffer(out_buf^, node.shape().copy(), size)
+    return Buffer(out_buf^, node.shape(), size)
 
 
 def log_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
@@ -90,7 +90,7 @@ def log_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Bu
         grid_dim=ceildiv(size, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
-    return Buffer(out_buf^, node.shape().copy(), size)
+    return Buffer(out_buf^, node.shape(), size)
 
 
 def neg_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
@@ -103,7 +103,7 @@ def neg_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Bu
         grid_dim=ceildiv(size, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
-    return Buffer(out_buf^, node.shape().copy(), size)
+    return Buffer(out_buf^, node.shape(), size)
 
 
 def div_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
@@ -117,7 +117,7 @@ def div_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Bu
         grid_dim=ceildiv(size, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
-    return Buffer(out_buf^, node.shape().copy(), size)
+    return Buffer(out_buf^, node.shape(), size)
 
 
 def sum_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
@@ -131,13 +131,11 @@ def sum_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Bu
         grid_dim=ceildiv(size, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
-    return Buffer(out_buf^, [1], 1)
+    return Buffer(out_buf^, (1,), 1)
 
 
 def sum_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
-    var size = 1
-    for i in range(len(node.shape())):
-        size *= node.shape()[i]
+    var size = node.shape().numel()
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
     ctx.enqueue_function[sum_grad_kernel](
         inputs[0].buf().unsafe_ptr(),
@@ -146,12 +144,12 @@ def sum_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises 
         grid_dim=ceildiv(size, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
-    return Buffer(out_buf^, node.shape().copy(), size)
+    return Buffer(out_buf^, node.shape(), size)
 
 
 def reshape_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var b = inputs[0].copy()
-    b.shape = node.shape().copy()
+    b.shape = node.shape()
     return b^
 
 
@@ -170,7 +168,7 @@ def matmul_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises ->
         grid_dim=(ceildiv(N, TILE_DIM), ceildiv(M, TILE_DIM)),
         block_dim=(TILE_DIM, TILE_DIM),
     )
-    return Buffer(out_buf^, [M, N], M * N)
+    return Buffer(out_buf^, (M, N), M * N)
 
 
 def transpose_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
@@ -185,13 +183,11 @@ def transpose_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises
         grid_dim=(ceildiv(N, TILE_DIM), ceildiv(M, TILE_DIM)),
         block_dim=(TILE_DIM, TILE_DIM),
     )
-    return Buffer(out_buf^, [N, M], M * N)
+    return Buffer(out_buf^, (N, M), M * N)
 
 
 def disk_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
-    var size = 1
-    for d in node.shape():
-        size *= d
+    var size = node.shape().numel()
     var path_attr = node.attrs()["path"]
     var bytes = Path(path_attr[String]).read_bytes()
     var float_ptr = bytes.unsafe_ptr().bitcast[Float32]()
@@ -199,23 +195,19 @@ def disk_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> B
     data.reserve(size)
     for i in range(size):
         data.append(float_ptr[i])
-    return Buffer.from_data(ctx, data, node.shape().copy())
+    return Buffer.from_data(ctx, data, node.shape())
 
 
 def full_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
-    var size = 1
-    for d in node.shape():
-        size *= d
+    var size = node.shape().numel()
     var fill_value = node.attrs()["value"][Float32]
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
     out_buf.enqueue_fill(fill_value)
-    return Buffer(out_buf^, node.shape().copy(), size)
+    return Buffer(out_buf^, node.shape(), size)
 
 
 def randn_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
-    var size = 1
-    for d in node.shape():
-        size *= d
+    var size = node.shape().numel()
     var mean = node.attrs()["mean"][Float32]
     var std = node.attrs()["std"][Float32]
     var seed = UInt32(Int(node.attrs()["seed"][Float32]))
@@ -229,13 +221,11 @@ def randn_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> 
         grid_dim=ceildiv(size, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
-    return Buffer(out_buf^, node.shape().copy(), size)
+    return Buffer(out_buf^, node.shape(), size)
 
 
 def uniform_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
-    var size = 1
-    for d in node.shape():
-        size *= d
+    var size = node.shape().numel()
     var low_attr = node.attrs()["low"]
     var high_attr = node.attrs()["high"]
     var seed_attr = node.attrs()["seed"]
@@ -252,7 +242,7 @@ def uniform_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -
         grid_dim=ceildiv(size, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
-    return Buffer(out_buf^, node.shape().copy(), size)
+    return Buffer(out_buf^, node.shape(), size)
 
 
 def relu_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
@@ -265,7 +255,7 @@ def relu_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> B
         grid_dim=ceildiv(size, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
-    return Buffer(out_buf^, node.shape().copy(), size)
+    return Buffer(out_buf^, node.shape(), size)
 
 
 def relu_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
@@ -279,7 +269,7 @@ def relu_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises
         grid_dim=ceildiv(size, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
-    return Buffer(out_buf^, node.shape().copy(), size)
+    return Buffer(out_buf^, node.shape(), size)
 
 
 def softmax_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
@@ -296,7 +286,7 @@ def softmax_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -
         grid_dim=1,
         block_dim=BLOCK_SIZE,
     )
-    return Buffer(out_buf^, node.shape().copy(), size)
+    return Buffer(out_buf^, node.shape(), size)
 
 
 def softmax_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
@@ -314,7 +304,7 @@ def softmax_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) rai
         grid_dim=1,
         block_dim=BLOCK_SIZE,
     )
-    return Buffer(out_buf^, node.shape().copy(), size)
+    return Buffer(out_buf^, node.shape(), size)
 
 
 def eq_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
@@ -328,7 +318,7 @@ def eq_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buf
         grid_dim=ceildiv(size, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
-    return Buffer(out_buf^, node.shape().copy(), size)
+    return Buffer(out_buf^, node.shape(), size)
 
 
 def argmax_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
@@ -343,7 +333,7 @@ def argmax_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises ->
         grid_dim=ceildiv(N, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
-    return Buffer(out_buf^, [N], N)
+    return Buffer(out_buf^, (N,), N)
 
 
 def scale_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
@@ -358,7 +348,7 @@ def scale_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> 
         grid_dim=ceildiv(size, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
-    return Buffer(out_buf^, node.shape().copy(), size)
+    return Buffer(out_buf^, node.shape(), size)
 
 
 def cross_entropy_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
@@ -375,7 +365,7 @@ def cross_entropy_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) ra
         grid_dim=ceildiv(N, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
-    return Buffer(out_buf^, [1], 1)
+    return Buffer(out_buf^, (1,), 1)
 
 
 def cross_entropy_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
@@ -393,7 +383,7 @@ def cross_entropy_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContex
         grid_dim=ceildiv(size, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
-    return Buffer(out_buf^, [N, C], size)
+    return Buffer(out_buf^, (N, C), size)
 
 
 def slice_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
@@ -411,7 +401,7 @@ def slice_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> 
         grid_dim=ceildiv(size, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
-    return Buffer(out_buf^, node.shape().copy(), size)
+    return Buffer(out_buf^, node.shape(), size)
 
 
 struct NativeRuntime(Runtime):

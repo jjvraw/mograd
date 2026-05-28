@@ -21,7 +21,7 @@ def relu_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
         OpRef(
             Op(
                 OpType.RELU_GRAD,
-                node.shape().copy(),
+                node.shape(),
                 node.dtype(),
                 [node.srcs()[0], upstream],
             )
@@ -113,7 +113,7 @@ def softmax_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
         OpRef(
             Op(
                 OpType.SOFTMAX_GRAD,
-                node.shape().copy(),
+                node.shape(),
                 node.dtype(),
                 [node, upstream],
             )
