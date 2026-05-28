@@ -27,5 +27,13 @@ numpy = "*" # (LazyLoader)
 
 [tasks]
 format = { cmd = "mojo format ."}
-examples = { cmd = "mojo examples/mnist/train.mojo"}
+
+# Tests
+test-grad = { cmd = "mojo tests/test_grad.mojo"}
+test-nn = { cmd = "mojo tests/test_nn.mojo"}
+test-ops = { cmd = "mojo tests/test_ops.mojo"}
+test-all = { depends-on = ["test-grad", "test-nn", "test-ops"] }
+
+# Examples
+mnist = { cmd = "mojo examples/mnist/train.mojo"}
 

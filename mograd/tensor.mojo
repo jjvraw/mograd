@@ -297,6 +297,14 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
                 )
         return result^
 
+    def to_list(self) raises -> List[Float32]:
+        var result = List[Float32]()
+        var buf = self.value()
+        with buf.buf().map_to_host() as host:
+            for i in range(buf.size):
+                result.append(host.unsafe_ptr()[i])
+        return result^
+
     def item(self) raises -> Float32:
         var buf = self.value()
         var result = Float32(0)
