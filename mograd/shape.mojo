@@ -17,43 +17,23 @@ struct Shape(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
 
     @implicit
     def __init__(out self, t: Tuple[Int]):
-        self._rank = 1
-        self._dims = InlineArray[Int, MAX_RANK](fill=0)
-        self._dims[0] = t[0]
+        self = Self(t[0])
 
     @implicit
     def __init__(out self, t: Tuple[Int, Int]):
-        self._rank = 2
-        self._dims = InlineArray[Int, MAX_RANK](fill=0)
-        self._dims[0] = t[0]
-        self._dims[1] = t[1]
+        self = Self(t[0], t[1])
 
     @implicit
     def __init__(out self, t: Tuple[Int, Int, Int]):
-        self._rank = 3
-        self._dims = InlineArray[Int, MAX_RANK](fill=0)
-        self._dims[0] = t[0]
-        self._dims[1] = t[1]
-        self._dims[2] = t[2]
+        self = Self(t[0], t[1], t[2])
 
     @implicit
     def __init__(out self, t: Tuple[Int, Int, Int, Int]):
-        self._rank = 4
-        self._dims = InlineArray[Int, MAX_RANK](fill=0)
-        self._dims[0] = t[0]
-        self._dims[1] = t[1]
-        self._dims[2] = t[2]
-        self._dims[3] = t[3]
+        self = Self(t[0], t[1], t[2], t[3])
 
     @implicit
     def __init__(out self, t: Tuple[Int, Int, Int, Int, Int]):
-        self._rank = 5
-        self._dims = InlineArray[Int, MAX_RANK](fill=0)
-        self._dims[0] = t[0]
-        self._dims[1] = t[1]
-        self._dims[2] = t[2]
-        self._dims[3] = t[3]
-        self._dims[4] = t[4]
+        self = Self(t[0], t[1], t[2], t[3], t[4])
 
     @implicit
     def __init__(out self, dims: List[Int]):
