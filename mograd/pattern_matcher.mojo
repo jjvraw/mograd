@@ -61,6 +61,10 @@ struct PatternMatcher[F: TrivialRegisterPassable, rules: List[Rule[F]]]:
         return None
 
 
+# ===-------------------------------------------------------------------===#
+# GraphUtils
+# ===-------------------------------------------------------------------===#
+
 struct GraphUtils:
     @staticmethod
     def toposort(root: OpRef) -> List[OpRef]:

@@ -21,6 +21,7 @@ mojo-compiler = "*"
 
 [dependencies]
 mojo = ">=1.0.0b2.dev2026050306,<2"
+max = ">=26.4.0.dev2026052815,<27"
 numpy = "*" # (LazyLoader)
 
 
