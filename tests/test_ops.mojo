@@ -27,9 +27,16 @@ def test_basic_mixed_mul_div() raises:
 
 def test_matmul() raises:
     var ctx = DeviceContext()
-    var a = Tensor(ctx, [Float32(1), 2, 3, 4], (2, 2))
-    var identity = Tensor(ctx, [Float32(1), 0, 0, 1], (2, 2))
-    assert_allclose(a @ identity, [Float32(1), 2, 3, 4])
+    var a = Tensor(ctx, [1, 2, 3, 4], (2, 2))
+    var identity = Tensor(ctx, [1, 0, 0, 1], (2, 2))
+    assert_allclose(a @ identity, [1, 2, 3, 4])
+
+
+def test_slice_preserves_shape_for_matmul() raises:
+    var ctx = DeviceContext()
+    var x = Tensor(ctx, [1, 2, 3, 4, 5, 6], (3, 2))
+    var identity = Tensor(ctx, [1, 0, 0, 1], (2, 2))
+    assert_allclose(x[1:3] @ identity, [Float32(3), 4, 5, 6])
 
 
 def test_softmax_sums_to_one() raises:

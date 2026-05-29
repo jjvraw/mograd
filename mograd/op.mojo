@@ -266,7 +266,12 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         )
 
     def slice(self, start: Int, end: Int) -> OpRef:
-        var new_shape = Shape(end - start)
+        var src = self.shape()
+        var new_dims = List[Int]()
+        new_dims.append(end - start)
+        for i in range(1, len(src)):
+            new_dims.append(src[i])
+        var new_shape = Shape(new_dims)
         var attrs: Dict[String, AttrVal] = {
             "start": AttrVal(Float32(start)),
             "end": AttrVal(Float32(end)),
