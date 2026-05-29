@@ -1,5 +1,5 @@
 from mograd.op import Op, OpRef, OpType
-from mograd.pattern_matcher import PatternMatcher, Rule, Pat
+from mograd.pattern_matcher import PatternMatcher, Rule, Pat, GraphUtils
 
 # ===-------------------------------------------------------------------===#
 # Grad
@@ -43,7 +43,7 @@ struct Grad:
             ],
         ]()
 
-        var topo = Self.toposort(root)
+        var topo = GraphUtils.toposort(root)
         for i in reversed(range(len(topo))):
             var node = topo[i]
             var upstream = grad.grad_map.get(node)
@@ -65,26 +65,6 @@ struct Grad:
     def accum(mut self, op: OpRef, g: OpRef) raises:
         var existing = self.grad_map.get(op)
         self.grad_map[op] = existing.value() + g if existing else g
-
-    @staticmethod
-    def toposort(root: OpRef) -> List[OpRef]:
-        var visited = Dict[OpRef, Bool]()
-        var result = List[OpRef]()
-        Self._dfs(root, visited, result)
-        return result^
-
-    @staticmethod
-    def _dfs(
-        node: OpRef,
-        mut visited: Dict[OpRef, Bool],
-        mut result: List[OpRef],
-    ):
-        if node in visited:
-            return
-        visited[node] = True
-        for i in range(len(node.srcs())):
-            Self._dfs(node.srcs()[i], visited, result)
-        result.append(node)
 
 
 # ===-------------------------------------------------------------------===#

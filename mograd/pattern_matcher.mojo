@@ -59,3 +59,25 @@ struct PatternMatcher[F: TrivialRegisterPassable, rules: List[Rule[F]]]:
                 if rule.pat.matches(node):
                     return rule.func
         return None
+
+
+struct GraphUtils:
+    @staticmethod
+    def toposort(root: OpRef) -> List[OpRef]:
+        var visited = Dict[OpRef, Bool]()
+        var result = List[OpRef]()
+        Self._dfs(root, visited, result)
+        return result^
+
+    @staticmethod
+    def _dfs(
+        node: OpRef,
+        mut visited: Dict[OpRef, Bool],
+        mut result: List[OpRef],
+    ):
+        if node in visited:
+            return
+        visited[node] = True
+        for i in range(len(node.srcs())):
+            Self._dfs(node.srcs()[i], visited, result)
+        result.append(node)
