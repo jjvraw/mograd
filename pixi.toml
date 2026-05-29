@@ -4,14 +4,14 @@ preview = ["pixi-build"]
 channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
 name = "mograd"
 platforms = ["linux-64"]
-version = "0.1.0"
+version = "0.0.0"
 
 [package]
 name = "mograd"
 version = "0.0.0"
 
 [package.build]
-backend = { name = "pixi-build-mojo", version = "*" }
+backend = { name = "pixi-build-rattler-build", version = "*" }
 
 [package.build-dependencies]
 mojo-compiler = "*"
@@ -21,7 +21,6 @@ mojo-compiler = "*"
 
 [dependencies]
 mojo = ">=1.0.0b2.dev2026050306,<2"
-mograd = { path = "." }
 numpy = "*" # (LazyLoader)
 
 
@@ -29,11 +28,10 @@ numpy = "*" # (LazyLoader)
 format = { cmd = "mojo format -l 120 ."}
 
 # Tests
-test-grad = { cmd = "mojo tests/test_grad.mojo"}
-test-nn = { cmd = "mojo tests/test_nn.mojo"}
-test-ops = { cmd = "mojo tests/test_ops.mojo"}
-test-all = { depends-on = ["test-grad", "test-nn", "test-ops"] }
+test-grad = { cmd = "mojo -I . tests/test_grad.mojo" }
+test-nn   = { cmd = "mojo -I . tests/test_nn.mojo" }
+test-ops  = { cmd = "mojo -I . tests/test_ops.mojo" }
+test-all  = { depends-on = ["test-grad", "test-nn", "test-ops"] }
 
 # Examples
-mnist = { cmd = "mojo examples/mnist/train.mojo"}
-
+mnist     = { cmd = "mojo -I . examples/mnist/train.mojo" }
