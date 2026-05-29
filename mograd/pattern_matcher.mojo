@@ -11,16 +11,29 @@ struct Rule[F: TrivialRegisterPassable](Copyable, ImplicitlyDestructible, Movabl
     var func: Self.F
 
 
+# TODO: Clean up wildcard semantics
 struct Pat(Copyable, Movable):
     var op_type: OpType
-    var srcs: List[Pat]  # empty = match any srcs
+    var srcs: List[Pat]
+    var _any_op: Bool
+
+    def __init__(out self):
+        self.op_type = OpType("")
+        self.srcs = List[Pat]()
+        self._any_op = True
 
     def __init__(out self, op_type: OpType):
         self.op_type = op_type
         self.srcs = List[Pat]()
+        self._any_op = False
+
+    def __init__(out self, op_type: OpType, var srcs: List[Pat]):
+        self.op_type = op_type
+        self.srcs = srcs^
+        self._any_op = False
 
     def matches(self, node: OpRef) -> Bool:
-        if node.op_type() != self.op_type:
+        if not self._any_op and node.op_type() != self.op_type:
             return False
         if len(self.srcs) == 0:
             return True

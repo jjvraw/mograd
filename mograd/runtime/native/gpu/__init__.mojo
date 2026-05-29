@@ -2,7 +2,11 @@ from std.math import ceildiv
 from std.gpu.host import DeviceContext
 from std.pathlib import Path
 
-from mograd.op import OpRef, OpType
+from layout import Coord, TileTensor, row_major
+from linalg.matmul import matmul
+
+from mograd.op import Op, OpRef, OpType, AttrVal
+from mograd.runtime.native.gpu.rewrites import MATMUL_T
 from mograd.buffer import Buffer
 from mograd.runtime.native.gpu.kernels import (
     add_kernel,
@@ -17,7 +21,6 @@ from mograd.runtime.native.gpu.kernels import (
     div_kernel,
     sum_kernel,
     sum_grad_kernel,
-    matmul_kernel,
     transpose_kernel,
     uniform_kernel,
     slice_rows_kernel,
@@ -35,7 +38,49 @@ from mograd.runtime import Runtime
 from mograd.scheduler import Scheduler, ExecFn
 
 # ===-------------------------------------------------------------------===#
-# Native Runtime
+# GPURuntime
+# ===-------------------------------------------------------------------===#
+
+
+struct GPURuntime(Runtime):
+    @staticmethod
+    def run(root: OpRef, ctx: Optional[DeviceContext]) raises -> Buffer:
+        if not ctx:
+            raise Error("NativeRuntime requires a DeviceContext")
+        return Scheduler[
+            [
+                Rule(Pat(OpType.ADD), add_exec),
+                Rule(Pat(OpType.MUL), mul_exec),
+                Rule(Pat(OpType.RELU), relu_exec),
+                Rule(Pat(OpType.RELU_GRAD), relu_grad_exec),
+                Rule(Pat(OpType.SOFTMAX), softmax_exec),
+                Rule(Pat(OpType.SOFTMAX_GRAD), softmax_grad_exec),
+                Rule(Pat(OpType.EXP), exp_exec),
+                Rule(Pat(OpType.LOG), log_exec),
+                Rule(Pat(OpType.NEG), neg_exec),
+                Rule(Pat(OpType.DIV), div_exec),
+                Rule(Pat(OpType.SUM), sum_exec),
+                Rule(Pat(OpType.SUM_GRAD), sum_grad_exec),
+                Rule(Pat(OpType.RESHAPE), reshape_exec),
+                Rule(Pat(OpType.MATMUL), matmul_exec),
+                Rule(Pat(MATMUL_T), matmul_t_exec),
+                Rule(Pat(OpType.TRANSPOSE), transpose_exec),
+                Rule(Pat(OpType.UNIFORM), uniform_exec),
+                Rule(Pat(OpType.DISK), disk_exec),
+                Rule(Pat(OpType.SLICE), slice_exec),
+                Rule(Pat(OpType.CROSS_ENTROPY), cross_entropy_exec),
+                Rule(Pat(OpType.CROSS_ENTROPY_GRAD), cross_entropy_grad_exec),
+                Rule(Pat(OpType.SCALE), scale_exec),
+                Rule(Pat(OpType.ARGMAX), argmax_exec),
+                Rule(Pat(OpType.EQ), eq_exec),
+                Rule(Pat(OpType.FULL), full_exec),
+                Rule(Pat(OpType.RANDN), randn_exec),
+            ]
+        ].run(root, ctx.value())
+
+
+# ===-------------------------------------------------------------------===#
+# Exec functions
 # ===-------------------------------------------------------------------===#
 
 
@@ -158,16 +203,22 @@ def matmul_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises ->
     var K = inputs[0].shape[1]
     var N = inputs[1].shape[1]
     var out_buf = ctx.enqueue_create_buffer[DType.float32](M * N)
-    ctx.enqueue_function[matmul_kernel](
-        inputs[0].buf().unsafe_ptr(),
-        inputs[1].buf().unsafe_ptr(),
-        out_buf.unsafe_ptr(),
-        M,
-        N,
-        K,
-        grid_dim=(ceildiv(N, TILE_DIM), ceildiv(M, TILE_DIM)),
-        block_dim=(TILE_DIM, TILE_DIM),
-    )
+    var a = TileTensor(inputs[0].buf().unsafe_ptr().as_any_origin(), row_major(Coord(M, K)))
+    var b = TileTensor(inputs[1].buf().unsafe_ptr().as_any_origin(), row_major(Coord(K, N)))
+    var c = TileTensor(out_buf.unsafe_ptr().as_any_origin(), row_major(Coord(M, N)))
+    matmul[target="gpu"](c, a, b, ctx)
+    return Buffer(out_buf^, (M, N), M * N)
+
+
+def matmul_t_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
+    var M = inputs[0].shape[0]
+    var K = inputs[0].shape[1]
+    var N = inputs[1].shape[0]  # B is [N, K] — original shape before transpose was removed
+    var out_buf = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a = TileTensor(inputs[0].buf().unsafe_ptr().as_any_origin(), row_major(Coord(M, K)))
+    var b = TileTensor(inputs[1].buf().unsafe_ptr().as_any_origin(), row_major(Coord(N, K)))
+    var c = TileTensor(out_buf.unsafe_ptr().as_any_origin(), row_major(Coord(M, N)))
+    matmul[target="gpu", transpose_b=True](c, a, b, ctx)
     return Buffer(out_buf^, (M, N), M * N)
 
 
@@ -398,39 +449,3 @@ def slice_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> 
         block_dim=BLOCK_SIZE,
     )
     return Buffer(out_buf^, node.shape(), size)
-
-
-struct GPURuntime(Runtime):
-    @staticmethod
-    def run(root: OpRef, ctx: Optional[DeviceContext]) raises -> Buffer:
-        if not ctx:
-            raise Error("NativeRuntime requires a DeviceContext")
-        return Scheduler[
-            [
-                Rule(Pat(OpType.ADD), add_exec),
-                Rule(Pat(OpType.MUL), mul_exec),
-                Rule(Pat(OpType.RELU), relu_exec),
-                Rule(Pat(OpType.RELU_GRAD), relu_grad_exec),
-                Rule(Pat(OpType.SOFTMAX), softmax_exec),
-                Rule(Pat(OpType.SOFTMAX_GRAD), softmax_grad_exec),
-                Rule(Pat(OpType.EXP), exp_exec),
-                Rule(Pat(OpType.LOG), log_exec),
-                Rule(Pat(OpType.NEG), neg_exec),
-                Rule(Pat(OpType.DIV), div_exec),
-                Rule(Pat(OpType.SUM), sum_exec),
-                Rule(Pat(OpType.SUM_GRAD), sum_grad_exec),
-                Rule(Pat(OpType.RESHAPE), reshape_exec),
-                Rule(Pat(OpType.MATMUL), matmul_exec),
-                Rule(Pat(OpType.TRANSPOSE), transpose_exec),
-                Rule(Pat(OpType.UNIFORM), uniform_exec),
-                Rule(Pat(OpType.DISK), disk_exec),
-                Rule(Pat(OpType.SLICE), slice_exec),
-                Rule(Pat(OpType.CROSS_ENTROPY), cross_entropy_exec),
-                Rule(Pat(OpType.CROSS_ENTROPY_GRAD), cross_entropy_grad_exec),
-                Rule(Pat(OpType.SCALE), scale_exec),
-                Rule(Pat(OpType.ARGMAX), argmax_exec),
-                Rule(Pat(OpType.EQ), eq_exec),
-                Rule(Pat(OpType.FULL), full_exec),
-                Rule(Pat(OpType.RANDN), randn_exec),
-            ]
-        ].run(root, ctx.value())

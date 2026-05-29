@@ -128,23 +128,6 @@ def sum_grad_kernel(
         dst[tid] = upstream[0]
 
 
-def matmul_kernel(
-    a: UnsafePointer[Float32, MutAnyOrigin],
-    b: UnsafePointer[Float32, MutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    M: Int,
-    N: Int,
-    K: Int,
-):
-    var row = global_idx.y
-    var col = global_idx.x
-    if row < M and col < N:
-        var acc = Float32(0.0)
-        for k in range(K):
-            acc += a[row * K + k] * b[k * N + col]
-        dst[row * N + col] = acc
-
-
 def transpose_kernel(
     a: UnsafePointer[Float32, MutAnyOrigin],
     dst: UnsafePointer[Float32, MutAnyOrigin],
