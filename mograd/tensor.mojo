@@ -112,9 +112,7 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         fill_value: Float32,
         requires_grad: Bool = False,
     ) -> Tensor:
-        return Tensor(
-            ctx, OpRef(Op(OpType.FULL, shape, DType.float32, [], {"value": fill_value})), requires_grad
-        )
+        return Tensor(ctx, OpRef(Op(OpType.FULL, shape, DType.float32, [], {"value": fill_value})), requires_grad)
 
     @staticmethod
     def ones_like(other: Tensor, requires_grad: Bool = False) raises -> Tensor:
@@ -275,9 +273,7 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
                 )
         return result^
 
-    def gradient(
-        mut self, targets: List[Tensor], var gradient: Optional[Tensor] = None
-    ) raises -> List[Tensor]:
+    def gradient(mut self, targets: List[Tensor], var gradient: Optional[Tensor] = None) raises -> List[Tensor]:
         var initial_grad: OpRef
         if gradient:
             initial_grad = gradient.take().op

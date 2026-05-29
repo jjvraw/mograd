@@ -24,9 +24,7 @@ struct LazyLoader:
 
         return dest
 
-    def ensure_cached_idx(
-        self, url: String, gz_name: String, out_name: String, is_images: Bool
-    ) raises -> String:
+    def ensure_cached_idx(self, url: String, gz_name: String, out_name: String, is_images: Bool) raises -> String:
         var os = Python.import_module("os")
         var expanded = String(os.path.expanduser(self.cache_dir))
         var out_path = expanded + "/" + out_name

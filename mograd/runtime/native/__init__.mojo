@@ -275,9 +275,7 @@ def relu_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises
 def softmax_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     if size > BLOCK_SIZE:
-        raise Error(
-            "softmax: size " + String(size) + " exceeds single-block limit (" + String(BLOCK_SIZE) + ")"
-        )
+        raise Error("softmax: size " + String(size) + " exceeds single-block limit (" + String(BLOCK_SIZE) + ")")
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
     ctx.enqueue_function[softmax_kernel](
         inputs[0].buf().unsafe_ptr(),
@@ -292,9 +290,7 @@ def softmax_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -
 def softmax_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     if size > BLOCK_SIZE:
-        raise Error(
-            "softmax_grad: size " + String(size) + " exceeds single-block limit (" + String(BLOCK_SIZE) + ")"
-        )
+        raise Error("softmax_grad: size " + String(size) + " exceeds single-block limit (" + String(BLOCK_SIZE) + ")")
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
     ctx.enqueue_function[softmax_grad_kernel](
         inputs[0].buf().unsafe_ptr(),
