@@ -3,7 +3,7 @@ from std.gpu.host import DeviceContext
 from mograd.op import OpRef
 from mograd.buffer import Buffer
 
-from .native import NativeRuntime
+from .native import GPURuntime
 
 # ===-------------------------------------------------------------------===#
 # Runtime

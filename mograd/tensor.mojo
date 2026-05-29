@@ -4,7 +4,7 @@ from std.gpu.host import DeviceContext
 from mograd.op import AttrVal, Op, OpRef, OpType
 from mograd.shape import Shape
 from mograd.buffer import Buffer
-from mograd.runtime.native import NativeRuntime
+from mograd.runtime.native import GPURuntime
 from mograd.grad import Grad
 
 # ===-------------------------------------------------------------------===#
@@ -304,7 +304,7 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def value(self) raises -> Buffer:
-        return NativeRuntime.run(self.op, self.ctx)
+        return GPURuntime.run(self.op, self.ctx)
 
     def item(self) raises -> Float32:
         var buf = self.value()
