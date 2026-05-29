@@ -8,119 +8,6 @@ from mograd.pattern_matcher import PatternMatcher, Rule, Pat
 comptime GradFn = def(node: OpRef, upstream: OpRef) thin raises -> List[OpRef]
 
 
-def mul_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    return [node.srcs()[1] * upstream, node.srcs()[0] * upstream]
-
-
-def add_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    return [upstream] * len(node.srcs())
-
-
-def relu_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    return [
-        OpRef(
-            Op(
-                OpType.RELU_GRAD,
-                node.shape(),
-                node.dtype(),
-                [node.srcs()[0], upstream],
-            )
-        )
-    ]
-
-
-def exp_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    return [node * upstream]
-
-
-def log_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    return [upstream / node.srcs()[0]]
-
-
-def neg_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    return [-upstream]
-
-
-def div_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    var a = node.srcs()[0]
-    var b = node.srcs()[1]
-    return [upstream / b, -(upstream * a / (b * b))]
-
-
-def sum_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    return [
-        OpRef(
-            Op(
-                OpType.SUM_GRAD,
-                node.srcs()[0].shape().copy(),
-                node.dtype(),
-                [upstream],
-            )
-        )
-    ]
-
-
-def matmul_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    var a = node.srcs()[0]
-    var b = node.srcs()[1]
-    return [
-        upstream.matmul(b.transpose()),
-        a.transpose().matmul(upstream),
-    ]
-
-
-def transpose_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    return [upstream.transpose()]
-
-
-def reshape_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    return [
-        OpRef(
-            Op(
-                OpType.RESHAPE,
-                node.srcs()[0].shape().copy(),
-                node.dtype(),
-                [upstream],
-            )
-        )
-    ]
-
-
-def scale_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    var scalar = node.attrs()["scalar"][Float32]
-    return [upstream.scale(scalar)]
-
-
-def cross_entropy_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    var logits = node.srcs()[0]
-    var labels = node.srcs()[1]
-    var grad_logits = OpRef(
-        Op(
-            OpType.CROSS_ENTROPY_GRAD,
-            logits.shape().copy(),
-            node.dtype(),
-            [logits, labels, upstream],
-        )
-    )
-    # labels have no meaningful gradient; return a broadcast of upstream as a dummy
-    var dummy = OpRef(Op(OpType.SUM_GRAD, labels.shape().copy(), node.dtype(), [upstream]))
-    return [grad_logits, dummy]
-
-
-def softmax_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    # node is the SOFTMAX output y, pass it as first src so exec gets y as inputs[0]
-    return [
-        OpRef(
-            Op(
-                OpType.SOFTMAX_GRAD,
-                node.shape(),
-                node.dtype(),
-                [node, upstream],
-            )
-        )
-    ]
-
-
 struct Grad:
     var grad_map: Dict[OpRef, OpRef]
 
@@ -198,3 +85,73 @@ struct Grad:
         for i in range(len(node.srcs())):
             Self._dfs(node.srcs()[i], visited, result)
         result.append(node)
+
+
+# ===-------------------------------------------------------------------===#
+# Grad functions
+# ===-------------------------------------------------------------------===#
+
+
+def mul_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    return [node.srcs()[1] * upstream, node.srcs()[0] * upstream]
+
+
+def add_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    return [upstream] * len(node.srcs())
+
+
+def relu_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    return [OpRef(Op(OpType.RELU_GRAD, node.shape(), node.dtype(), [node.srcs()[0], upstream]))]
+
+
+def exp_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    return [node * upstream]
+
+
+def log_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    return [upstream / node.srcs()[0]]
+
+
+def neg_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    return [-upstream]
+
+
+def div_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    var a = node.srcs()[0]
+    var b = node.srcs()[1]
+    return [upstream / b, -(upstream * a / (b * b))]
+
+
+def sum_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    return [OpRef(Op(OpType.SUM_GRAD, node.srcs()[0].shape().copy(), node.dtype(), [upstream]))]
+
+
+def matmul_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    var a = node.srcs()[0]
+    var b = node.srcs()[1]
+    return [upstream.matmul(b.transpose()), a.transpose().matmul(upstream)]
+
+
+def transpose_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    return [upstream.transpose()]
+
+
+def reshape_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    return [OpRef(Op(OpType.RESHAPE, node.srcs()[0].shape(), node.dtype(), [upstream]))]
+
+
+def scale_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    var scalar = node.attrs()["scalar"][Float32]
+    return [upstream.scale(scalar)]
+
+
+def cross_entropy_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    var logits = node.srcs()[0]
+    var labels = node.srcs()[1]
+    var grad_logits = OpRef(Op(OpType.CROSS_ENTROPY_GRAD, logits.shape(), node.dtype(), [logits, labels, upstream]))
+    var dummy = OpRef(Op(OpType.SUM_GRAD, labels.shape(), node.dtype(), [upstream]))
+    return [grad_logits, dummy]
+
+
+def softmax_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    return [OpRef(Op(OpType.SOFTMAX_GRAD, node.shape(), node.dtype(), [node, upstream]))]
