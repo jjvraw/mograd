@@ -232,24 +232,6 @@ def eq_kernel(
         dst[tid] = Float32(1.0) if a[tid] == b[tid] else Float32(0.0)
 
 
-def argmax_rows_kernel(
-    src: UnsafePointer[Float32, MutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    N: Int,
-    C: Int,
-):
-    var i = global_idx.x
-    if i < N:
-        var row = i * C
-        var max_val = src[row]
-        var max_idx = 0
-        for j in range(1, C):
-            if src[row + j] > max_val:
-                max_val = src[row + j]
-                max_idx = j
-        dst[i] = Float32(max_idx)
-
-
 def scale_kernel(
     src: UnsafePointer[Float32, MutAnyOrigin],
     dst: UnsafePointer[Float32, MutAnyOrigin],

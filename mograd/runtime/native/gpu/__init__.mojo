@@ -4,6 +4,7 @@ from std.pathlib import Path
 
 from layout import Coord, TileTensor, row_major
 from linalg.matmul import matmul
+from nn.argmaxmin_gpu import argmax_gpu
 
 from mograd.op import Op, OpRef, OpType, AttrVal
 from mograd.runtime.native.gpu.rewrites import MATMUL_T
@@ -27,7 +28,6 @@ from mograd.runtime.native.gpu.kernels import (
     cross_entropy_kernel,
     cross_entropy_grad_kernel,
     scale_kernel,
-    argmax_rows_kernel,
     eq_kernel,
     randn_kernel,
     BLOCK_SIZE,
@@ -214,7 +214,7 @@ def matmul_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises ->
 def matmul_t_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var M = inputs[0].shape[0]
     var K = inputs[0].shape[1]
-    var N = inputs[1].shape[0]  # B is [N, K] — original shape before transpose was removed
+    var N = inputs[1].shape[0]
     var out_buf = ctx.enqueue_create_buffer[DType.float32](M * N)
     var a = TileTensor(inputs[0].buf().unsafe_ptr().as_any_origin(), row_major(Coord(M, K)))
     var b = TileTensor(inputs[1].buf().unsafe_ptr().as_any_origin(), row_major(Coord(N, K)))
@@ -373,14 +373,9 @@ def argmax_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises ->
     var N = inputs[0].shape[0]
     var C = inputs[0].shape[1]
     var out_buf = ctx.enqueue_create_buffer[DType.float32](N)
-    ctx.enqueue_function[argmax_rows_kernel](
-        inputs[0].buf().unsafe_ptr(),
-        out_buf.unsafe_ptr(),
-        N,
-        C,
-        grid_dim=ceildiv(N, BLOCK_SIZE),
-        block_dim=BLOCK_SIZE,
-    )
+    var inp = TileTensor(inputs[0].buf().unsafe_ptr().as_any_origin(), row_major(Coord(N, C)))
+    var out = TileTensor(out_buf.unsafe_ptr().as_any_origin(), row_major(Coord(N, 1)))
+    argmax_gpu[DType.float32, DType.float32](ctx, inp, out)
     return Buffer(out_buf^, (N,), N)
 
 
