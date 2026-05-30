@@ -29,10 +29,11 @@ numpy = "*" # (LazyLoader)
 format = { cmd = "mojo format -l 120 ."}
 
 # Tests
-test-grad = { cmd = "mojo -I . tests/test_grad.mojo" }
-test-nn   = { cmd = "mojo -I . tests/test_nn.mojo" }
-test-ops  = { cmd = "mojo -I . tests/test_ops.mojo" }
-test-all  = { depends-on = ["test-grad", "test-nn", "test-ops"] }
+test-grad     = { cmd = "mojo -I . tests/test_grad.mojo" }
+test-nn       = { cmd = "mojo -I . tests/test_nn.mojo" }
+test-ops      = { cmd = "mojo -I . tests/test_ops.mojo" }
+test-rewrites = { cmd = "mojo -I . tests/test_rewrites.mojo" }
+test-all      = { depends-on = ["test-grad", "test-nn", "test-ops", "test-rewrites"] }
 
 # Examples
 mnist     = { cmd = "mojo -I . examples/mnist/train.mojo" }

@@ -46,7 +46,8 @@ struct GPURuntime(Runtime):
     @staticmethod
     def run(root: OpRef, ctx: Optional[DeviceContext]) raises -> Buffer:
         if not ctx:
-            raise Error("NativeRuntime requires a DeviceContext")
+            raise Error("GPURuntime requires a DeviceContext")
+
         return Scheduler[
             [
                 Rule(Pat(OpType.ADD), add_exec),
