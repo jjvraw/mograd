@@ -248,30 +248,10 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def gradient(mut self, *targets: Tensor, var gradient: Optional[Tensor] = None) raises -> List[Tensor]:
-        var initial_grad: OpRef
-        if gradient:
-            initial_grad = gradient.take().op
-        else:
-            initial_grad = Self.ones_like(self).op
-        target_ops: List[OpRef] = [t.op for t in targets]
-
-        var grads = Grad.compute(self.op, initial_grad, target_ops)
-
-        var result = List[Tensor]()
-        for i in range(len(grads)):
-            if grads[i]:
-                result.append(Tensor(self.ctx, grads[i].value()))
-            else:
-                if not self.ctx:
-                    raise Error("gradient requires a device context")
-                result.append(
-                    Self.empty(
-                        self.ctx.value(),
-                        targets[i].op.shape(),
-                        targets[i].op.dtype(),
-                    )
-                )
-        return result^
+        var target_list = List[Tensor]()
+        for t in targets:
+            target_list.append(t)
+        return self.gradient(target_list, gradient=gradient^)
 
     def gradient(mut self, targets: List[Tensor], var gradient: Optional[Tensor] = None) raises -> List[Tensor]:
         var initial_grad: OpRef
