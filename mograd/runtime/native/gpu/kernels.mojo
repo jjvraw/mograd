@@ -140,48 +140,6 @@ def transpose_kernel(
         dst[col * M + row] = a[row * N + col]
 
 
-def softmax_kernel(
-    x: UnsafePointer[Float32, MutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    size: Int,
-):
-    var tid = thread_idx.x
-    var shared = stack_allocation[BLOCK_SIZE, Scalar[DType.float32], address_space=AddressSpace.SHARED]()
-
-    shared[tid] = x[tid] if tid < size else Float32(-1e38)
-    barrier()
-
-    var active = BLOCK_SIZE
-    comptime for _ in range(8):
-        active >>= 1
-        if tid < active:
-            if shared[tid + active] > shared[tid]:
-                shared[tid] = shared[tid + active]
-        barrier()
-
-    var max_val = shared[0]
-    barrier()
-
-    var exp_val = Float32(0.0)
-    if tid < size:
-        exp_val = exp(x[tid] - max_val)
-        dst[tid] = exp_val
-    shared[tid] = exp_val
-    barrier()
-
-    active = BLOCK_SIZE
-    comptime for _ in range(8):
-        active >>= 1
-        if tid < active:
-            shared[tid] = shared[tid] + shared[tid + active]
-        barrier()
-
-    var total = shared[0]
-
-    if tid < size:
-        dst[tid] = dst[tid] / total
-
-
 def uniform_kernel(
     dst: UnsafePointer[Float32, MutAnyOrigin],
     size: Int,

@@ -6,6 +6,9 @@ from layout import Coord, TileTensor, row_major
 from linalg.matmul import matmul
 from nn.argmaxmin_gpu import argmax_gpu
 from nn.rand_normal import random_normal
+from nn.softmax import softmax as nn_softmax
+from std.gpu.host import get_gpu_target
+from std.sys.info import simd_width_of
 from std.utils import IndexList
 
 from mograd.op import Op, OpRef, OpType, AttrVal
@@ -22,7 +25,6 @@ from mograd.runtime.native.gpu.kernels import (
     eq_kernel,
     relu_kernel,
     relu_grad_kernel,
-    softmax_kernel,
     softmax_grad_kernel,
     sum_kernel,
     sum_grad_kernel,
@@ -89,7 +91,7 @@ struct GPURuntime(Runtime):
 
 
 # ===-------------------------------------------------------------------===#
-# Exec functions — Constructions
+# Constructions
 # ===-------------------------------------------------------------------===#
 
 
@@ -151,7 +153,7 @@ def disk_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> B
 
 
 # ===-------------------------------------------------------------------===#
-# Exec functions — Pointwise
+# Pointwise
 # ===-------------------------------------------------------------------===#
 
 
@@ -265,7 +267,7 @@ def eq_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buf
 
 
 # ===-------------------------------------------------------------------===#
-# Exec functions — Activations
+# Activations
 # ===-------------------------------------------------------------------===#
 
 
@@ -297,24 +299,32 @@ def relu_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises
 
 
 def softmax_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
-    var size = inputs[0].size
-    if size > BLOCK_SIZE:
-        raise Error("softmax: size " + String(size) + " exceeds single-block limit (" + String(BLOCK_SIZE) + ")")
+    var shape = inputs[0].shape
+    var rank = len(shape)
+    var rows = shape[0] if rank > 1 else 1
+    var cols = shape[rank - 1]
+    var size = rows * cols
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    ctx.enqueue_function[softmax_kernel](
-        inputs[0].buf().unsafe_ptr(),
-        out_buf.unsafe_ptr(),
-        size,
-        grid_dim=1,
-        block_dim=BLOCK_SIZE,
+    var out = TileTensor(out_buf.unsafe_ptr().as_any_origin(), row_major(Coord(rows, cols)))
+    var inp_ptr = inputs[0].buf().unsafe_ptr()
+
+    @parameter
+    @always_inline
+    def input_fn[width: Int, r: Int](coords: IndexList[r]) -> SIMD[DType.float32, width]:
+        return inp_ptr.load[width=width](coords[0] * cols + coords[1])
+
+    comptime simd_width = simd_width_of[DType.float32, target=get_gpu_target()]()
+    nn_softmax[DType.float32, simd_width, 2, input_fn, "gpu"](
+        IndexList[2](rows, cols),
+        out,
+        axis=1,
+        context=ctx,
     )
     return Buffer(out_buf^, node.shape(), size)
 
 
 def softmax_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
-    if size > BLOCK_SIZE:
-        raise Error("softmax_grad: size " + String(size) + " exceeds single-block limit (" + String(BLOCK_SIZE) + ")")
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
     ctx.enqueue_function[softmax_grad_kernel](
         inputs[0].buf().unsafe_ptr(),
@@ -328,7 +338,7 @@ def softmax_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) rai
 
 
 # ===-------------------------------------------------------------------===#
-# Exec functions — Reductions
+# Reductions
 # ===-------------------------------------------------------------------===#
 
 
@@ -370,7 +380,7 @@ def argmax_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises ->
 
 
 # ===-------------------------------------------------------------------===#
-# Exec functions — Shape
+# Shape
 # ===-------------------------------------------------------------------===#
 
 
@@ -414,7 +424,7 @@ def slice_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> 
 
 
 # ===-------------------------------------------------------------------===#
-# Exec functions — Contractions
+# Contractions
 # ===-------------------------------------------------------------------===#
 
 
@@ -443,7 +453,7 @@ def matmul_t_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises 
 
 
 # ===-------------------------------------------------------------------===#
-# Exec functions — Loss
+# Loss
 # ===-------------------------------------------------------------------===#
 
 
