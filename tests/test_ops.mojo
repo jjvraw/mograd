@@ -1,5 +1,5 @@
 from std.sys import has_accelerator
-from std.testing import TestSuite
+from std.testing import TestSuite, assert_almost_equal, assert_true
 
 from mograd import Tensor, DeviceContext
 from mograd.testing import assert_allclose, assert_close
@@ -98,6 +98,42 @@ def test_sum() raises:
     var ctx = DeviceContext()
     var x = Tensor(ctx, [Float32(1), 2, 3, 4], (4,))
     assert_close(x.sum(), Float32(10.0))
+
+
+def test_randn_mean_and_std() raises:
+    var ctx = DeviceContext()
+    var x = Tensor.randn(ctx, (10000,), mean=0.0, std=1.0, seed=42)
+    var vals = x.to_list()
+    var mean = Float32(0.0)
+    var sq = Float32(0.0)
+    var n = Float32(len(vals))
+    for i in range(len(vals)):
+        mean += vals[i]
+    mean /= n
+    for i in range(len(vals)):
+        sq += (vals[i] - mean) * (vals[i] - mean)
+    var std = (sq / n) ** Float32(0.5)
+    assert_almost_equal(mean, Float32(0.0), atol=0.05)
+    assert_almost_equal(std, Float32(1.0), atol=0.05)
+
+
+def test_randn_reproducible() raises:
+    var ctx = DeviceContext()
+    var a = Tensor.randn(ctx, (64,), seed=42)
+    var b = Tensor.randn(ctx, (64,), seed=42)
+    assert_allclose(a, b)
+
+
+def test_randn_different_seeds_differ() raises:
+    var ctx = DeviceContext()
+    var a = Tensor.randn(ctx, (64,), seed=1).to_list()
+    var b = Tensor.randn(ctx, (64,), seed=2).to_list()
+    var any_diff = False
+    for i in range(len(a)):
+        if a[i] != b[i]:
+            any_diff = True
+            break
+    assert_true(any_diff)
 
 
 def main() raises:

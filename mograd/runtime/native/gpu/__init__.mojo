@@ -5,6 +5,8 @@ from std.pathlib import Path
 from layout import Coord, TileTensor, row_major
 from linalg.matmul import matmul
 from nn.argmaxmin_gpu import argmax_gpu
+from nn.rand_normal import random_normal
+from std.utils import IndexList
 
 from mograd.op import Op, OpRef, OpType, AttrVal
 from mograd.runtime.native.gpu.rewrites import MATMUL_T
@@ -29,7 +31,6 @@ from mograd.runtime.native.gpu.kernels import (
     cross_entropy_grad_kernel,
     scale_kernel,
     eq_kernel,
-    randn_kernel,
     BLOCK_SIZE,
     TILE_DIM,
 )
@@ -262,17 +263,26 @@ def randn_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> 
     var size = node.shape().numel()
     var mean = node.attrs()["mean"][Float32]
     var std = node.attrs()["std"][Float32]
-    var seed = UInt32(Int(node.attrs()["seed"][Float32]))
+    var seed = UInt64(Int(node.attrs()["seed"][Float32]))
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    ctx.enqueue_function[randn_kernel](
-        out_buf.unsafe_ptr(),
-        size,
+    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](1)
+    seed_buf.enqueue_fill(seed)
+    var out_ptr = out_buf.unsafe_ptr()
+
+    @parameter
+    @always_inline
+    def store[width: Int, rank: Int](idx: IndexList[rank], val: SIMD[DType.float32, width]):
+        out_ptr.store(idx[0], val)
+
+    random_normal[output_fn=store, target="gpu"](
+        IndexList[1](size),
         mean,
         std,
-        seed,
-        grid_dim=ceildiv(size, BLOCK_SIZE),
-        block_dim=BLOCK_SIZE,
+        seed_buf.unsafe_ptr(),
+        ctx,
     )
+    # seed_buf must outlive the GPU kernel
+    ctx.synchronize()
     return Buffer(out_buf^, node.shape(), size)
 
 
