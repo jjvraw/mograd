@@ -149,6 +149,31 @@ def test_randn_different_seeds_differ() raises:
     assert_true(any_diff)
 
 
+def test_transpose_2x3() raises:
+    var ctx = DeviceContext()
+    var x = Tensor(ctx, [Float32(1), 2, 3, 4, 5, 6], (2, 3))
+    assert_allclose(x.transpose(), [Float32(1), 4, 2, 5, 3, 6])
+
+
+def test_transpose_shape() raises:
+    var ctx = DeviceContext()
+    var x = Tensor.ones(ctx, (4, 7))
+    var t = x.transpose()
+    assert_true(t.shape()[0] == 7 and t.shape()[1] == 4)
+
+
+def test_transpose_square() raises:
+    var ctx = DeviceContext()
+    var x = Tensor(ctx, [Float32(1), 2, 3, 4], (2, 2))
+    assert_allclose(x.transpose(), [Float32(1), 3, 2, 4])
+
+
+def test_transpose_tranpose() raises:
+    var ctx = DeviceContext()
+    var x = Tensor.randn(ctx, (113, 257), seed=7)
+    assert_allclose(x.transpose().transpose(), x)
+
+
 def main() raises:
     comptime assert has_accelerator(), "GPU required to run tensor op tests"
     TestSuite.discover_tests[__functions_in_module()]().run()

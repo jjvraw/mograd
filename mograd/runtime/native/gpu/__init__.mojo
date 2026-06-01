@@ -387,13 +387,15 @@ def transpose_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises
     var M = inputs[0].shape[0]
     var N = inputs[0].shape[1]
     var out_buf = ctx.enqueue_create_buffer[DType.float32](M * N)
-    ctx.enqueue_function[transpose_kernel](
+    comptime TILE = 32
+    comptime kernel = transpose_kernel[TILE]
+    ctx.enqueue_function[kernel](
         inputs[0].data_ptr(),
         out_buf.unsafe_ptr(),
         M,
         N,
-        grid_dim=(ceildiv(N, TILE_DIM), ceildiv(M, TILE_DIM)),
-        block_dim=(TILE_DIM, TILE_DIM),
+        grid_dim=(ceildiv(N, TILE), ceildiv(M, TILE)),
+        block_dim=(TILE, TILE),
     )
     return Buffer(out_buf^, (N, M), M * N)
 

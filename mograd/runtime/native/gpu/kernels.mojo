@@ -11,17 +11,28 @@ from std.atomic import Atomic
 comptime BLOCK_SIZE = 256
 comptime TILE_DIM = 16
 
+# ===-------------------------------------------------------------------===#
+# Transpose
+# ===-------------------------------------------------------------------===#
 
-def transpose_kernel(
-    a: UnsafePointer[Float32, MutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    M: Int,
-    N: Int,
-):
-    var row = global_idx.y
-    var col = global_idx.x
-    if row < M and col < N:
-        dst[col * M + row] = a[row * N + col]
+
+def transpose_kernel[
+    BLOCK_SIZE: Int
+](src: UnsafePointer[Float32, MutAnyOrigin], dst: UnsafePointer[Float32, MutAnyOrigin], M: Int, N: Int,):
+    var shmem = stack_allocation[BLOCK_SIZE * (BLOCK_SIZE + 1), DType.float32, address_space=AddressSpace.SHARED]()
+
+    x = block_idx.x * BLOCK_SIZE + thread_idx.x
+    y = block_idx.y * BLOCK_SIZE + thread_idx.y
+
+    if x < N and y < M:
+        shmem[thread_idx.y * (BLOCK_SIZE + 1) + thread_idx.x] = src[y * N + x]
+
+    barrier()
+
+    x_out = block_idx.y * BLOCK_SIZE + thread_idx.x
+    y_out = block_idx.x * BLOCK_SIZE + thread_idx.y
+    if x_out < M and y_out < N:
+        dst[y_out * M + x_out] = shmem[thread_idx.x * (BLOCK_SIZE + 1) + thread_idx.y]
 
 
 def cross_entropy_kernel(
