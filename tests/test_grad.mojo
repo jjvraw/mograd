@@ -106,6 +106,96 @@ def test_log_grad() raises:
     assert_allclose(grads[0], [Float32(1.0), 0.5, 0.25], tol=1e-4)
 
 
+def test_neg_grad() raises:
+    def fwd(x: Tensor) raises -> Tensor:
+        return (-x).sum()
+
+    var ctx = DeviceContext()
+    var data: List[Float32] = [1.0, 2.0, 3.0, 4.0]
+    var num = numerical_grad[fwd](ctx, data, (4,))
+    var x = Tensor(ctx, data, (4,), requires_grad=True)
+    var loss = (-x).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], [Float32(-1), -1, -1, -1])
+
+
+def test_exp_grad() raises:
+    def fwd(x: Tensor) raises -> Tensor:
+        return x.exp().sum()
+
+    var ctx = DeviceContext()
+    var data: List[Float32] = [0.0, 1.0, 2.0]
+    var num = numerical_grad[fwd](ctx, data, (3,))
+    var x = Tensor(ctx, data, (3,), requires_grad=True)
+    var loss = x.exp().sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    # grad of sum(exp(x)) w.r.t. x is exp(x)
+    assert_allclose(grads[0], [Float32(1.0), 2.718282, 7.389056], tol=1e-3)
+
+
+def test_div_grad_numerator() raises:
+    def fwd(x: Tensor) raises -> Tensor:
+        var b = Tensor(x.ctx.value(), [Float32(2.0), 4.0, 8.0], (3,))
+        return (x / b).sum()
+
+    var ctx = DeviceContext()
+    var data: List[Float32] = [1.0, 2.0, 4.0]
+    var num = numerical_grad[fwd](ctx, data, (3,))
+    var x = Tensor(ctx, data, (3,), requires_grad=True)
+    var b = Tensor(ctx, [Float32(2.0), 4.0, 8.0], (3,))
+    var loss = (x / b).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], [Float32(0.5), 0.25, 0.125], tol=1e-4)
+
+
+def test_div_grad_denominator() raises:
+    def fwd(x: Tensor) raises -> Tensor:
+        var a = Tensor(x.ctx.value(), [Float32(4.0), 8.0, 16.0], (3,))
+        return (a / x).sum()
+
+    var ctx = DeviceContext()
+    var data: List[Float32] = [2.0, 2.0, 2.0]
+    var num = numerical_grad[fwd](ctx, data, (3,))
+    var a = Tensor(ctx, [Float32(4.0), 8.0, 16.0], (3,))
+    var x = Tensor(ctx, data, (3,), requires_grad=True)
+    var loss = (a / x).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    # d(a/x)/dx = -a/x^2
+    assert_allclose(grads[0], [Float32(-1.0), -2.0, -4.0], tol=1e-4)
+
+
+def test_reshape_grad() raises:
+    def fwd(x: Tensor) raises -> Tensor:
+        return x.reshape((2, 2)).sum()
+
+    var ctx = DeviceContext()
+    var data: List[Float32] = [1.0, 2.0, 3.0, 4.0]
+    var num = numerical_grad[fwd](ctx, data, (4,))
+    var x = Tensor(ctx, data, (4,), requires_grad=True)
+    var loss = x.reshape((2, 2)).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], [Float32(1), 1, 1, 1])
+
+
+def test_transpose_grad() raises:
+    def fwd(x: Tensor) raises -> Tensor:
+        return x.transpose().sum()
+
+    var ctx = DeviceContext()
+    var data: List[Float32] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    var num = numerical_grad[fwd](ctx, data, (2, 3))
+    var x = Tensor(ctx, data, (2, 3), requires_grad=True)
+    var loss = x.transpose().sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], [Float32(1), 1, 1, 1, 1, 1])
+
+
 def test_matmul_grad() raises:
     def fwd(a: Tensor) raises -> Tensor:
         var b = Tensor(a.ctx.value(), [Float32(1.0), 2.0, 3.0, 4.0, 5.0, 6.0], (3, 2))
