@@ -214,6 +214,17 @@ def test_transpose_square() raises:
     assert_allclose(x.transpose(), [Float32(1), 3, 2, 4])
 
 
+def test_mean_multi_batch_slice() raises:
+    var ctx = DeviceContext()
+    var x = Tensor.ones(ctx, (512, 8))
+    var n = x.shape(0)
+    var batch_size = 32
+    for step in range(n // batch_size):
+        var xb = x[step * batch_size : (step + 1) * batch_size]
+        var m = xb.mean().item()
+        assert_true(m > 0.99 and m < 1.01)
+
+
 def test_transpose_tranpose() raises:
     var ctx = DeviceContext()
     var x = Tensor.randn(ctx, (113, 257), seed=7)

@@ -13,7 +13,7 @@ struct MLP:
         self.l3 = nn.Linear(128, 10)
 
     def __call__(mut self, mut x: Tensor) raises -> Tensor:
-        x = x.reshape((x.shape()[0], -1))
+        x = x.reshape((x.shape(0), -1))
         x = self.l1(x).relu()
         x = self.l2(x).relu()
         return self.l3(x)

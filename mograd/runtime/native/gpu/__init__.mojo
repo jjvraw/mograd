@@ -367,6 +367,7 @@ def sum_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Bu
         reduce_dim=0,
         context=ctx,
     )
+    ctx.synchronize()
     return Buffer(out_buf^, (1,), 1)
 
 
