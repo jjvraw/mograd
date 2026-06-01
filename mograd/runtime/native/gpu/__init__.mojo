@@ -62,12 +62,12 @@ struct GPURuntime(Runtime):
                 Rule(Pat(OpType.SOFTMAX_GRAD), softmax_grad_exec),
                 # Reductions
                 Rule(Pat(OpType.SUM), sum_exec),
-                Rule(Pat(OpType.SUM_GRAD), sum_grad_exec),
                 Rule(Pat(OpType.ARGMAX), argmax_exec),
                 # Shape
                 Rule(Pat(OpType.RESHAPE), reshape_exec),
                 Rule(Pat(OpType.TRANSPOSE), transpose_exec),
                 Rule(Pat(OpType.SLICE), slice_exec),
+                Rule(Pat(OpType.BROADCAST), broadcast_exec),
                 # Contractions
                 Rule(Pat(OpType.MATMUL), matmul_exec),
                 Rule(Pat(MATMUL_T), matmul_t_exec),
@@ -371,19 +371,6 @@ def sum_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Bu
     return Buffer(out_buf^, (1,), 1)
 
 
-def sum_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
-    var size = node.shape().numel()
-    var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    var upstream_ptr = inputs[0].data_ptr()
-    var out_ptr = out_buf.unsafe_ptr()
-
-    def apply[width: Int, rank: Int, alignment: Int = 1](coords: IndexList[rank]) {var upstream_ptr, var out_ptr}:
-        out_ptr.store(coords[0], upstream_ptr.load(0))
-
-    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
-    return Buffer(out_buf^, node.shape(), size)
-
-
 def argmax_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var N = inputs[0].shape[0]
     var C = inputs[0].shape[1]
@@ -429,6 +416,22 @@ def slice_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> 
         inputs[0].strides,
         inputs[0].base_offset + start * cols,
     )
+
+
+def broadcast_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
+    var size = node.shape().numel()
+    var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
+    var inp_ptr = inputs[0].data_ptr()
+    var inp_size = inputs[0].size
+    var out_ptr = out_buf.unsafe_ptr()
+
+    def apply[
+        width: Int, rank: Int, alignment: Int = 1
+    ](coords: IndexList[rank]) {var inp_ptr, var inp_size, var out_ptr}:
+        out_ptr.store(coords[0], inp_ptr.load(coords[0] % inp_size))
+
+    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
+    return Buffer(out_buf^, node.shape(), size)
 
 
 # ===-------------------------------------------------------------------===#

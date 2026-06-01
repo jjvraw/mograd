@@ -103,7 +103,7 @@ def div_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
 
 
 def sum_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    return [OpRef(Op(OpType.SUM_GRAD, node.srcs()[0].shape().copy(), node.dtype(), [upstream]))]
+    return [OpRef(Op(OpType.BROADCAST, node.srcs()[0].shape().copy(), node.dtype(), [upstream]))]
 
 
 def matmul_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
@@ -129,7 +129,7 @@ def cross_entropy_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     var logits = node.srcs()[0]
     var labels = node.srcs()[1]
     var grad_logits = OpRef(Op(OpType.CROSS_ENTROPY_GRAD, logits.shape(), node.dtype(), [logits, labels, upstream]))
-    var dummy = OpRef(Op(OpType.SUM_GRAD, labels.shape(), node.dtype(), [upstream]))
+    var dummy = OpRef(Op(OpType.BROADCAST, labels.shape(), node.dtype(), [upstream]))
     return [grad_logits, dummy]
 
 

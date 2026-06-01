@@ -47,7 +47,6 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     # ===-------------------------------------------------------------------===#
 
     comptime SUM = OpType("SUM")
-    comptime SUM_GRAD = OpType("SUM_GRAD")
     comptime ARGMAX = OpType("ARGMAX")
 
     # ===-------------------------------------------------------------------===#
@@ -57,6 +56,7 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime RESHAPE = OpType("RESHAPE")
     comptime TRANSPOSE = OpType("TRANSPOSE")
     comptime SLICE = OpType("SLICE")
+    comptime BROADCAST = OpType("BROADCAST")
 
     # ===-------------------------------------------------------------------===#
     # Contraction ops
