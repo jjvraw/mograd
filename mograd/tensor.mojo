@@ -288,7 +288,7 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
 
     def item(self) raises -> Float32:
         var buf = self.value()
-        var result = Float32(0)
+        var result: Float32
         with buf.buf().map_to_host() as host:
             result = host.unsafe_ptr()[0]
         return result

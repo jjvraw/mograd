@@ -1,30 +1,20 @@
-from std.math import ceildiv
-from std.gpu.host import DeviceContext
+from std.math import ceildiv, exp, log
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.sys.info import simd_width_of
 from std.pathlib import Path
+from std.algorithm.functional import elementwise
+from std.utils import IndexList
 
 from layout import Coord, TileTensor, row_major
 from linalg.matmul import matmul
 from nn.argmaxmin_gpu import argmax_gpu
 from nn.rand_normal import random_normal
 from nn.softmax import softmax as nn_softmax
-from std.gpu.host import get_gpu_target
-from std.sys.info import simd_width_of
-from std.utils import IndexList
 
 from mograd.op import Op, OpRef, OpType, AttrVal
 from mograd.runtime.native.gpu.rewrites import MATMUL_T
 from mograd.buffer import Buffer
 from mograd.runtime.native.gpu.kernels import (
-    add_kernel,
-    mul_kernel,
-    neg_kernel,
-    div_kernel,
-    scale_kernel,
-    exp_kernel,
-    log_kernel,
-    eq_kernel,
-    relu_kernel,
-    relu_grad_kernel,
     softmax_grad_kernel,
     sum_kernel,
     sum_grad_kernel,
@@ -160,109 +150,121 @@ def disk_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> B
 def add_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    ctx.enqueue_function[add_kernel](
-        inputs[0].buf().unsafe_ptr(),
-        inputs[1].buf().unsafe_ptr(),
-        out_buf.unsafe_ptr(),
-        size,
-        grid_dim=ceildiv(size, BLOCK_SIZE),
-        block_dim=BLOCK_SIZE,
-    )
+    var inp0_ptr = inputs[0].buf().unsafe_ptr()
+    var inp1_ptr = inputs[1].buf().unsafe_ptr()
+    var out_ptr = out_buf.unsafe_ptr()
+
+    def apply[
+        width: Int, rank: Int, alignment: Int = 1
+    ](coords: IndexList[rank]) {var inp0_ptr, var inp1_ptr, var out_ptr}:
+        out_ptr.store(coords[0], inp0_ptr.load(coords[0]) + inp1_ptr.load(coords[0]))
+
+    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
+
     return Buffer(out_buf^, node.shape(), size)
 
 
 def mul_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    ctx.enqueue_function[mul_kernel](
-        inputs[0].buf().unsafe_ptr(),
-        inputs[1].buf().unsafe_ptr(),
-        out_buf.unsafe_ptr(),
-        size,
-        grid_dim=ceildiv(size, BLOCK_SIZE),
-        block_dim=BLOCK_SIZE,
-    )
+    var inp0_ptr = inputs[0].buf().unsafe_ptr()
+    var inp1_ptr = inputs[1].buf().unsafe_ptr()
+    var out_ptr = out_buf.unsafe_ptr()
+
+    def apply[
+        width: Int, rank: Int, alignment: Int = 1
+    ](coords: IndexList[rank]) {var inp0_ptr, var inp1_ptr, var out_ptr}:
+        out_ptr.store(coords[0], inp0_ptr.load(coords[0]) * inp1_ptr.load(coords[0]))
+
+    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
     return Buffer(out_buf^, node.shape(), size)
 
 
 def neg_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    ctx.enqueue_function[neg_kernel](
-        inputs[0].buf().unsafe_ptr(),
-        out_buf.unsafe_ptr(),
-        size,
-        grid_dim=ceildiv(size, BLOCK_SIZE),
-        block_dim=BLOCK_SIZE,
-    )
+    var inp_ptr = inputs[0].buf().unsafe_ptr()
+    var out_ptr = out_buf.unsafe_ptr()
+
+    def apply[width: Int, rank: Int, alignment: Int = 1](coords: IndexList[rank]) {var inp_ptr, var out_ptr}:
+        out_ptr.store(coords[0], -inp_ptr.load(coords[0]))
+
+    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
     return Buffer(out_buf^, node.shape(), size)
 
 
 def div_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    ctx.enqueue_function[div_kernel](
-        inputs[0].buf().unsafe_ptr(),
-        inputs[1].buf().unsafe_ptr(),
-        out_buf.unsafe_ptr(),
-        size,
-        grid_dim=ceildiv(size, BLOCK_SIZE),
-        block_dim=BLOCK_SIZE,
-    )
+    var inp0_ptr = inputs[0].buf().unsafe_ptr()
+    var inp1_ptr = inputs[1].buf().unsafe_ptr()
+    var out_ptr = out_buf.unsafe_ptr()
+
+    def apply[
+        width: Int, rank: Int, alignment: Int = 1
+    ](coords: IndexList[rank]) {var inp0_ptr, var inp1_ptr, var out_ptr}:
+        out_ptr.store(coords[0], inp0_ptr.load(coords[0]) / inp1_ptr.load(coords[0]))
+
+    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
     return Buffer(out_buf^, node.shape(), size)
 
 
 def scale_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    ctx.enqueue_function[scale_kernel](
-        inputs[0].buf().unsafe_ptr(),
-        out_buf.unsafe_ptr(),
-        node.attrs()["scalar"][Float32],
-        size,
-        grid_dim=ceildiv(size, BLOCK_SIZE),
-        block_dim=BLOCK_SIZE,
-    )
+    var inp_ptr = inputs[0].buf().unsafe_ptr()
+    var out_ptr = out_buf.unsafe_ptr()
+    var scalar = node.attrs()["scalar"][Float32]
+
+    def apply[
+        width: Int, rank: Int, alignment: Int = 1
+    ](coords: IndexList[rank]) {var inp_ptr, var out_ptr, var scalar}:
+        out_ptr.store(coords[0], inp_ptr.load(coords[0]) * scalar)
+
+    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
     return Buffer(out_buf^, node.shape(), size)
 
 
 def exp_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    ctx.enqueue_function[exp_kernel](
-        inputs[0].buf().unsafe_ptr(),
-        out_buf.unsafe_ptr(),
-        size,
-        grid_dim=ceildiv(size, BLOCK_SIZE),
-        block_dim=BLOCK_SIZE,
-    )
+    var inp_ptr = inputs[0].buf().unsafe_ptr()
+    var out_ptr = out_buf.unsafe_ptr()
+
+    def apply[width: Int, rank: Int, alignment: Int = 1](coords: IndexList[rank]) {var inp_ptr, var out_ptr}:
+        out_ptr.store(coords[0], exp(inp_ptr.load(coords[0])))
+
+    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
     return Buffer(out_buf^, node.shape(), size)
 
 
 def log_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    ctx.enqueue_function[log_kernel](
-        inputs[0].buf().unsafe_ptr(),
-        out_buf.unsafe_ptr(),
-        size,
-        grid_dim=ceildiv(size, BLOCK_SIZE),
-        block_dim=BLOCK_SIZE,
-    )
+    var inp_ptr = inputs[0].buf().unsafe_ptr()
+    var out_ptr = out_buf.unsafe_ptr()
+
+    def apply[width: Int, rank: Int, alignment: Int = 1](coords: IndexList[rank]) {var inp_ptr, var out_ptr}:
+        out_ptr.store(coords[0], log(inp_ptr.load(coords[0])))
+
+    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
     return Buffer(out_buf^, node.shape(), size)
 
 
 def eq_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    ctx.enqueue_function[eq_kernel](
-        inputs[0].buf().unsafe_ptr(),
-        inputs[1].buf().unsafe_ptr(),
-        out_buf.unsafe_ptr(),
-        size,
-        grid_dim=ceildiv(size, BLOCK_SIZE),
-        block_dim=BLOCK_SIZE,
-    )
+    var inp0_ptr = inputs[0].buf().unsafe_ptr()
+    var inp1_ptr = inputs[1].buf().unsafe_ptr()
+    var out_ptr = out_buf.unsafe_ptr()
+
+    def apply[
+        width: Int, rank: Int, alignment: Int = 1
+    ](coords: IndexList[rank]) {var inp0_ptr, var inp1_ptr, var out_ptr}:
+        var idx = coords[0]
+        out_ptr.store(idx, Float32(1) if inp0_ptr.load(idx) == inp1_ptr.load(idx) else Float32(0))
+
+    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
     return Buffer(out_buf^, node.shape(), size)
 
 
@@ -274,27 +276,29 @@ def eq_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buf
 def relu_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    ctx.enqueue_function[relu_kernel](
-        inputs[0].buf().unsafe_ptr(),
-        out_buf.unsafe_ptr(),
-        size,
-        grid_dim=ceildiv(size, BLOCK_SIZE),
-        block_dim=BLOCK_SIZE,
-    )
+    var inp_ptr = inputs[0].buf().unsafe_ptr()
+    var out_ptr = out_buf.unsafe_ptr()
+
+    def apply[width: Int, rank: Int, alignment: Int = 1](coords: IndexList[rank]) {var inp_ptr, var out_ptr}:
+        var x = inp_ptr.load(coords[0])
+        out_ptr.store(coords[0], x if x > Float32(0) else Float32(0))
+
+    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
     return Buffer(out_buf^, node.shape(), size)
 
 
 def relu_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    ctx.enqueue_function[relu_grad_kernel](
-        inputs[0].buf().unsafe_ptr(),
-        inputs[1].buf().unsafe_ptr(),
-        out_buf.unsafe_ptr(),
-        size,
-        grid_dim=ceildiv(size, BLOCK_SIZE),
-        block_dim=BLOCK_SIZE,
-    )
+    var x_ptr = inputs[0].buf().unsafe_ptr()
+    var up_ptr = inputs[1].buf().unsafe_ptr()
+    var out_ptr = out_buf.unsafe_ptr()
+
+    def apply[width: Int, rank: Int, alignment: Int = 1](coords: IndexList[rank]) {var x_ptr, var up_ptr, var out_ptr}:
+        var idx = coords[0]
+        out_ptr.store(idx, up_ptr.load(idx) if x_ptr.load(idx) > Float32(0) else Float32(0))
+
+    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
     return Buffer(out_buf^, node.shape(), size)
 
 
