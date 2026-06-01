@@ -112,9 +112,7 @@ def randn_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> 
     seed_buf.enqueue_fill(UInt64(Int(node.attrs()["seed"][Float32])))
     var out_ptr = out_buf.unsafe_ptr()
 
-    @parameter
-    @always_inline
-    def store[width: Int, rank: Int](idx: IndexList[rank], val: SIMD[DType.float32, width]):
+    def store[width: Int, rank: Int](idx: IndexList[rank], val: SIMD[DType.float32, width]) capturing:
         out_ptr.store(idx[0], val)
 
     random_normal[output_fn=store, target="gpu"](
@@ -124,7 +122,6 @@ def randn_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> 
         seed_buf.unsafe_ptr(),
         ctx,
     )
-    # seed_buf must outlive the GPU kernel
     ctx.synchronize()
     return Buffer(out_buf^, node.shape(), size)
 
@@ -310,9 +307,7 @@ def softmax_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -
     var out = TileTensor(out_buf.unsafe_ptr().as_any_origin(), row_major(Coord(rows, cols)))
     var inp_ptr = inputs[0].data_ptr()
 
-    @parameter
-    @always_inline
-    def input_fn[width: Int, r: Int](coords: IndexList[r]) -> SIMD[DType.float32, width]:
+    def input_fn[width: Int, r: Int](coords: IndexList[r]) capturing -> SIMD[DType.float32, width]:
         return inp_ptr.load[width=width](coords[0] * cols + coords[1])
 
     comptime simd_width = simd_width_of[DType.float32, target=get_gpu_target()]()
@@ -351,16 +346,10 @@ def sum_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Bu
     var inp_ptr = inputs[0].data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
 
-    @parameter
-    @always_inline
-    @__copy_capture(inp_ptr)
-    def input_fn[width: Int, rank: Int](coords: IndexList[rank]) -> SIMD[DType.float32, width]:
+    def input_fn[width: Int, rank: Int](coords: IndexList[rank]) capturing -> SIMD[DType.float32, width]:
         return inp_ptr.load[width=width](coords[0])
 
-    @parameter
-    @always_inline
-    @__copy_capture(out_ptr)
-    def output_fn[width: Int, rank: Int](coords: IndexList[rank], val: SIMD[DType.float32, width]):
+    def output_fn[width: Int, rank: Int](coords: IndexList[rank], val: SIMD[DType.float32, width]) capturing:
         out_ptr.store[width=width](coords[0], val)
 
     reduce_sum[DType.float32, input_fn, output_fn, target="gpu"](
