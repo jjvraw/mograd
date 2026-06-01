@@ -290,15 +290,16 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         var buf = self.value()
         var result: Float32
         with buf.buf().map_to_host() as host:
-            result = host.unsafe_ptr()[0]
+            result = (host.unsafe_ptr() + buf.base_offset)[0]
         return result
 
     def to_list(self) raises -> List[Float32]:
         var result = List[Float32]()
         var buf = self.value()
         with buf.buf().map_to_host() as host:
+            var ptr = host.unsafe_ptr() + buf.base_offset
             for i in range(buf.size):
-                result.append(host.unsafe_ptr()[i])
+                result.append(ptr[i])
         return result^
 
     # ===-------------------------------------------------------------------===#

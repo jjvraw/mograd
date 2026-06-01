@@ -57,6 +57,16 @@ struct Shape(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
             n *= self._dims[i]
         return n
 
+    def strides(self) -> Self:
+        var s = Self()
+        s._rank = self._rank
+        var stride = 1
+        for i in range(self._rank):
+            var dim_idx = self._rank - 1 - i
+            s._dims[dim_idx] = stride
+            stride *= self._dims[dim_idx]
+        return s
+
     def to_list(self) -> List[Int]:
         var result = List[Int]()
         for i in range(self._rank):

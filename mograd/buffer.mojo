@@ -12,6 +12,8 @@ from mograd.shape import Shape
 struct Buffer(Copyable, Movable, Writable):
     var _ptr: ArcPointer[DeviceBuffer[DType.float32]]
     var shape: Shape
+    var strides: Shape
+    var base_offset: Int
     var size: Int
 
     def __init__(
@@ -22,10 +24,44 @@ struct Buffer(Copyable, Movable, Writable):
     ):
         self._ptr = ArcPointer(buf^)
         self.shape = shape
+        self.strides = shape.strides()
+        self.base_offset = 0
         self.size = size
+
+    def __init__(
+        out self,
+        ptr: ArcPointer[DeviceBuffer[DType.float32]],
+        shape: Shape,
+        strides: Shape,
+        base_offset: Int,
+    ):
+        self._ptr = ptr
+        self.shape = shape
+        self.strides = strides
+        self.base_offset = base_offset
+        self.size = shape.numel()
 
     def buf(ref self) -> ref[self._ptr[]] DeviceBuffer[DType.float32]:
         return self._ptr[]
+
+    def data_ptr(ref self) -> UnsafePointer[Float32, MutAnyOrigin]:
+        return self.buf().unsafe_ptr() + self.base_offset
+
+    def broadcast_to(self, new_shape: Shape) -> Self:
+        var old_rank = len(self.shape)
+        var new_rank = len(new_shape)
+        var rank_diff = new_rank - old_rank
+        var new_strides_list = List[Int]()
+        for i in range(new_rank):
+            if i < rank_diff:
+                new_strides_list.append(0)
+            else:
+                var old_i = i - rank_diff
+                if self.shape[old_i] == 1 and new_shape[i] > 1:
+                    new_strides_list.append(0)
+                else:
+                    new_strides_list.append(self.strides[old_i])
+        return Self(self._ptr, new_shape, Shape(new_strides_list), self.base_offset)
 
     @staticmethod
     def empty(ctx: DeviceContext, shape: Shape) raises -> Self:

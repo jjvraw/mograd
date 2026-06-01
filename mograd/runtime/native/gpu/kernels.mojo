@@ -88,18 +88,6 @@ def cross_entropy_grad_kernel(
         dst[tid] = upstream[0] * (sm - one_hot) / Float32(N)
 
 
-def slice_rows_kernel(
-    src: UnsafePointer[Float32, MutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    start_row: Int,
-    cols: Int,
-    size: Int,
-):
-    var tid = global_idx.x
-    if tid < size:
-        dst[tid] = src[start_row * cols + tid]
-
-
 def softmax_grad_kernel(
     y: UnsafePointer[Float32, MutAnyOrigin],
     upstream: UnsafePointer[Float32, MutAnyOrigin],

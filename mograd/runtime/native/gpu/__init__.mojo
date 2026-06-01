@@ -18,7 +18,6 @@ from mograd.buffer import Buffer
 from mograd.runtime.native.gpu.kernels import (
     softmax_grad_kernel,
     transpose_kernel,
-    slice_rows_kernel,
     uniform_kernel,
     cross_entropy_kernel,
     cross_entropy_grad_kernel,
@@ -149,8 +148,8 @@ def disk_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> B
 def add_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    var inp0_ptr = inputs[0].buf().unsafe_ptr()
-    var inp1_ptr = inputs[1].buf().unsafe_ptr()
+    var inp0_ptr = inputs[0].data_ptr()
+    var inp1_ptr = inputs[1].data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
 
     def apply[
@@ -166,8 +165,8 @@ def add_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Bu
 def mul_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    var inp0_ptr = inputs[0].buf().unsafe_ptr()
-    var inp1_ptr = inputs[1].buf().unsafe_ptr()
+    var inp0_ptr = inputs[0].data_ptr()
+    var inp1_ptr = inputs[1].data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
 
     def apply[
@@ -182,7 +181,7 @@ def mul_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Bu
 def neg_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    var inp_ptr = inputs[0].buf().unsafe_ptr()
+    var inp_ptr = inputs[0].data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
 
     def apply[width: Int, rank: Int, alignment: Int = 1](coords: IndexList[rank]) {var inp_ptr, var out_ptr}:
@@ -195,8 +194,8 @@ def neg_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Bu
 def div_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    var inp0_ptr = inputs[0].buf().unsafe_ptr()
-    var inp1_ptr = inputs[1].buf().unsafe_ptr()
+    var inp0_ptr = inputs[0].data_ptr()
+    var inp1_ptr = inputs[1].data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
 
     def apply[
@@ -211,7 +210,7 @@ def div_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Bu
 def scale_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    var inp_ptr = inputs[0].buf().unsafe_ptr()
+    var inp_ptr = inputs[0].data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
     var scalar = node.attrs()["scalar"][Float32]
 
@@ -227,7 +226,7 @@ def scale_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> 
 def exp_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    var inp_ptr = inputs[0].buf().unsafe_ptr()
+    var inp_ptr = inputs[0].data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
 
     def apply[width: Int, rank: Int, alignment: Int = 1](coords: IndexList[rank]) {var inp_ptr, var out_ptr}:
@@ -240,7 +239,7 @@ def exp_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Bu
 def log_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    var inp_ptr = inputs[0].buf().unsafe_ptr()
+    var inp_ptr = inputs[0].data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
 
     def apply[width: Int, rank: Int, alignment: Int = 1](coords: IndexList[rank]) {var inp_ptr, var out_ptr}:
@@ -253,8 +252,8 @@ def log_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Bu
 def eq_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    var inp0_ptr = inputs[0].buf().unsafe_ptr()
-    var inp1_ptr = inputs[1].buf().unsafe_ptr()
+    var inp0_ptr = inputs[0].data_ptr()
+    var inp1_ptr = inputs[1].data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
 
     def apply[
@@ -275,7 +274,7 @@ def eq_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buf
 def relu_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    var inp_ptr = inputs[0].buf().unsafe_ptr()
+    var inp_ptr = inputs[0].data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
 
     def apply[width: Int, rank: Int, alignment: Int = 1](coords: IndexList[rank]) {var inp_ptr, var out_ptr}:
@@ -289,8 +288,8 @@ def relu_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> B
 def relu_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    var x_ptr = inputs[0].buf().unsafe_ptr()
-    var up_ptr = inputs[1].buf().unsafe_ptr()
+    var x_ptr = inputs[0].data_ptr()
+    var up_ptr = inputs[1].data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
 
     def apply[width: Int, rank: Int, alignment: Int = 1](coords: IndexList[rank]) {var x_ptr, var up_ptr, var out_ptr}:
@@ -309,7 +308,7 @@ def softmax_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -
     var size = rows * cols
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
     var out = TileTensor(out_buf.unsafe_ptr().as_any_origin(), row_major(Coord(rows, cols)))
-    var inp_ptr = inputs[0].buf().unsafe_ptr()
+    var inp_ptr = inputs[0].data_ptr()
 
     @parameter
     @always_inline
@@ -331,8 +330,8 @@ def softmax_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) rai
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
     ctx.enqueue_function[softmax_grad_kernel](
-        inputs[0].buf().unsafe_ptr(),
-        inputs[1].buf().unsafe_ptr(),
+        inputs[0].data_ptr(),
+        inputs[1].data_ptr(),
         out_buf.unsafe_ptr(),
         size,
         grid_dim=1,
@@ -349,7 +348,7 @@ def softmax_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) rai
 def sum_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](1)
-    var inp_ptr = inputs[0].buf().unsafe_ptr()
+    var inp_ptr = inputs[0].data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
 
     @parameter
@@ -375,7 +374,7 @@ def sum_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Bu
 def sum_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = node.shape().numel()
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    var upstream_ptr = inputs[0].buf().unsafe_ptr()
+    var upstream_ptr = inputs[0].data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
 
     def apply[width: Int, rank: Int, alignment: Int = 1](coords: IndexList[rank]) {var upstream_ptr, var out_ptr}:
@@ -389,7 +388,7 @@ def argmax_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises ->
     var N = inputs[0].shape[0]
     var C = inputs[0].shape[1]
     var out_buf = ctx.enqueue_create_buffer[DType.float32](N)
-    var inp = TileTensor(inputs[0].buf().unsafe_ptr().as_any_origin(), row_major(Coord(N, C)))
+    var inp = TileTensor(inputs[0].data_ptr().as_any_origin(), row_major(Coord(N, C)))
     var out = TileTensor(out_buf.unsafe_ptr().as_any_origin(), row_major(Coord(N, 1)))
     argmax_gpu[DType.float32, DType.float32](ctx, inp, out)
     return Buffer(out_buf^, (N,), N)
@@ -411,7 +410,7 @@ def transpose_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises
     var N = inputs[0].shape[1]
     var out_buf = ctx.enqueue_create_buffer[DType.float32](M * N)
     ctx.enqueue_function[transpose_kernel](
-        inputs[0].buf().unsafe_ptr(),
+        inputs[0].data_ptr(),
         out_buf.unsafe_ptr(),
         M,
         N,
@@ -424,19 +423,12 @@ def transpose_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises
 def slice_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var start = Int(node.attrs()["start"][Float32])
     var cols = inputs[0].size // inputs[0].shape[0]
-    var rows = node.shape()[0]
-    var size = rows * cols
-    var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    ctx.enqueue_function[slice_rows_kernel](
-        inputs[0].buf().unsafe_ptr(),
-        out_buf.unsafe_ptr(),
-        start,
-        cols,
-        size,
-        grid_dim=ceildiv(size, BLOCK_SIZE),
-        block_dim=BLOCK_SIZE,
+    return Buffer(
+        inputs[0]._ptr,
+        node.shape(),
+        inputs[0].strides,
+        inputs[0].base_offset + start * cols,
     )
-    return Buffer(out_buf^, node.shape(), size)
 
 
 # ===-------------------------------------------------------------------===#
@@ -449,8 +441,8 @@ def matmul_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises ->
     var K = inputs[0].shape[1]
     var N = inputs[1].shape[1]
     var out_buf = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var a = TileTensor(inputs[0].buf().unsafe_ptr().as_any_origin(), row_major(Coord(M, K)))
-    var b = TileTensor(inputs[1].buf().unsafe_ptr().as_any_origin(), row_major(Coord(K, N)))
+    var a = TileTensor(inputs[0].data_ptr().as_any_origin(), row_major(Coord(M, K)))
+    var b = TileTensor(inputs[1].data_ptr().as_any_origin(), row_major(Coord(K, N)))
     var c = TileTensor(out_buf.unsafe_ptr().as_any_origin(), row_major(Coord(M, N)))
     matmul[target="gpu"](c, a, b, ctx)
     return Buffer(out_buf^, (M, N), M * N)
@@ -461,8 +453,8 @@ def matmul_t_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises 
     var K = inputs[0].shape[1]
     var N = inputs[1].shape[0]
     var out_buf = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var a = TileTensor(inputs[0].buf().unsafe_ptr().as_any_origin(), row_major(Coord(M, K)))
-    var b = TileTensor(inputs[1].buf().unsafe_ptr().as_any_origin(), row_major(Coord(N, K)))
+    var a = TileTensor(inputs[0].data_ptr().as_any_origin(), row_major(Coord(M, K)))
+    var b = TileTensor(inputs[1].data_ptr().as_any_origin(), row_major(Coord(N, K)))
     var c = TileTensor(out_buf.unsafe_ptr().as_any_origin(), row_major(Coord(M, N)))
     matmul[target="gpu", transpose_b=True](c, a, b, ctx)
     return Buffer(out_buf^, (M, N), M * N)
@@ -479,8 +471,8 @@ def cross_entropy_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) ra
     var out_buf = ctx.enqueue_create_buffer[DType.float32](1)
     out_buf.enqueue_fill(0.0)
     ctx.enqueue_function[cross_entropy_kernel](
-        inputs[0].buf().unsafe_ptr(),
-        inputs[1].buf().unsafe_ptr(),
+        inputs[0].data_ptr(),
+        inputs[1].data_ptr(),
         out_buf.unsafe_ptr(),
         N,
         C,
@@ -496,9 +488,9 @@ def cross_entropy_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContex
     var size = N * C
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
     ctx.enqueue_function[cross_entropy_grad_kernel](
-        inputs[0].buf().unsafe_ptr(),
-        inputs[1].buf().unsafe_ptr(),
-        inputs[2].buf().unsafe_ptr(),
+        inputs[0].data_ptr(),
+        inputs[1].data_ptr(),
+        inputs[2].data_ptr(),
         out_buf.unsafe_ptr(),
         N,
         C,
