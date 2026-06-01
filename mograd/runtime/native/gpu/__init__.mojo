@@ -23,7 +23,6 @@ from mograd.runtime.native.gpu.kernels import (
     cross_entropy_kernel_no_smem,
     cross_entropy_grad_kernel,
     cross_entropy_grad_kernel_no_smem,
-    BLOCK_SIZE,
 )
 from mograd.pattern_matcher import Rule, Pat
 from mograd.runtime import Runtime
@@ -326,17 +325,24 @@ def softmax_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -
 
 
 def softmax_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
-    var size = inputs[0].size
-    var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    ctx.enqueue_function[softmax_grad_kernel](
+    var shape = inputs[0].shape
+    var N = 1 if len(shape) == 1 else shape[0]
+    var size = shape[-1]
+
+    var out_buf = ctx.enqueue_create_buffer[DType.float32](N * size)
+
+    comptime BLOCK_SIZE = 32
+
+    ctx.enqueue_function[softmax_grad_kernel[BLOCK_SIZE]](
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         out_buf.unsafe_ptr(),
+        N,
         size,
-        grid_dim=1,
-        block_dim=BLOCK_SIZE,
+        grid_dim=(N,),
+        block_dim=(BLOCK_SIZE,),
     )
-    return Buffer(out_buf^, node.shape(), size)
+    return Buffer(out_buf^, node.shape(), N * size)
 
 
 # ===-------------------------------------------------------------------===#

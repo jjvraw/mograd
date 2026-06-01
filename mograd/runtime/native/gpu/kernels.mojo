@@ -9,8 +9,6 @@ from std.atomic import Atomic
 # GPU Kernels
 # ===-------------------------------------------------------------------===#
 
-comptime BLOCK_SIZE = 256
-
 # ===-------------------------------------------------------------------===#
 # Transpose
 # ===-------------------------------------------------------------------===#
@@ -38,6 +36,7 @@ def transpose_kernel[
 # ===-------------------------------------------------------------------===#
 # Cross Entropy
 # ===-------------------------------------------------------------------===#
+# https://huggingface.co/kaisser/LLM-Maroc/blob/main/llama.cpp/ggml/src/ggml-cuda/cross-entropy-loss.cu
 
 
 def cross_entropy_kernel[
@@ -215,26 +214,24 @@ def cross_entropy_grad_kernel_no_smem[
 # ===-------------------------------------------------------------------===#
 
 
-def softmax_grad_kernel(
+def softmax_grad_kernel[
+    BLOCK_SIZE: Int
+](
     y: UnsafePointer[Float32, MutAnyOrigin],
     upstream: UnsafePointer[Float32, MutAnyOrigin],
     dst: UnsafePointer[Float32, MutAnyOrigin],
+    N: Int,
     size: Int,
 ):
-    var tid = thread_idx.x
-    var shared = stack_allocation[BLOCK_SIZE, Scalar[DType.float32], address_space=AddressSpace.SHARED]()
+    var row = block_idx.x
+    if row >= N:
+        return
+    var row_offset = row * size
 
-    shared[tid] = y[tid] * upstream[tid] if tid < size else Float32(0.0)
-    barrier()
+    var dot = Float32(0.0)
+    for i in range(thread_idx.x, size, BLOCK_SIZE):
+        dot += y[row_offset + i] * upstream[row_offset + i]
+    dot = warp_sum(dot)
 
-    var active = BLOCK_SIZE
-    comptime for _ in range(8):
-        active >>= 1
-        if tid < active:
-            shared[tid] = shared[tid] + shared[tid + active]
-        barrier()
-
-    var dot = shared[0]
-
-    if tid < size:
-        dst[tid] = y[tid] * (upstream[tid] - dot)
+    for i in range(thread_idx.x, size, BLOCK_SIZE):
+        dst[row_offset + i] = y[row_offset + i] * (upstream[row_offset + i] - dot)

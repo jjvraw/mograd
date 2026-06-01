@@ -43,6 +43,8 @@ struct Shape(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
             self._dims[i] = dims[i]
 
     def __getitem__(self, i: Int) -> Int:
+        if i < 0:
+            return self._dims[self._rank + i]
         return self._dims[i]
 
     def __setitem__(mut self, i: Int, val: Int):

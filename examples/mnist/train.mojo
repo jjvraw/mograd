@@ -29,7 +29,7 @@ def main() raises:
         var y = data.y_train[step * batch_size : (step + 1) * batch_size]
 
         var logits = model(x)
-        var loss = logits.cross_entropy(y)
+        var loss = logits.cross_entropy(y.one_hot(10))
 
         var params = opt.params()
         var grads = loss.gradient(params)
