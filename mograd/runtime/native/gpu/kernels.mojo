@@ -1,7 +1,7 @@
 from std.gpu import global_idx, thread_idx, block_idx, block_dim, barrier
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
-from std.math import exp, log, sqrt, cos
+from std.math import exp, log
 from std.atomic import Atomic
 
 # ===-------------------------------------------------------------------===#
@@ -10,90 +10,6 @@ from std.atomic import Atomic
 
 comptime BLOCK_SIZE = 256
 comptime TILE_DIM = 16
-
-
-def add_kernel(
-    a: UnsafePointer[Float32, MutAnyOrigin],
-    b: UnsafePointer[Float32, MutAnyOrigin],
-    c: UnsafePointer[Float32, MutAnyOrigin],
-    size: Int,
-):
-    var tid = global_idx.x
-    if tid < size:
-        c[tid] = a[tid] + b[tid]
-
-
-def mul_kernel(
-    a: UnsafePointer[Float32, MutAnyOrigin],
-    b: UnsafePointer[Float32, MutAnyOrigin],
-    c: UnsafePointer[Float32, MutAnyOrigin],
-    size: Int,
-):
-    var tid = global_idx.x
-    if tid < size:
-        c[tid] = a[tid] * b[tid]
-
-
-def relu_kernel(
-    x: UnsafePointer[Float32, MutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    size: Int,
-):
-    var tid = global_idx.x
-    if tid < size:
-        dst[tid] = x[tid] if x[tid] > Float32(0.0) else Float32(0.0)
-
-
-def relu_grad_kernel(
-    x: UnsafePointer[Float32, MutAnyOrigin],
-    upstream: UnsafePointer[Float32, MutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    size: Int,
-):
-    var tid = global_idx.x
-    if tid < size:
-        dst[tid] = upstream[tid] if x[tid] > Float32(0.0) else Float32(0.0)
-
-
-def exp_kernel(
-    x: UnsafePointer[Float32, MutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    size: Int,
-):
-    var tid = global_idx.x
-    if tid < size:
-        dst[tid] = exp(x[tid])
-
-
-def log_kernel(
-    x: UnsafePointer[Float32, MutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    size: Int,
-):
-    var tid = global_idx.x
-    if tid < size:
-        dst[tid] = log(x[tid])
-
-
-def neg_kernel(
-    x: UnsafePointer[Float32, MutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    size: Int,
-):
-    var tid = global_idx.x
-    if tid < size:
-        dst[tid] = -x[tid]
-
-
-def div_kernel(
-    a: UnsafePointer[Float32, MutAnyOrigin],
-    b: UnsafePointer[Float32, MutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    size: Int,
-):
-    var tid = global_idx.x
-    if tid < size:
-        dst[tid] = a[tid] / b[tid]
 
 
 def sum_kernel(
@@ -154,28 +70,6 @@ def uniform_kernel(
         s ^= s >> 17
         s ^= s << 5
         dst[tid] = low + (Float32(s) / Float32(4294967296.0)) * (high - low)
-
-
-def eq_kernel(
-    a: UnsafePointer[Float32, MutAnyOrigin],
-    b: UnsafePointer[Float32, MutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    size: Int,
-):
-    var tid = global_idx.x
-    if tid < size:
-        dst[tid] = Float32(1.0) if a[tid] == b[tid] else Float32(0.0)
-
-
-def scale_kernel(
-    src: UnsafePointer[Float32, MutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    scalar: Float32,
-    size: Int,
-):
-    var tid = global_idx.x
-    if tid < size:
-        dst[tid] = src[tid] * scalar
 
 
 def cross_entropy_kernel(
