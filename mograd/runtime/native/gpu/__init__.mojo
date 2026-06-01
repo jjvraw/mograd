@@ -10,6 +10,7 @@ from layout import Coord, TileTensor, row_major
 from linalg.matmul import matmul
 from nn.argmaxmin_gpu import argmax_gpu
 from nn.rand_normal import random_normal
+from nn.rand_uniform import random_uniform
 from nn.softmax import softmax as nn_softmax
 
 from mograd.op import Op, OpRef, OpType, AttrVal
@@ -18,7 +19,6 @@ from mograd.buffer import Buffer
 from mograd.runtime.native.gpu.kernels import (
     softmax_grad_kernel,
     transpose_kernel,
-    uniform_kernel,
     cross_entropy_kernel,
     cross_entropy_grad_kernel,
     BLOCK_SIZE,
@@ -93,15 +93,17 @@ def full_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> B
 def uniform_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = node.shape().numel()
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    ctx.enqueue_function[uniform_kernel](
-        out_buf.unsafe_ptr(),
-        size,
-        node.attrs()["low"][Float32],
-        node.attrs()["high"][Float32],
-        UInt32(Int(node.attrs()["seed"][Float32])),
-        grid_dim=ceildiv(size, BLOCK_SIZE),
-        block_dim=BLOCK_SIZE,
+    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](1)
+    seed_buf.enqueue_fill(UInt64(Int(node.attrs()["seed"][Float32])))
+    var out_ptr = out_buf.unsafe_ptr()
+
+    def store[width: Int, rank: Int](idx: IndexList[rank], val: SIMD[DType.float32, width]) capturing:
+        out_ptr.store(idx[0], val)
+
+    random_uniform[output_fn=store, target="gpu"](
+        IndexList[1](size), node.attrs()["low"][Float32], node.attrs()["high"][Float32], seed_buf.unsafe_ptr(), ctx
     )
+    ctx.synchronize()
     return Buffer(out_buf^, node.shape(), size)
 
 

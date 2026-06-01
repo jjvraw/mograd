@@ -24,22 +24,6 @@ def transpose_kernel(
         dst[col * M + row] = a[row * N + col]
 
 
-def uniform_kernel(
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    size: Int,
-    low: Float32,
-    high: Float32,
-    seed: UInt32,
-):
-    var tid = global_idx.x
-    if tid < size:
-        var s = (seed ^ UInt32(tid + 1)) * UInt32(2654435761)
-        s ^= s << 13
-        s ^= s >> 17
-        s ^= s << 5
-        dst[tid] = low + (Float32(s) / Float32(4294967296.0)) * (high - low)
-
-
 def cross_entropy_kernel(
     logits: UnsafePointer[Float32, MutAnyOrigin],
     labels: UnsafePointer[Float32, MutAnyOrigin],
