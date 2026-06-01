@@ -22,7 +22,6 @@ from mograd.runtime.native.gpu.kernels import (
     cross_entropy_kernel,
     cross_entropy_grad_kernel,
     BLOCK_SIZE,
-    TILE_DIM,
 )
 from mograd.pattern_matcher import Rule, Pat
 from mograd.runtime import Runtime

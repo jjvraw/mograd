@@ -9,7 +9,6 @@ from std.atomic import Atomic
 # ===-------------------------------------------------------------------===#
 
 comptime BLOCK_SIZE = 256
-comptime TILE_DIM = 16
 
 # ===-------------------------------------------------------------------===#
 # Transpose
@@ -18,7 +17,7 @@ comptime TILE_DIM = 16
 
 def transpose_kernel[
     BLOCK_SIZE: Int
-](src: UnsafePointer[Float32, MutAnyOrigin], dst: UnsafePointer[Float32, MutAnyOrigin], M: Int, N: Int,):
+](src: UnsafePointer[Float32, MutAnyOrigin], dst: UnsafePointer[Float32, MutAnyOrigin], M: Int, N: Int):
     var shmem = stack_allocation[BLOCK_SIZE * (BLOCK_SIZE + 1), DType.float32, address_space=AddressSpace.SHARED]()
 
     x = block_idx.x * BLOCK_SIZE + thread_idx.x
@@ -33,6 +32,11 @@ def transpose_kernel[
     y_out = block_idx.x * BLOCK_SIZE + thread_idx.y
     if x_out < M and y_out < N:
         dst[y_out * M + x_out] = shmem[thread_idx.x * (BLOCK_SIZE + 1) + thread_idx.y]
+
+
+# ===-------------------------------------------------------------------===#
+# Cross Entropy
+# ===-------------------------------------------------------------------===#
 
 
 def cross_entropy_kernel(
