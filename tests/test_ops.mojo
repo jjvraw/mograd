@@ -100,6 +100,19 @@ def test_sum() raises:
     assert_close(x.sum(), Float32(10.0))
 
 
+def test_sum_large() raises:
+    var ctx = DeviceContext()
+    var n = 4096
+    var x = Tensor.ones(ctx, (n,))
+    assert_close(x.sum(), Float32(n))
+
+
+def test_sum_of_softmax_is_one() raises:
+    var ctx = DeviceContext()
+    var x = Tensor.randn(ctx, (1024,))
+    assert_close(x.softmax().sum(), Float32(1.0), tol=1e-4)
+
+
 def test_randn_mean_and_std() raises:
     var ctx = DeviceContext()
     var x = Tensor.randn(ctx, (10000,), mean=0.0, std=1.0, seed=42)

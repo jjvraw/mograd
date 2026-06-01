@@ -67,6 +67,23 @@ def test_relu_grad() raises:
     assert_allclose(grads[0], [Float32(0), 0, 1, 1])
 
 
+def test_sum_large_grad() raises:
+    var ctx = DeviceContext()
+    var n = 4096
+    var x = Tensor.ones(ctx, (n,), requires_grad=True)
+    var loss = x.sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], Tensor.ones(ctx, (n,)))
+
+
+def test_sum_of_softmax_grad_is_zero() raises:
+    var ctx = DeviceContext()
+    var x = Tensor.randn(ctx, (8,), seed=42, requires_grad=True)
+    var loss = x.softmax().sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], Tensor.full(ctx, (8,), 0.0), tol=1e-4)
+
+
 def test_relu_zero_boundary() raises:
     var ctx = DeviceContext()
     var x = Tensor(ctx, [Float32(0.0)], (1,), requires_grad=True)
