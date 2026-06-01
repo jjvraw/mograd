@@ -1,5 +1,6 @@
 from std.gpu import global_idx, thread_idx, block_idx, block_dim, barrier
-from std.gpu.memory import AddressSpace
+from std.gpu.primitives.warp import max as warp_max, sum as warp_sum
+from std.gpu.memory import AddressSpace, external_memory
 from std.memory import stack_allocation
 from std.math import exp, log
 from std.atomic import Atomic
@@ -39,53 +40,171 @@ def transpose_kernel[
 # ===-------------------------------------------------------------------===#
 
 
-def cross_entropy_kernel(
+def cross_entropy_kernel[BLOCK_SIZE: Int](
     logits: UnsafePointer[Float32, MutAnyOrigin],
     labels: UnsafePointer[Float32, MutAnyOrigin],
     dst: UnsafePointer[Float32, MutAnyOrigin],
     N: Int,
     C: Int,
 ):
-    var i = global_idx.x
-    if i < N:
-        var row = i * C
-        var max_val = logits[row]
-        for j in range(1, C):
-            if logits[row + j] > max_val:
-                max_val = logits[row + j]
-        var sum_exp = Float32(0.0)
-        for j in range(C):
-            sum_exp += exp(logits[row + j] - max_val)
-        var label = Int(labels[i])
-        var log_prob = logits[row + label] - max_val - log(sum_exp)
-        _ = Atomic.fetch_add(dst, -log_prob / Float32(N))
+    var row = block_idx.x
+    if row >= N:
+        return
+    var row_offset = row * C
+
+    var tmp = external_memory[
+        Float32,
+        address_space=AddressSpace.SHARED,
+        alignment=4,
+    ]()
+
+    # Load into shared memory + find max
+    var max_val = Float32(-1e38)
+    for i in range(thread_idx.x, C, BLOCK_SIZE):
+        val = logits[row_offset + i]
+        tmp[i] = val
+        if val > max_val:
+            max_val = val
+    max_val = warp_max(max_val)
+
+    barrier()
+
+    # Sum of exp
+    var sum_exp = Float32(0.0)
+    for i in range(thread_idx.x, C, BLOCK_SIZE):
+        sum_exp += exp(tmp[i] - max_val)
+    sum_exp = warp_sum(sum_exp)
+    var log_sum = log(sum_exp)
+
+    # Loss
+    var loss = Float32(0.0)
+    for i in range(thread_idx.x, C, BLOCK_SIZE):
+        loss += (tmp[i] - max_val - log_sum) * labels[row_offset + i]
+    loss = -warp_sum(loss) / Float32(N)
+
+    if thread_idx.x == 0:
+        dst[row] = loss
 
 
-def cross_entropy_grad_kernel(
+def cross_entropy_kernel_no_smem[BLOCK_SIZE: Int](
     logits: UnsafePointer[Float32, MutAnyOrigin],
     labels: UnsafePointer[Float32, MutAnyOrigin],
-    upstream: UnsafePointer[Float32, MutAnyOrigin],
     dst: UnsafePointer[Float32, MutAnyOrigin],
     N: Int,
     C: Int,
 ):
-    var tid = global_idx.x
-    if tid < N * C:
-        var i = tid // C
-        var j = tid % C
-        var row = i * C
-        var max_val = logits[row]
-        for k in range(1, C):
-            if logits[row + k] > max_val:
-                max_val = logits[row + k]
-        var sum_exp = Float32(0.0)
-        for k in range(C):
-            sum_exp += exp(logits[row + k] - max_val)
-        var sm = exp(logits[row + j] - max_val) / sum_exp
-        var label = Int(labels[i])
-        var one_hot = Float32(1.0) if j == label else Float32(0.0)
-        dst[tid] = upstream[0] * (sm - one_hot) / Float32(N)
+    var row = block_idx.x
+    if row >= N:
+        return
+    var row_offset = row * C
 
+    # Find max via GMEM
+    var max_val = Float32(-1e38)
+    for i in range(thread_idx.x, C, BLOCK_SIZE):
+        val = logits[row_offset + i]
+        if val > max_val:
+            max_val = val
+    max_val = warp_max(max_val)
+
+    # Sum of exp via GMEM
+    var sum_exp = Float32(0.0)
+    for i in range(thread_idx.x, C, BLOCK_SIZE):
+        sum_exp += exp(logits[row_offset + i] - max_val)
+    sum_exp = warp_sum(sum_exp)
+    var log_sum = log(sum_exp)
+
+    # Loss via GMEM
+    var loss = Float32(0.0)
+    for i in range(thread_idx.x, C, BLOCK_SIZE):
+        loss += (logits[row_offset + i] - max_val - log_sum) * labels[row_offset + i]
+    loss = -warp_sum(loss) / Float32(N)
+
+    if thread_idx.x == 0:
+        dst[row] = loss
+
+
+def cross_entropy_grad_kernel[BLOCK_SIZE: Int](
+    grad: UnsafePointer[Float32, MutAnyOrigin],
+    logits: UnsafePointer[Float32, MutAnyOrigin],
+    labels: UnsafePointer[Float32, MutAnyOrigin],
+    dst: UnsafePointer[Float32, MutAnyOrigin],
+    N: Int,
+    C: Int,
+):
+    var row = block_idx.x
+    if row >= N:
+        return
+    var row_offset = row * C
+
+    var tmp = external_memory[
+        Float32,
+        address_space=AddressSpace.SHARED,
+        alignment=4,
+    ]()
+
+    # Load into shared + find max
+    var max_val = Float32(-1e38)
+    for i in range(thread_idx.x, C, BLOCK_SIZE):
+        val = logits[row_offset + i]
+        tmp[i] = val
+        if val > max_val:
+            max_val = val
+    max_val = warp_max(max_val)
+
+    # Compute exp(logit - max), store back to tmp
+    var sum_exp = Float32(0.0)
+    for i in range(thread_idx.x, C, BLOCK_SIZE):
+        val = exp(tmp[i] - max_val)
+        sum_exp += val
+        tmp[i] = val
+    sum_exp = warp_sum(sum_exp)
+    var sm_scale = Float32(1.0) / sum_exp
+
+    # Gradient = (softmax - label) * grad / nrows
+    var d_by_nrows = grad[0] / Float32(N)
+    for i in range(thread_idx.x, C, BLOCK_SIZE):
+        dst[row_offset + i] = (tmp[i] * sm_scale - labels[row_offset + i]) * d_by_nrows
+
+
+def cross_entropy_grad_kernel_no_smem[BLOCK_SIZE: Int](
+    grad: UnsafePointer[Float32, MutAnyOrigin],
+    logits: UnsafePointer[Float32, MutAnyOrigin],
+    labels: UnsafePointer[Float32, MutAnyOrigin],
+    dst: UnsafePointer[Float32, MutAnyOrigin],
+    N: Int,
+    C: Int,
+):
+    var row = block_idx.x
+    if row >= N:
+        return
+    var row_offset = row * C
+
+    # Find max via GMEM
+    var max_val = Float32(-1e38)
+    for i in range(thread_idx.x, C, BLOCK_SIZE):
+        val = logits[row_offset + i]
+        if val > max_val:
+            max_val = val
+    max_val = warp_max(max_val)
+
+    # Compute exp, write to dst, accumulate sum
+    var sum_exp = Float32(0.0)
+    for i in range(thread_idx.x, C, BLOCK_SIZE):
+        val = exp(logits[row_offset + i] - max_val)
+        sum_exp += val
+        dst[row_offset + i] = val
+    sum_exp = warp_sum(sum_exp)
+    var sm_scale = Float32(1.0) / sum_exp
+
+    # Gradient = (softmax - label) * grad / nrows
+    var d_by_nrows = grad[0] / Float32(N)
+    for i in range(thread_idx.x, C, BLOCK_SIZE):
+        dst[row_offset + i] = (dst[row_offset + i] * sm_scale - labels[row_offset + i]) * d_by_nrows
+
+
+# ===-------------------------------------------------------------------===#
+# Softmax
+# ===-------------------------------------------------------------------===#
 
 def softmax_grad_kernel(
     y: UnsafePointer[Float32, MutAnyOrigin],

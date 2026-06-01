@@ -1,6 +1,6 @@
 from std.math import ceildiv, exp, log
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.sys.info import simd_width_of
+from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from std.sys.info import simd_width_of, size_of
 from std.pathlib import Path
 from std.algorithm.functional import elementwise
 from std.algorithm.reduction import sum as reduce_sum
@@ -20,7 +20,9 @@ from mograd.runtime.native.gpu.kernels import (
     softmax_grad_kernel,
     transpose_kernel,
     cross_entropy_kernel,
+    cross_entropy_kernel_no_smem,
     cross_entropy_grad_kernel,
+    cross_entropy_grad_kernel_no_smem,
     BLOCK_SIZE,
 )
 from mograd.pattern_matcher import Rule, Pat
@@ -460,36 +462,72 @@ def matmul_t_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises 
 # ===-------------------------------------------------------------------===#
 
 
-def cross_entropy_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
-    var N = inputs[0].shape[0]
-    var C = inputs[0].shape[1]
-    var out_buf = ctx.enqueue_create_buffer[DType.float32](1)
-    out_buf.enqueue_fill(0.0)
-    ctx.enqueue_function[cross_entropy_kernel](
-        inputs[0].data_ptr(),
-        inputs[1].data_ptr(),
-        out_buf.unsafe_ptr(),
-        N,
-        C,
-        grid_dim=ceildiv(N, BLOCK_SIZE),
-        block_dim=BLOCK_SIZE,
-    )
-    return Buffer(out_buf^, (1,), 1)
+comptime CE_BLOCK = 32
+comptime CE_SMEM_LIMIT = DeviceContext.default_device_info.shared_memory_per_multiprocessor - 1024
 
 
-def cross_entropy_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
+def cross_entropy_exec(
+    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
+) raises -> Buffer:
     var N = inputs[0].shape[0]
     var C = inputs[0].shape[1]
-    var size = N * C
-    var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    ctx.enqueue_function[cross_entropy_grad_kernel](
-        inputs[0].data_ptr(),
-        inputs[1].data_ptr(),
-        inputs[2].data_ptr(),
-        out_buf.unsafe_ptr(),
-        N,
-        C,
-        grid_dim=ceildiv(size, BLOCK_SIZE),
-        block_dim=BLOCK_SIZE,
+    var row_buf = ctx.enqueue_create_buffer[DType.float32](N)
+    var shared_mem_bytes = C * size_of[Float32]()
+
+    if shared_mem_bytes <= CE_SMEM_LIMIT:
+        ctx.enqueue_function[cross_entropy_kernel[CE_BLOCK]](
+            inputs[0].data_ptr(), inputs[1].data_ptr(),
+            row_buf.unsafe_ptr(), N, C,
+            grid_dim=(N,), block_dim=(CE_BLOCK,),
+            shared_mem_bytes=shared_mem_bytes,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(UInt32(shared_mem_bytes)),
+        )
+    else:
+        ctx.enqueue_function[cross_entropy_kernel_no_smem[CE_BLOCK]](
+            inputs[0].data_ptr(), inputs[1].data_ptr(),
+            row_buf.unsafe_ptr(), N, C,
+            grid_dim=(N,), block_dim=(CE_BLOCK,),
+        )
+
+    var scalar_buf = ctx.enqueue_create_buffer[DType.float32](1)
+    var row_ptr = row_buf.unsafe_ptr()
+    var scalar_ptr = scalar_buf.unsafe_ptr()
+
+    def input_fn[width: Int, rank: Int](coords: IndexList[rank]) capturing -> SIMD[DType.float32, width]:
+        return row_ptr.load[width=width](coords[0])
+
+    def output_fn[width: Int, rank: Int](coords: IndexList[rank], val: SIMD[DType.float32, width]) capturing:
+        scalar_ptr.store[width=width](coords[0], val)
+
+    reduce_sum[DType.float32, input_fn, output_fn, target="gpu"](
+        IndexList[1](N), reduce_dim=0, context=ctx,
     )
-    return Buffer(out_buf^, (N, C), size)
+    ctx.synchronize()
+    return Buffer(scalar_buf^, (1,), 1)
+
+
+def cross_entropy_grad_exec(
+    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
+) raises -> Buffer:
+    # inputs[0] = logits, inputs[1] = labels, inputs[2] = upstream
+    var N = inputs[0].shape[0]
+    var C = inputs[0].shape[1]
+    var out_buf = ctx.enqueue_create_buffer[DType.float32](N * C)
+    var shared_mem_bytes = C * size_of[Float32]()
+
+    if shared_mem_bytes <= CE_SMEM_LIMIT:
+        ctx.enqueue_function[cross_entropy_grad_kernel[CE_BLOCK]](
+            inputs[2].data_ptr(), inputs[0].data_ptr(), inputs[1].data_ptr(),
+            out_buf.unsafe_ptr(), N, C,
+            grid_dim=(N,), block_dim=(CE_BLOCK,),
+            shared_mem_bytes=shared_mem_bytes,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(UInt32(shared_mem_bytes)),
+        )
+    else:
+        ctx.enqueue_function[cross_entropy_grad_kernel_no_smem[CE_BLOCK]](
+            inputs[2].data_ptr(), inputs[0].data_ptr(), inputs[1].data_ptr(),
+            out_buf.unsafe_ptr(), N, C,
+            grid_dim=(N,), block_dim=(CE_BLOCK,),
+        )
+
+    return Buffer(out_buf^, (N, C), N * C)
