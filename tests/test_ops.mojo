@@ -55,7 +55,7 @@ def test_one_hot_shape() raises:
     var ctx = DeviceContext()
     var labels = Tensor(ctx, [Float32(0), 1, 2, 3], (4,))
     var oh = labels.one_hot(10)
-    assert_true(oh.shape()[0] == 4 and oh.shape()[1] == 10)
+    assert_true(oh.shape(0) == 4 and oh.shape(1) == 10)
 
 
 def test_one_hot_values() raises:
@@ -205,7 +205,7 @@ def test_transpose_shape() raises:
     var ctx = DeviceContext()
     var x = Tensor.ones(ctx, (4, 7))
     var t = x.transpose()
-    assert_true(t.shape()[0] == 7 and t.shape()[1] == 4)
+    assert_true(t.shape(0) == 7 and t.shape(1) == 4)
 
 
 def test_transpose_square() raises:

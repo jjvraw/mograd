@@ -130,6 +130,9 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
     def shape(self) -> Shape:
         return self.op.shape()
 
+    def shape(self, idx: Int) -> Int:
+        return self.op.shape(idx)
+
     def reshape(self, shape: Shape) -> Self:
         return Tensor(self.ctx, self.op.reshape(shape), self.requires_grad)
 
@@ -141,7 +144,7 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
 
     def __getitem__(self, s: Slice) -> Self:
         var start = s.start.value() if s.start else 0
-        var end = s.end.value() if s.end else self.op.shape()[0]
+        var end = s.end.value() if s.end else self.op.shape(0)
         return self.slice(start, end)
 
     # ===-------------------------------------------------------------------===#

@@ -239,7 +239,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return OpRef(Op(OpType.SUM, (1,), self.dtype(), [self]))
 
     def argmax(self) -> OpRef:
-        return OpRef(Op(OpType.ARGMAX, (self.shape()[0],), self.dtype(), [self]))
+        return OpRef(Op(OpType.ARGMAX, (self.shape(0),), self.dtype(), [self]))
 
     # ===-------------------------------------------------------------------===#
     # Shape operations
@@ -263,7 +263,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return OpRef(
             Op(
                 OpType.ONE_HOT,
-                (self.shape()[0], num_classes),
+                (self.shape(0), num_classes),
                 self.dtype(),
                 [self],
                 {"num_classes": AttrVal(Float32(num_classes))},
@@ -274,7 +274,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return OpRef(
             Op(
                 OpType.TRANSPOSE,
-                (self.shape()[1], self.shape()[0]),
+                (self.shape(1), self.shape(0)),
                 self.dtype(),
                 [self],
             )
@@ -301,7 +301,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return OpRef(
             Op(
                 OpType.MATMUL,
-                (self.shape()[0], rhs.shape()[1]),
+                (self.shape(0), rhs.shape(1)),
                 self.dtype(),
                 [self, rhs],
             )
