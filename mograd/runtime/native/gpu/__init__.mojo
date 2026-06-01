@@ -320,6 +320,7 @@ def softmax_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -
         axis=1,
         context=ctx,
     )
+    ctx.synchronize()
     return Buffer(out_buf^, node.shape(), size)
 
 

@@ -105,7 +105,6 @@ def test_matmul_grad() raises:
 
 
 def test_matmul_grad_b() raises:
-    # Companion to test_matmul_grad — checks the other input's gradient
     def fwd(b: Tensor) raises -> Tensor:
         var a = Tensor(b.ctx.value(), [Float32(1.0), 2.0, 3.0, 4.0, 5.0, 6.0], (2, 3))
         return (a @ b).sum()
@@ -117,6 +116,21 @@ def test_matmul_grad_b() raises:
     var b = Tensor(ctx, b_data, (3, 2), requires_grad=True)
     var loss = (a @ b).sum()
     var grads = loss.gradient([b])
+    assert_allclose(grads[0], num, tol=0.05)
+
+
+def test_softmax_grad() raises:
+    def fwd(x: Tensor) raises -> Tensor:
+        var e0 = Tensor(x.ctx.value(), [Float32(1), 0, 0, 0], (4,))
+        return (x.softmax() * e0).sum()
+
+    var ctx = DeviceContext()
+    var data: List[Float32] = [1.0, 2.0, 3.0, 4.0]
+    var num = numerical_grad[fwd](ctx, data, (4,))
+    var x = Tensor(ctx, data, (4,), requires_grad=True)
+    var e0 = Tensor(ctx, [Float32(1), 0, 0, 0], (4,))
+    var loss = (x.softmax() * e0).sum()
+    var grads = loss.gradient([x])
     assert_allclose(grads[0], num, tol=0.05)
 
 
@@ -185,7 +199,7 @@ def test_simple_mlp_grad() raises:
     var ctx = DeviceContext()
 
     # Linear seeds are deterministic (UInt32(out * in)), so the same weights
-    # are produced every call (numerical and analytical grads see the same network)
+    # are produced every call: numerical and analytical grads see the same network
     var l1 = nn.Linear(4, 8)
     var l2 = nn.Linear(8, 4)
     var l3 = nn.Linear(4, 3)
