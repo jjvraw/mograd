@@ -3,6 +3,7 @@ from std.gpu.host import DeviceContext, get_gpu_target
 from std.sys.info import simd_width_of
 from std.pathlib import Path
 from std.algorithm.functional import elementwise
+from std.algorithm.reduction import sum as reduce_sum
 from std.utils import IndexList
 
 from layout import Coord, TileTensor, row_major
@@ -16,8 +17,6 @@ from mograd.runtime.native.gpu.rewrites import MATMUL_T
 from mograd.buffer import Buffer
 from mograd.runtime.native.gpu.kernels import (
     softmax_grad_kernel,
-    sum_kernel,
-    sum_grad_kernel,
     transpose_kernel,
     slice_rows_kernel,
     uniform_kernel,
@@ -350,13 +349,25 @@ def softmax_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) rai
 def sum_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = inputs[0].size
     var out_buf = ctx.enqueue_create_buffer[DType.float32](1)
-    out_buf.enqueue_fill(0.0)
-    ctx.enqueue_function[sum_kernel](
-        inputs[0].buf().unsafe_ptr(),
-        out_buf.unsafe_ptr(),
-        size,
-        grid_dim=ceildiv(size, BLOCK_SIZE),
-        block_dim=BLOCK_SIZE,
+    var inp_ptr = inputs[0].buf().unsafe_ptr()
+    var out_ptr = out_buf.unsafe_ptr()
+
+    @parameter
+    @always_inline
+    @__copy_capture(inp_ptr)
+    def input_fn[width: Int, rank: Int](coords: IndexList[rank]) -> SIMD[DType.float32, width]:
+        return inp_ptr.load[width=width](coords[0])
+
+    @parameter
+    @always_inline
+    @__copy_capture(out_ptr)
+    def output_fn[width: Int, rank: Int](coords: IndexList[rank], val: SIMD[DType.float32, width]):
+        out_ptr.store[width=width](coords[0], val)
+
+    reduce_sum[DType.float32, input_fn, output_fn, target="gpu"](
+        IndexList[1](size),
+        reduce_dim=0,
+        context=ctx,
     )
     return Buffer(out_buf^, (1,), 1)
 
@@ -364,13 +375,13 @@ def sum_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Bu
 def sum_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var size = node.shape().numel()
     var out_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    ctx.enqueue_function[sum_grad_kernel](
-        inputs[0].buf().unsafe_ptr(),
-        out_buf.unsafe_ptr(),
-        size,
-        grid_dim=ceildiv(size, BLOCK_SIZE),
-        block_dim=BLOCK_SIZE,
-    )
+    var upstream_ptr = inputs[0].buf().unsafe_ptr()
+    var out_ptr = out_buf.unsafe_ptr()
+
+    def apply[width: Int, rank: Int, alignment: Int = 1](coords: IndexList[rank]) {var upstream_ptr, var out_ptr}:
+        out_ptr.store(coords[0], upstream_ptr.load(0))
+
+    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
     return Buffer(out_buf^, node.shape(), size)
 
 

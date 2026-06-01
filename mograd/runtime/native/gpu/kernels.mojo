@@ -12,38 +12,6 @@ comptime BLOCK_SIZE = 256
 comptime TILE_DIM = 16
 
 
-def sum_kernel(
-    x: UnsafePointer[Float32, MutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    size: Int,
-):
-    var tid = thread_idx.x
-    var gtid = block_idx.x * block_dim.x + tid
-    var shared = stack_allocation[BLOCK_SIZE, Scalar[DType.float32], address_space=AddressSpace.SHARED]()
-    shared[tid] = x[gtid] if gtid < size else Float32(0.0)
-    barrier()
-
-    var active = BLOCK_SIZE
-    comptime for _ in range(8):
-        active >>= 1
-        if tid < active:
-            shared[tid] = shared[tid] + shared[tid + active]
-        barrier()
-
-    if tid == 0:
-        _ = Atomic.fetch_add(dst, shared[0])
-
-
-def sum_grad_kernel(
-    upstream: UnsafePointer[Float32, MutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    size: Int,
-):
-    var tid = global_idx.x
-    if tid < size:
-        dst[tid] = upstream[0]
-
-
 def transpose_kernel(
     a: UnsafePointer[Float32, MutAnyOrigin],
     dst: UnsafePointer[Float32, MutAnyOrigin],
