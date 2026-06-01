@@ -158,7 +158,7 @@ def test_cross_entropy_grad_row_sums() raises:
         logits_data.append(Float32(1.0))
     var logits = Tensor(ctx, logits_data, (4, 10), requires_grad=True)
     var labels = Tensor(ctx, [Float32(0), 1, 2, 3], (4,))
-    var loss = logits.cross_entropy(labels)
+    var loss = logits.cross_entropy(labels.one_hot(10))
     var grads = loss.gradient([logits])
     var grad_vals = grads[0].to_list()
     for row in range(4):
@@ -171,7 +171,7 @@ def test_cross_entropy_grad_row_sums() raises:
 def test_cross_entropy_grad() raises:
     def fwd(x: Tensor) raises -> Tensor:
         var labels = Tensor(x.ctx.value(), [Float32(0), 1, 2, 3], (4,))
-        return x.cross_entropy(labels)
+        return x.cross_entropy(labels.one_hot(10))
 
     var ctx = DeviceContext()
     var logits_data = List[Float32]()
@@ -181,7 +181,7 @@ def test_cross_entropy_grad() raises:
     var num = numerical_grad[fwd](ctx, logits_data, (4, 10))
     var logits = Tensor(ctx, logits_data, (4, 10), requires_grad=True)
     var labels = Tensor(ctx, [Float32(0), 1, 2, 3], (4,))
-    var loss = logits.cross_entropy(labels)
+    var loss = logits.cross_entropy(labels.one_hot(10))
     var grads = loss.gradient([logits])
     assert_allclose(grads[0], num, tol=0.05)
 
@@ -194,7 +194,7 @@ def test_simple_mlp_grad() raises:
         var h1 = (x @ w1.transpose()).relu()
         var l2 = nn.Linear(8, 4)
         var l3 = nn.Linear(4, 3)
-        return l3(l2(h1).relu()).cross_entropy(labels)
+        return l3(l2(h1).relu()).cross_entropy(labels.one_hot(3))
 
     def fwd_w2(w2: Tensor) raises -> Tensor:
         var ctx = w2.ctx.value()
@@ -203,7 +203,7 @@ def test_simple_mlp_grad() raises:
         var l1 = nn.Linear(4, 8)
         var h2 = (l1(x).relu() @ w2.transpose()).relu()
         var l3 = nn.Linear(4, 3)
-        return l3(h2).cross_entropy(labels)
+        return l3(h2).cross_entropy(labels.one_hot(3))
 
     def fwd_w3(w3: Tensor) raises -> Tensor:
         var ctx = w3.ctx.value()
@@ -211,7 +211,7 @@ def test_simple_mlp_grad() raises:
         var labels = Tensor(ctx, [Float32(0)], (1,))
         var l1 = nn.Linear(4, 8)
         var l2 = nn.Linear(8, 4)
-        return (l2(l1(x).relu()).relu() @ w3.transpose()).cross_entropy(labels)
+        return (l2(l1(x).relu()).relu() @ w3.transpose()).cross_entropy(labels.one_hot(3))
 
     var ctx = DeviceContext()
 
@@ -226,7 +226,7 @@ def test_simple_mlp_grad() raises:
     var labels = Tensor(ctx, [Float32(0)], (1,))
     var h1 = l1(x).relu()
     var h2 = l2(h1).relu()
-    var loss = l3(h2).cross_entropy(labels)
+    var loss = l3(h2).cross_entropy(labels.one_hot(3))
     var params = opt.params()
     var grads = loss.gradient(params)
 

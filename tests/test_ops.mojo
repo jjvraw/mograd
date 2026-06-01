@@ -45,14 +45,60 @@ def test_softmax_sums_to_one() raises:
     assert_close(x.softmax().sum(), Float32(1.0))
 
 
+def test_one_hot_identity() raises:
+    var ctx = DeviceContext()
+    var labels = Tensor(ctx, [Float32(0), 1, 2], (3,))
+    assert_allclose(labels.one_hot(3), [Float32(1), 0, 0, 0, 1, 0, 0, 0, 1])
+
+
+def test_one_hot_shape() raises:
+    var ctx = DeviceContext()
+    var labels = Tensor(ctx, [Float32(0), 1, 2, 3], (4,))
+    var oh = labels.one_hot(10)
+    assert_true(oh.shape()[0] == 4 and oh.shape()[1] == 10)
+
+
+def test_one_hot_values() raises:
+    var ctx = DeviceContext()
+    var labels = Tensor(ctx, [Float32(2), 0, 1], (3,))
+    assert_allclose(
+        labels.one_hot(4),
+        [
+            Float32(0),
+            0,
+            1,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+        ],
+    )
+
+
 def test_cross_entropy_uniform() raises:
     var ctx = DeviceContext()
-    var logits_data = List[Float32]()
-    for _ in range(40):
-        logits_data.append(Float32(0.0))
-    var logits = Tensor(ctx, logits_data, (4, 10))
+    var logits = Tensor.full(ctx, (4, 10), Float32(0))
     var labels = Tensor(ctx, [Float32(0), 1, 2, 3], (4,))
-    assert_close(logits.cross_entropy(labels), Float32(2.302585), tol=1e-3)
+    assert_close(logits.cross_entropy(labels.one_hot(10)), Float32(2.302585), tol=1e-3)
+
+
+def test_cross_entropy_soft_labels() raises:
+    var ctx = DeviceContext()
+    var logits = Tensor.full(ctx, (2, 4), Float32(0))
+    var labels = Tensor.full(ctx, (2, 4), Float32(0.25))
+    assert_close(logits.cross_entropy(labels), Float32(1.386294), tol=1e-3)
+
+
+def test_cross_entropy_certain_prediction() raises:
+    var ctx = DeviceContext()
+    var logits = Tensor(ctx, [Float32(100), 0, 0, 0, 100, 0], (2, 3))
+    var labels = Tensor(ctx, [Float32(1), 0, 0, 0, 1, 0], (2, 3))
+    assert_close(logits.cross_entropy(labels), Float32(0.0), tol=1e-3)
 
 
 def test_slice_rows() raises:

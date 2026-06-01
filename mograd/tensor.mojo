@@ -216,6 +216,9 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
     def argmax(self) -> Self:
         return Tensor(self.ctx, self.op.argmax(), self.requires_grad)
 
+    def one_hot(self, num_classes: Int) -> Self:
+        return Tensor(self.ctx, self.op.one_hot(num_classes), False)
+
     # ===-------------------------------------------------------------------===#
     # Contraction operations
     # ===-------------------------------------------------------------------===#

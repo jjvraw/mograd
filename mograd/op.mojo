@@ -57,6 +57,7 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime TRANSPOSE = OpType("TRANSPOSE")
     comptime SLICE = OpType("SLICE")
     comptime BROADCAST = OpType("BROADCAST")
+    comptime ONE_HOT = OpType("ONE_HOT")
 
     # ===-------------------------------------------------------------------===#
     # Contraction ops
@@ -254,6 +255,17 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         if neg_idx >= 0:
             s[neg_idx] = total // known
         return OpRef(Op(OpType.RESHAPE, s, self.dtype(), [self]))
+
+    def one_hot(self, num_classes: Int) -> OpRef:
+        return OpRef(
+            Op(
+                OpType.ONE_HOT,
+                (self.shape()[0], num_classes),
+                self.dtype(),
+                [self],
+                {"num_classes": AttrVal(Float32(num_classes))},
+            )
+        )
 
     def transpose(self) -> OpRef:
         return OpRef(

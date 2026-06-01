@@ -69,6 +69,7 @@ struct GPURuntime(Runtime):
                 Rule(Pat(OpType.TRANSPOSE), transpose_exec),
                 Rule(Pat(OpType.SLICE), slice_exec),
                 Rule(Pat(OpType.BROADCAST), broadcast_exec),
+                Rule(Pat(OpType.ONE_HOT), one_hot_exec),
                 # Contractions
                 Rule(Pat(OpType.MATMUL), matmul_exec),
                 Rule(Pat(MATMUL_T), matmul_t_exec),
@@ -428,6 +429,23 @@ def broadcast_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises
     return Buffer(out_buf^, node.shape(), size)
 
 
+def one_hot_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
+    var N = inputs[0].size
+    var C = Int(node.attrs()["num_classes"][Float32])
+    var out_buf = ctx.enqueue_create_buffer[DType.float32](N * C)
+    var inp_ptr = inputs[0].data_ptr()
+    var out_ptr = out_buf.unsafe_ptr()
+
+    def apply[width: Int, rank: Int, alignment: Int = 1](coords: IndexList[rank]) {var inp_ptr, var out_ptr, var C}:
+        var idx = coords[0]
+        var row = idx // C
+        var col = idx % C
+        out_ptr.store(idx, Float32(1) if Int(inp_ptr.load(row)) == col else Float32(0))
+
+    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](N * C), ctx)
+    return Buffer(out_buf^, node.shape(), N * C)
+
+
 # ===-------------------------------------------------------------------===#
 # Contractions
 # ===-------------------------------------------------------------------===#
@@ -466,9 +484,7 @@ comptime CE_BLOCK = 32
 comptime CE_SMEM_LIMIT = DeviceContext.default_device_info.shared_memory_per_multiprocessor - 1024
 
 
-def cross_entropy_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def cross_entropy_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     var N = inputs[0].shape[0]
     var C = inputs[0].shape[1]
     var row_buf = ctx.enqueue_create_buffer[DType.float32](N)
@@ -476,17 +492,25 @@ def cross_entropy_exec(
 
     if shared_mem_bytes <= CE_SMEM_LIMIT:
         ctx.enqueue_function[cross_entropy_kernel[CE_BLOCK]](
-            inputs[0].data_ptr(), inputs[1].data_ptr(),
-            row_buf.unsafe_ptr(), N, C,
-            grid_dim=(N,), block_dim=(CE_BLOCK,),
+            inputs[0].data_ptr(),
+            inputs[1].data_ptr(),
+            row_buf.unsafe_ptr(),
+            N,
+            C,
+            grid_dim=(N,),
+            block_dim=(CE_BLOCK,),
             shared_mem_bytes=shared_mem_bytes,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(UInt32(shared_mem_bytes)),
         )
     else:
         ctx.enqueue_function[cross_entropy_kernel_no_smem[CE_BLOCK]](
-            inputs[0].data_ptr(), inputs[1].data_ptr(),
-            row_buf.unsafe_ptr(), N, C,
-            grid_dim=(N,), block_dim=(CE_BLOCK,),
+            inputs[0].data_ptr(),
+            inputs[1].data_ptr(),
+            row_buf.unsafe_ptr(),
+            N,
+            C,
+            grid_dim=(N,),
+            block_dim=(CE_BLOCK,),
         )
 
     var scalar_buf = ctx.enqueue_create_buffer[DType.float32](1)
@@ -500,15 +524,15 @@ def cross_entropy_exec(
         scalar_ptr.store[width=width](coords[0], val)
 
     reduce_sum[DType.float32, input_fn, output_fn, target="gpu"](
-        IndexList[1](N), reduce_dim=0, context=ctx,
+        IndexList[1](N),
+        reduce_dim=0,
+        context=ctx,
     )
     ctx.synchronize()
     return Buffer(scalar_buf^, (1,), 1)
 
 
-def cross_entropy_grad_exec(
-    node: OpRef, inputs: List[Buffer], ctx: DeviceContext
-) raises -> Buffer:
+def cross_entropy_grad_exec(node: OpRef, inputs: List[Buffer], ctx: DeviceContext) raises -> Buffer:
     # inputs[0] = logits, inputs[1] = labels, inputs[2] = upstream
     var N = inputs[0].shape[0]
     var C = inputs[0].shape[1]
@@ -517,17 +541,27 @@ def cross_entropy_grad_exec(
 
     if shared_mem_bytes <= CE_SMEM_LIMIT:
         ctx.enqueue_function[cross_entropy_grad_kernel[CE_BLOCK]](
-            inputs[2].data_ptr(), inputs[0].data_ptr(), inputs[1].data_ptr(),
-            out_buf.unsafe_ptr(), N, C,
-            grid_dim=(N,), block_dim=(CE_BLOCK,),
+            inputs[2].data_ptr(),
+            inputs[0].data_ptr(),
+            inputs[1].data_ptr(),
+            out_buf.unsafe_ptr(),
+            N,
+            C,
+            grid_dim=(N,),
+            block_dim=(CE_BLOCK,),
             shared_mem_bytes=shared_mem_bytes,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(UInt32(shared_mem_bytes)),
         )
     else:
         ctx.enqueue_function[cross_entropy_grad_kernel_no_smem[CE_BLOCK]](
-            inputs[2].data_ptr(), inputs[0].data_ptr(), inputs[1].data_ptr(),
-            out_buf.unsafe_ptr(), N, C,
-            grid_dim=(N,), block_dim=(CE_BLOCK,),
+            inputs[2].data_ptr(),
+            inputs[0].data_ptr(),
+            inputs[1].data_ptr(),
+            out_buf.unsafe_ptr(),
+            N,
+            C,
+            grid_dim=(N,),
+            block_dim=(CE_BLOCK,),
         )
 
     return Buffer(out_buf^, (N, C), N * C)

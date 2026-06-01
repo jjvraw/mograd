@@ -40,7 +40,9 @@ def transpose_kernel[
 # ===-------------------------------------------------------------------===#
 
 
-def cross_entropy_kernel[BLOCK_SIZE: Int](
+def cross_entropy_kernel[
+    BLOCK_SIZE: Int
+](
     logits: UnsafePointer[Float32, MutAnyOrigin],
     labels: UnsafePointer[Float32, MutAnyOrigin],
     dst: UnsafePointer[Float32, MutAnyOrigin],
@@ -86,7 +88,9 @@ def cross_entropy_kernel[BLOCK_SIZE: Int](
         dst[row] = loss
 
 
-def cross_entropy_kernel_no_smem[BLOCK_SIZE: Int](
+def cross_entropy_kernel_no_smem[
+    BLOCK_SIZE: Int
+](
     logits: UnsafePointer[Float32, MutAnyOrigin],
     labels: UnsafePointer[Float32, MutAnyOrigin],
     dst: UnsafePointer[Float32, MutAnyOrigin],
@@ -123,7 +127,9 @@ def cross_entropy_kernel_no_smem[BLOCK_SIZE: Int](
         dst[row] = loss
 
 
-def cross_entropy_grad_kernel[BLOCK_SIZE: Int](
+def cross_entropy_grad_kernel[
+    BLOCK_SIZE: Int
+](
     grad: UnsafePointer[Float32, MutAnyOrigin],
     logits: UnsafePointer[Float32, MutAnyOrigin],
     labels: UnsafePointer[Float32, MutAnyOrigin],
@@ -166,7 +172,9 @@ def cross_entropy_grad_kernel[BLOCK_SIZE: Int](
         dst[row_offset + i] = (tmp[i] * sm_scale - labels[row_offset + i]) * d_by_nrows
 
 
-def cross_entropy_grad_kernel_no_smem[BLOCK_SIZE: Int](
+def cross_entropy_grad_kernel_no_smem[
+    BLOCK_SIZE: Int
+](
     grad: UnsafePointer[Float32, MutAnyOrigin],
     logits: UnsafePointer[Float32, MutAnyOrigin],
     labels: UnsafePointer[Float32, MutAnyOrigin],
@@ -205,6 +213,7 @@ def cross_entropy_grad_kernel_no_smem[BLOCK_SIZE: Int](
 # ===-------------------------------------------------------------------===#
 # Softmax
 # ===-------------------------------------------------------------------===#
+
 
 def softmax_grad_kernel(
     y: UnsafePointer[Float32, MutAnyOrigin],
