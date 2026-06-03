@@ -40,7 +40,9 @@ struct Scheduler[rules: List[Rule[BoundExecFn]]]:
                         var rule = pm.match(node)
                         if not rule:
                             raise Error("no exec rule for op: " + typed.op_type()._name)
-                        bufs[node] = rule.value()(node, inputs, ctx)
+                        var result = rule.value()(node, inputs, ctx)
+                        typed.op().buf = Optional[Buffer[dtype]](result.unsafe_get[Buffer[dtype]]().copy())
+                        bufs[node] = result^
 
         ctx.synchronize()
         return bufs[root].copy()
