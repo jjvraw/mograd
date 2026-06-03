@@ -146,8 +146,8 @@ def disk_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: De
 
 
 def add_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    var inp0 = inputs[0].unsafe_get[Buffer[dtype]]().copy()
-    var inp1 = inputs[1].unsafe_get[Buffer[dtype]]().copy()
+    ref inp0 = inputs[0].unsafe_get[Buffer[dtype]]()
+    ref inp1 = inputs[1].unsafe_get[Buffer[dtype]]()
     var size = inp0.size
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp0_ptr = inp0.data_ptr()
@@ -163,8 +163,8 @@ def add_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
 
 
 def mul_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    var inp0 = inputs[0].unsafe_get[Buffer[dtype]]().copy()
-    var inp1 = inputs[1].unsafe_get[Buffer[dtype]]().copy()
+    ref inp0 = inputs[0].unsafe_get[Buffer[dtype]]()
+    ref inp1 = inputs[1].unsafe_get[Buffer[dtype]]()
     var size = inp0.size
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp0_ptr = inp0.data_ptr()
@@ -180,7 +180,7 @@ def mul_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
 
 
 def neg_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    var inp = inputs[0].unsafe_get[Buffer[dtype]]().copy()
+    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
     var size = inp.size
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp_ptr = inp.data_ptr()
@@ -195,8 +195,8 @@ def neg_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
 
 
 def div_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    var inp0 = inputs[0].unsafe_get[Buffer[dtype]]().copy()
-    var inp1 = inputs[1].unsafe_get[Buffer[dtype]]().copy()
+    ref inp0 = inputs[0].unsafe_get[Buffer[dtype]]()
+    ref inp1 = inputs[1].unsafe_get[Buffer[dtype]]()
     var size = inp0.size
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp0_ptr = inp0.data_ptr()
@@ -212,7 +212,7 @@ def div_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
 
 
 def scale_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    var inp = inputs[0].unsafe_get[Buffer[dtype]]().copy()
+    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
     var size = inp.size
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp_ptr = inp.data_ptr()
@@ -228,7 +228,7 @@ def scale_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: D
 
 
 def exp_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    var inp = inputs[0].unsafe_get[Buffer[dtype]]().copy()
+    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
     var size = inp.size
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp_ptr = inp.data_ptr()
@@ -244,7 +244,7 @@ def exp_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
 
 
 def log_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    var inp = inputs[0].unsafe_get[Buffer[dtype]]().copy()
+    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
     var size = inp.size
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp_ptr = inp.data_ptr()
@@ -260,8 +260,8 @@ def log_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
 
 
 def eq_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    var inp0 = inputs[0].unsafe_get[Buffer[dtype]]().copy()
-    var inp1 = inputs[1].unsafe_get[Buffer[dtype]]().copy()
+    ref inp0 = inputs[0].unsafe_get[Buffer[dtype]]()
+    ref inp1 = inputs[1].unsafe_get[Buffer[dtype]]()
     var size = inp0.size
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp0_ptr = inp0.data_ptr()
@@ -282,7 +282,7 @@ def eq_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Devi
 
 
 def relu_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    var inp = inputs[0].unsafe_get[Buffer[dtype]]().copy()
+    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
     var size = inp.size
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp_ptr = inp.data_ptr()
@@ -300,8 +300,8 @@ def relu_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: De
 def relu_grad_exec[
     dtype: DType
 ](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    var x_in = inputs[0].unsafe_get[Buffer[dtype]]().copy()
-    var up_in = inputs[1].unsafe_get[Buffer[dtype]]().copy()
+    ref x_in = inputs[0].unsafe_get[Buffer[dtype]]()
+    ref up_in = inputs[1].unsafe_get[Buffer[dtype]]()
     var size = x_in.size
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var x_ptr = x_in.data_ptr()
@@ -317,7 +317,7 @@ def relu_grad_exec[
 
 
 def softmax_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    var inp = inputs[0].unsafe_get[Buffer[dtype]]().copy()
+    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
     var shape = inp.shape
     var rank = len(shape)
     var rows = shape[0] if rank > 1 else 1
@@ -339,8 +339,8 @@ def softmax_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx:
 def softmax_grad_exec[
     dtype: DType
 ](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    var inp0 = inputs[0].unsafe_get[Buffer[dtype]]().copy()
-    var inp1 = inputs[1].unsafe_get[Buffer[dtype]]().copy()
+    ref inp0 = inputs[0].unsafe_get[Buffer[dtype]]()
+    ref inp1 = inputs[1].unsafe_get[Buffer[dtype]]()
     var shape = inp0.shape
     var N = 1 if len(shape) == 1 else shape[0]
     var size = shape[-1]
@@ -364,7 +364,7 @@ def softmax_grad_exec[
 
 
 def sum_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    var inp = inputs[0].unsafe_get[Buffer[dtype]]().copy()
+    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
     var size = inp.size
     var out_buf = ctx.enqueue_create_buffer[dtype](1)
     var inp_ptr = inp.data_ptr()
@@ -382,7 +382,7 @@ def sum_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
 
 
 def argmax_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    var inp = inputs[0].unsafe_get[Buffer[dtype]]().copy()
+    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
     var N = inp.shape[0]
     var C = inp.shape[1]
     var out_buf = ctx.enqueue_create_buffer[dtype](N)
@@ -398,15 +398,14 @@ def argmax_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: 
 
 
 def reshape_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    var b = inputs[0].unsafe_get[Buffer[dtype]]().copy()
-    b.shape = node.shape()
-    return b^
+    ref src = inputs[0].unsafe_get[Buffer[dtype]]()
+    return Buffer[dtype](src._ptr, node.shape(), node.shape().strides(), src.base_offset)
 
 
 def transpose_exec[
     dtype: DType
 ](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    var inp = inputs[0].unsafe_get[Buffer[dtype]]().copy()
+    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
     var M = inp.shape[0]
     var N = inp.shape[1]
     var out_buf = ctx.enqueue_create_buffer[dtype](M * N)
@@ -424,7 +423,7 @@ def transpose_exec[
 
 
 def slice_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    var inp = inputs[0].unsafe_get[Buffer[dtype]]().copy()
+    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
     var start = Int(node.attrs()["start"][Float32])
     var cols = inp.size // inp.shape[0]
     return Buffer[dtype](inp._ptr, node.shape(), inp.strides, inp.base_offset + start * cols)
@@ -433,7 +432,7 @@ def slice_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: D
 def broadcast_exec[
     dtype: DType
 ](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    var inp = inputs[0].unsafe_get[Buffer[dtype]]().copy()
+    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
     var size = node.shape().numel()
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp_ptr = inp.data_ptr()
@@ -455,7 +454,7 @@ def one_hot_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx:
         if inputs[0].isa[BT]():
             comptime assert conforms_to(BT, HasDtype)
             comptime inp_dtype = BT.node_dtype
-            var inp = inputs[0].unsafe_get[Buffer[inp_dtype]]().copy()
+            ref inp = inputs[0].unsafe_get[Buffer[inp_dtype]]()
             var N = inp.size
             var out_buf = ctx.enqueue_create_buffer[dtype](N * C)
             var inp_ptr = inp.data_ptr()
@@ -479,7 +478,7 @@ def cast_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: De
         if inputs[0].isa[BT]():
             comptime assert conforms_to(BT, HasDtype)
             comptime inp_dtype = BT.node_dtype
-            var inp = inputs[0].unsafe_get[Buffer[inp_dtype]]().copy()
+            ref inp = inputs[0].unsafe_get[Buffer[inp_dtype]]()
             var size = inp.size
             var out_buf = ctx.enqueue_create_buffer[dtype](size)
             var inp_ptr = inp.data_ptr()
@@ -500,8 +499,8 @@ def cast_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: De
 
 
 def matmul_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    var inp0 = inputs[0].unsafe_get[Buffer[dtype]]().copy()
-    var inp1 = inputs[1].unsafe_get[Buffer[dtype]]().copy()
+    ref inp0 = inputs[0].unsafe_get[Buffer[dtype]]()
+    ref inp1 = inputs[1].unsafe_get[Buffer[dtype]]()
     var M = inp0.shape[0]
     var K = inp0.shape[1]
     var N = inp1.shape[1]
@@ -516,8 +515,8 @@ def matmul_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: 
 def matmul_t_exec[
     dtype: DType
 ](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    var inp0 = inputs[0].unsafe_get[Buffer[dtype]]().copy()
-    var inp1 = inputs[1].unsafe_get[Buffer[dtype]]().copy()
+    ref inp0 = inputs[0].unsafe_get[Buffer[dtype]]()
+    ref inp1 = inputs[1].unsafe_get[Buffer[dtype]]()
     var M = inp0.shape[0]
     var K = inp0.shape[1]
     var N = inp1.shape[0]
@@ -542,8 +541,8 @@ def cross_entropy_exec[
     dtype: DType
 ](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
     comptime assert dtype.is_floating_point(), "cross_entropy requires a floating point dtype"
-    var logits = inputs[0].unsafe_get[Buffer[dtype]]().copy()
-    var labels = inputs[1].unsafe_get[Buffer[dtype]]().copy()
+    ref logits = inputs[0].unsafe_get[Buffer[dtype]]()
+    ref labels = inputs[1].unsafe_get[Buffer[dtype]]()
     var N = logits.shape[0]
     var C = logits.shape[1]
     var row_buf = ctx.enqueue_create_buffer[dtype](N)
@@ -589,9 +588,9 @@ def cross_entropy_grad_exec[
     dtype: DType
 ](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
     comptime assert dtype.is_floating_point(), "cross_entropy requires a floating point dtype"
-    var logits = inputs[0].unsafe_get[Buffer[dtype]]().copy()
-    var labels = inputs[1].unsafe_get[Buffer[dtype]]().copy()
-    var upstream = inputs[2].unsafe_get[Buffer[dtype]]().copy()
+    ref logits = inputs[0].unsafe_get[Buffer[dtype]]()
+    ref labels = inputs[1].unsafe_get[Buffer[dtype]]()
+    ref upstream = inputs[2].unsafe_get[Buffer[dtype]]()
     var N = logits.shape[0]
     var C = logits.shape[1]
     var out_buf = ctx.enqueue_create_buffer[dtype](N * C)
