@@ -118,8 +118,6 @@ def randn_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: D
     def store[width: Int, rank: Int](idx: IndexList[rank], val: SIMD[dtype, width]) capturing:
         out_ptr.store(idx[0], val)
 
-    var mean = Scalar[dtype](node.attrs()["mean"][Float32])
-    var std = Scalar[dtype](node.attrs()["std"][Float32])
     random_normal[output_fn=store, target="gpu"](
         IndexList[1](size),
         node.attrs()["mean"][Float32],
@@ -156,10 +154,11 @@ def add_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
     var inp1_ptr = inp1.data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
 
-    def apply[w: Int, r: Int, a: Int = 1](coords: IndexList[r]) {var inp0_ptr, var inp1_ptr, var out_ptr}:
-        out_ptr.store(coords[0], inp0_ptr.load(coords[0]) + inp1_ptr.load(coords[0]))
+    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+        var idx = Int(coord[0].value())
+        out_ptr.store(idx, inp0_ptr.load(idx) + inp1_ptr.load(idx))
 
-    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
+    elementwise[simd_width=1, target="gpu"](apply, Coord(size), ctx)
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
@@ -172,10 +171,11 @@ def mul_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
     var inp1_ptr = inp1.data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
 
-    def apply[w: Int, r: Int, a: Int = 1](coords: IndexList[r]) {var inp0_ptr, var inp1_ptr, var out_ptr}:
-        out_ptr.store(coords[0], inp0_ptr.load(coords[0]) * inp1_ptr.load(coords[0]))
+    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+        var idx = Int(coord[0].value())
+        out_ptr.store(idx, inp0_ptr.load(idx) * inp1_ptr.load(idx))
 
-    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
+    elementwise[simd_width=1, target="gpu"](apply, Coord(size), ctx)
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
@@ -186,10 +186,11 @@ def neg_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
     var inp_ptr = inp.data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
 
-    def apply[w: Int, r: Int, a: Int = 1](coords: IndexList[r]) {var inp_ptr, var out_ptr}:
-        out_ptr.store(coords[0], -inp_ptr.load(coords[0]))
+    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+        var idx = Int(coord[0].value())
+        out_ptr.store(idx, -inp_ptr.load(idx))
 
-    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
+    elementwise[simd_width=1, target="gpu"](apply, Coord(size), ctx)
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
@@ -202,10 +203,11 @@ def div_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
     var inp1_ptr = inp1.data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
 
-    def apply[w: Int, r: Int, a: Int = 1](coords: IndexList[r]) {var inp0_ptr, var inp1_ptr, var out_ptr}:
-        out_ptr.store(coords[0], inp0_ptr.load(coords[0]) / inp1_ptr.load(coords[0]))
+    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+        var idx = Int(coord[0].value())
+        out_ptr.store(idx, inp0_ptr.load(idx) / inp1_ptr.load(idx))
 
-    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
+    elementwise[simd_width=1, target="gpu"](apply, Coord(size), ctx)
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
@@ -217,10 +219,11 @@ def scale_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: D
     var out_ptr = out_buf.unsafe_ptr()
     var scalar = Scalar[dtype](node.attrs()["scalar"][Float32])
 
-    def apply[w: Int, r: Int, a: Int = 1](coords: IndexList[r]) {var inp_ptr, var out_ptr, var scalar}:
-        out_ptr.store(coords[0], inp_ptr.load(coords[0]) * scalar)
+    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+        var idx = Int(coord[0].value())
+        out_ptr.store(idx, inp_ptr.load(idx) * scalar)
 
-    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
+    elementwise[simd_width=1, target="gpu"](apply, Coord(size), ctx)
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
@@ -232,10 +235,11 @@ def exp_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
     var out_ptr = out_buf.unsafe_ptr()
     comptime assert dtype.is_floating_point(), "exp_exec requires a floating point dtype"
 
-    def apply[w: Int, r: Int, a: Int = 1](coords: IndexList[r]) {var inp_ptr, var out_ptr}:
-        out_ptr.store(coords[0], exp(inp_ptr.load(coords[0])))
+    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+        var idx = Int(coord[0].value())
+        out_ptr.store(idx, exp(inp_ptr.load(idx)))
 
-    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
+    elementwise[simd_width=1, target="gpu"](apply, Coord(size), ctx)
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
@@ -245,12 +249,13 @@ def log_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp_ptr = inp.data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
-    comptime assert dtype.is_floating_point(), "exp_exec requires a floating point dtype"
+    comptime assert dtype.is_floating_point(), "log_exec requires a floating point dtype"
 
-    def apply[w: Int, r: Int, a: Int = 1](coords: IndexList[r]) {var inp_ptr, var out_ptr}:
-        out_ptr.store(coords[0], log(inp_ptr.load(coords[0])))
+    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+        var idx = Int(coord[0].value())
+        out_ptr.store(idx, log(inp_ptr.load(idx)))
 
-    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
+    elementwise[simd_width=1, target="gpu"](apply, Coord(size), ctx)
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
@@ -263,11 +268,11 @@ def eq_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Devi
     var inp1_ptr = inp1.data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
 
-    def apply[w: Int, r: Int, a: Int = 1](coords: IndexList[r]) {var inp0_ptr, var inp1_ptr, var out_ptr}:
-        var idx = coords[0]
+    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+        var idx = Int(coord[0].value())
         out_ptr.store(idx, Scalar[dtype](1) if inp0_ptr.load(idx) == inp1_ptr.load(idx) else Scalar[dtype](0))
 
-    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
+    elementwise[simd_width=1, target="gpu"](apply, Coord(size), ctx)
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
@@ -283,11 +288,12 @@ def relu_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: De
     var inp_ptr = inp.data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
 
-    def apply[w: Int, r: Int, a: Int = 1](coords: IndexList[r]) {var inp_ptr, var out_ptr}:
-        var x = inp_ptr.load(coords[0])
-        out_ptr.store(coords[0], x if x > Scalar[dtype](0) else Scalar[dtype](0))
+    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+        var idx = Int(coord[0].value())
+        var x = inp_ptr.load(idx)
+        out_ptr.store(idx, x if x > Scalar[dtype](0) else Scalar[dtype](0))
 
-    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
+    elementwise[simd_width=1, target="gpu"](apply, Coord(size), ctx)
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
@@ -302,11 +308,11 @@ def relu_grad_exec[
     var up_ptr = up_in.data_ptr()
     var out_ptr = out_buf.unsafe_ptr()
 
-    def apply[w: Int, r: Int, a: Int = 1](coords: IndexList[r]) {var x_ptr, var up_ptr, var out_ptr}:
-        var idx = coords[0]
+    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+        var idx = Int(coord[0].value())
         out_ptr.store(idx, up_ptr.load(idx) if x_ptr.load(idx) > Scalar[dtype](0) else Scalar[dtype](0))
 
-    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
+    elementwise[simd_width=1, target="gpu"](apply, Coord(size), ctx)
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
@@ -370,7 +376,7 @@ def sum_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
     def output_fn[width: Int, rank: Int](coords: IndexList[rank], val: SIMD[dtype, width]) capturing:
         out_ptr.store[width=width](coords[0], val)
 
-    reduce_sum[dtype, input_fn, output_fn, target="gpu"](IndexList[1](size), reduce_dim=0, context=ctx)
+    reduce_sum[dtype, input_fn, output_fn, target="gpu", reduce_dim=0](IndexList[1](size), ctx)
     ctx.synchronize()
     return Buffer[dtype](out_buf^, (1,), 1)
 
@@ -434,10 +440,11 @@ def broadcast_exec[
     var inp_size = inp.size
     var out_ptr = out_buf.unsafe_ptr()
 
-    def apply[w: Int, r: Int, a: Int = 1](coords: IndexList[r]) {var inp_ptr, var inp_size, var out_ptr}:
-        out_ptr.store(coords[0], inp_ptr.load(coords[0] % inp_size))
+    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+        var idx = Int(coord[0].value())
+        out_ptr.store(idx, inp_ptr.load(idx % inp_size))
 
-    elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
+    elementwise[simd_width=1, target="gpu"](apply, Coord(size), ctx)
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
@@ -454,13 +461,13 @@ def one_hot_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx:
             var inp_ptr = inp.data_ptr()
             var out_ptr = out_buf.unsafe_ptr()
 
-            def apply[w: Int, r: Int, a: Int = 1](coords: IndexList[r]) {var inp_ptr, var out_ptr, var C}:
-                var idx = coords[0]
+            def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+                var idx = Int(coord[0].value())
                 var row = idx // C
                 var col = idx % C
                 out_ptr.store(idx, Scalar[dtype](1) if Int(inp_ptr.load(row)) == col else Scalar[dtype](0))
 
-            elementwise[simd_width=1, target="gpu"](apply, IndexList[1](N * C), ctx)
+            elementwise[simd_width=1, target="gpu"](apply, Coord(N * C), ctx)
             return Buffer[dtype](out_buf^, node.shape(), N * C)
     raise Error("unsupported dtype in one_hot_exec")
 
@@ -478,10 +485,11 @@ def cast_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: De
             var inp_ptr = inp.data_ptr()
             var out_ptr = out_buf.unsafe_ptr()
 
-            def apply[w: Int, r: Int, a: Int = 1](coords: IndexList[r]) {var inp_ptr, var out_ptr}:
-                out_ptr.store(coords[0], Scalar[dtype](inp_ptr.load(coords[0])))
+            def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+                var idx = Int(coord[0].value())
+                out_ptr.store(idx, Scalar[dtype](inp_ptr.load(idx)))
 
-            elementwise[simd_width=1, target="gpu"](apply, IndexList[1](size), ctx)
+            elementwise[simd_width=1, target="gpu"](apply, Coord(size), ctx)
             return Buffer[dtype](out_buf^, node.shape(), size)
     raise Error("unsupported dtype in cast_exec")
 
@@ -572,7 +580,7 @@ def cross_entropy_exec[
     def output_fn[width: Int, rank: Int](coords: IndexList[rank], val: SIMD[dtype, width]) capturing:
         scalar_ptr.store[width=width](coords[0], val)
 
-    reduce_sum[dtype, input_fn, output_fn, target="gpu"](IndexList[1](N), reduce_dim=0, context=ctx)
+    reduce_sum[dtype, input_fn, output_fn, target="gpu", reduce_dim=0](IndexList[1](N), ctx)
     ctx.synchronize()
     return Buffer[dtype](scalar_buf^, (1,), 1)
 
