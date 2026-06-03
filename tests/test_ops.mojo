@@ -27,15 +27,15 @@ def test_basic_mixed_mul_div() raises:
 
 def test_matmul() raises:
     var ctx = DeviceContext()
-    var a = Tensor(ctx, [1, 2, 3, 4], (2, 2))
-    var identity = Tensor(ctx, [1, 0, 0, 1], (2, 2))
+    var a = Tensor(ctx, [Float32(1), 2, 3, 4], (2, 2))
+    var identity = Tensor(ctx, [Float32(1), 0, 0, 1], (2, 2))
     assert_allclose(a @ identity, [1, 2, 3, 4])
 
 
 def test_slice_preserves_shape_for_matmul() raises:
     var ctx = DeviceContext()
-    var x = Tensor(ctx, [1, 2, 3, 4, 5, 6], (3, 2))
-    var identity = Tensor(ctx, [1, 0, 0, 1], (2, 2))
+    var x = Tensor(ctx, [Float32(1), 2, 3, 4, 5, 6], (3, 2))
+    var identity = Tensor(ctx, [Float32(1), 0, 0, 1], (2, 2))
     assert_allclose(x[1:3] @ identity, [Float32(3), 4, 5, 6])
 
 
@@ -47,44 +47,31 @@ def test_softmax_sums_to_one() raises:
 
 def test_one_hot_identity() raises:
     var ctx = DeviceContext()
-    var labels = Tensor(ctx, [Float32(0), 1, 2], (3,))
-    assert_allclose(labels.one_hot(3), [Float32(1), 0, 0, 0, 1, 0, 0, 0, 1])
+    var labels = Tensor[DType.int64](ctx, [Int64(0), 1, 2], (3,))
+    assert_allclose(labels.one_hot(3), [Int64(1), 0, 0, 0, 1, 0, 0, 0, 1])
 
 
 def test_one_hot_shape() raises:
     var ctx = DeviceContext()
-    var labels = Tensor(ctx, [Float32(0), 1, 2, 3], (4,))
+    var labels = Tensor[DType.int64](ctx, [Int64(0), 1, 2, 3], (4,))
     var oh = labels.one_hot(10)
     assert_true(oh.shape(0) == 4 and oh.shape(1) == 10)
 
 
 def test_one_hot_values() raises:
     var ctx = DeviceContext()
-    var labels = Tensor(ctx, [Float32(2), 0, 1], (3,))
+    var labels = Tensor[DType.int64](ctx, [Int64(2), 0, 1], (3,))
     assert_allclose(
         labels.one_hot(4),
-        [
-            Float32(0),
-            0,
-            1,
-            0,
-            1,
-            0,
-            0,
-            0,
-            0,
-            1,
-            0,
-            0,
-        ],
+        [Int64(0), 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0],
     )
 
 
 def test_cross_entropy_uniform() raises:
     var ctx = DeviceContext()
     var logits = Tensor.full(ctx, (4, 10), Float32(0))
-    var labels = Tensor(ctx, [Float32(0), 1, 2, 3], (4,))
-    assert_close(logits.cross_entropy(labels.one_hot(10)), Float32(2.302585), tol=1e-3)
+    var labels = Tensor[DType.int64](ctx, [Int64(0), 1, 2, 3], (4,))
+    assert_close(logits.cross_entropy(labels.one_hot(10).cast[DType.float32]()), Float32(2.302585), tol=1e-3)
 
 
 def test_cross_entropy_soft_labels() raises:
@@ -97,8 +84,8 @@ def test_cross_entropy_soft_labels() raises:
 def test_cross_entropy_certain_prediction() raises:
     var ctx = DeviceContext()
     var logits = Tensor(ctx, [Float32(100), 0, 0, 0, 100, 0], (2, 3))
-    var labels = Tensor(ctx, [Float32(1), 0, 0, 0, 1, 0], (2, 3))
-    assert_close(logits.cross_entropy(labels), Float32(0.0), tol=1e-3)
+    var labels = Tensor(ctx, [Int64(1), 0, 0, 0, 1, 0], (2, 3))
+    assert_close(logits.cross_entropy(labels.cast[DType.float32]()), Float32(0.0), tol=1e-3)
 
 
 def test_slice_rows() raises:
@@ -229,6 +216,20 @@ def test_transpose_tranpose() raises:
     var ctx = DeviceContext()
     var x = Tensor.randn(ctx, (113, 257), seed=7)
     assert_allclose(x.transpose().transpose(), x)
+
+
+def test_cast_int64_to_float32() raises:
+    var ctx = DeviceContext()
+    var x = Tensor[DType.int64](ctx, [Int64(0), 1, 2, 3], (4,))
+    var y = x.cast[DType.float32]()
+    assert_allclose(y, [Float32(0), 1, 2, 3])
+
+
+def test_cast_one_hot_to_float32() raises:
+    var ctx = DeviceContext()
+    var labels = Tensor[DType.int64](ctx, [Int64(0), 1, 2], (3,))
+    var oh = labels.one_hot(3).cast[DType.float32]()
+    assert_allclose(oh, [Float32(1), 0, 0, 0, 1, 0, 0, 0, 1])
 
 
 def main() raises:

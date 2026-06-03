@@ -1,7 +1,9 @@
 from std.memory import ArcPointer
 from std.gpu.host import DeviceContext, DeviceBuffer
+from std.utils import Variant
 
 from mograd.shape import Shape
+from mograd.op import HasDtype
 
 
 # ===-------------------------------------------------------------------===#
@@ -9,8 +11,9 @@ from mograd.shape import Shape
 # ===-------------------------------------------------------------------===#
 
 
-struct Buffer(Copyable, Movable, Writable):
-    var _ptr: ArcPointer[DeviceBuffer[DType.float32]]
+struct Buffer[dtype: DType](Copyable, HasDtype, Movable, Writable):
+    comptime node_dtype = Self.dtype
+    var _ptr: ArcPointer[DeviceBuffer[Self.dtype]]
     var shape: Shape
     var strides: Shape
     var base_offset: Int
@@ -18,7 +21,7 @@ struct Buffer(Copyable, Movable, Writable):
 
     def __init__(
         out self,
-        var buf: DeviceBuffer[DType.float32],
+        var buf: DeviceBuffer[Self.dtype],
         shape: Shape,
         size: Int,
     ):
@@ -30,7 +33,7 @@ struct Buffer(Copyable, Movable, Writable):
 
     def __init__(
         out self,
-        ptr: ArcPointer[DeviceBuffer[DType.float32]],
+        ptr: ArcPointer[DeviceBuffer[Self.dtype]],
         shape: Shape,
         strides: Shape,
         base_offset: Int,
@@ -41,10 +44,10 @@ struct Buffer(Copyable, Movable, Writable):
         self.base_offset = base_offset
         self.size = shape.numel()
 
-    def buf(ref self) -> ref[self._ptr[]] DeviceBuffer[DType.float32]:
+    def buf(ref self) -> ref[self._ptr[]] DeviceBuffer[Self.dtype]:
         return self._ptr[]
 
-    def data_ptr(ref self) -> UnsafePointer[Float32, MutAnyOrigin]:
+    def data_ptr(ref self) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
         return self.buf().unsafe_ptr() + self.base_offset
 
     def broadcast_to(self, new_shape: Shape) -> Self:
@@ -66,28 +69,28 @@ struct Buffer(Copyable, Movable, Writable):
     @staticmethod
     def empty(ctx: DeviceContext, shape: Shape) raises -> Self:
         var size = shape.numel()
-        var dev_buf = ctx.enqueue_create_buffer[DType.float32](size)
+        var dev_buf = ctx.enqueue_create_buffer[Self.dtype](size)
         return Self(dev_buf^, shape, size)
 
     @staticmethod
     def ones(ctx: DeviceContext, shape: Shape) raises -> Self:
         var size = shape.numel()
-        var dev_buf = ctx.enqueue_create_buffer[DType.float32](size)
+        var dev_buf = ctx.enqueue_create_buffer[Self.dtype](size)
         dev_buf.enqueue_fill(1.0)
         return Self(dev_buf^, shape, size)
 
     @staticmethod
     def from_data(
         ctx: DeviceContext,
-        data: List[Float32],
+        data: List[Scalar[Self.dtype]],
         shape: Shape,
     ) raises -> Self:
         var size = len(data)
-        var host_buf = ctx.enqueue_create_host_buffer[DType.float32](size)
+        var host_buf = ctx.enqueue_create_host_buffer[Self.dtype](size)
         var host_ptr = host_buf.unsafe_ptr()
         for i in range(size):
             host_ptr[i] = data[i]
-        var dev_buf = ctx.enqueue_create_buffer[DType.float32](size)
+        var dev_buf = ctx.enqueue_create_buffer[Self.dtype](size)
         ctx.enqueue_copy(dst_buf=dev_buf, src_buf=host_buf)
         return Self(dev_buf^, shape, size)
 
@@ -95,3 +98,6 @@ struct Buffer(Copyable, Movable, Writable):
         writer.write("Buffer(shape=")
         self.shape.write_to(writer)
         writer.write(", size=", String(self.size), ")")
+
+
+comptime AnyBuffer = Variant[Buffer[DType.float32], Buffer[DType.int64]]

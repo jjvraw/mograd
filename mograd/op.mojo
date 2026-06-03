@@ -58,6 +58,7 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime SLICE = OpType("SLICE")
     comptime BROADCAST = OpType("BROADCAST")
     comptime ONE_HOT = OpType("ONE_HOT")
+    comptime CAST = OpType("CAST")
 
     # ===-------------------------------------------------------------------===#
     # Contraction ops
@@ -94,56 +95,49 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
 comptime AttrVal = Variant[Float32, String]
 
 
-struct Op(Copyable, Movable, Writable):
+struct Op[dtype: DType](Copyable, Movable, Writable):
     var op_type: OpType
     var shape: Shape
-    var dtype: DType
-    var srcs: List[OpRef]
-    var buf: Optional[Buffer]
+    var srcs: List[AnyOpRef]
+    var buf: Optional[Buffer[Self.dtype]]
     var attrs: Dict[String, AttrVal]
 
     def __init__(
         out self,
         op_type: OpType,
         shape: Shape,
-        dtype: DType,
-        var srcs: List[OpRef],
+        var srcs: List[AnyOpRef],
     ):
         self.op_type = op_type
         self.shape = shape
-        self.dtype = dtype
         self.srcs = srcs^
-        self.buf = Optional[Buffer](None)
+        self.buf = None
         self.attrs = {}
 
     def __init__(
         out self,
         op_type: OpType,
         shape: Shape,
-        dtype: DType,
-        var srcs: List[OpRef],
-        var buf: Optional[Buffer],
+        var srcs: List[AnyOpRef],
+        var buf: Buffer[Self.dtype],
     ):
         self.op_type = op_type
         self.shape = shape
-        self.dtype = dtype
         self.srcs = srcs^
-        self.buf = buf^
+        self.buf = Optional[Buffer[Self.dtype]](buf^)
         self.attrs = {}
 
     def __init__(
         out self,
         op_type: OpType,
         shape: Shape,
-        dtype: DType,
-        var srcs: List[OpRef],
+        var srcs: List[AnyOpRef],
         var attrs: Dict[String, AttrVal],
     ):
         self.op_type = op_type
         self.shape = shape
-        self.dtype = dtype
         self.srcs = srcs^
-        self.buf = Optional[Buffer](None)
+        self.buf = None
         self.attrs = attrs^
 
     def __str__(self) -> String:
@@ -158,21 +152,71 @@ struct Op(Copyable, Movable, Writable):
 # ===-------------------------------------------------------------------===#
 
 
-struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
-    var _ptr: ArcPointer[Op]
+comptime AnyOpRef = Variant[OpRef[DType.float32], OpRef[DType.int64]]
+
+
+trait NodeOps(Movable):
+    def op_type(ref self) -> OpType:
+        ...
+
+    def srcs_count(ref self) -> Int:
+        ...
+
+    def get_src(self, i: Int) -> AnyOpRef:
+        ...
+
+    def shape_val(self) -> Shape:
+        ...
+
+    def attrs_copy(self) -> Dict[String, AttrVal]:
+        ...
+
+
+trait OpPrinter:
+    def _write_indented(self, mut writer: Some[Writer], indent: Int):
+        ...
+
+
+trait HasDtype:
+    comptime node_dtype: DType
+
+
+struct OpRef[dtype: DType](Copyable, HasDtype, ImplicitlyCopyable, KeyElement, Movable, NodeOps, OpPrinter, Writable):
+    comptime node_dtype: DType = Self.dtype
+    var _ptr: ArcPointer[Op[Self.dtype]]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    def __init__(out self, var op: Op):
+    @implicit
+    def __init__(out self, var op: Op[Self.dtype]):
         self._ptr = ArcPointer(op^)
+
+    def __init__(
+        out self,
+        op_type: OpType,
+        shape: Shape,
+        var srcs: List[AnyOpRef],
+        var attrs: Optional[Dict[String, AttrVal]] = None,
+    ):
+        var owned_attrs = attrs.take() if attrs else {}
+        self._ptr = ArcPointer(Op[Self.dtype](op_type, shape, srcs^, owned_attrs^))
+
+    def __init__(
+        out self,
+        op_type: OpType,
+        shape: Shape,
+        var srcs: List[AnyOpRef],
+        var buf: Buffer[Self.dtype],
+    ):
+        self._ptr = ArcPointer(Op[Self.dtype](op_type, shape, srcs^, buf^))
 
     # ===-------------------------------------------------------------------===#
     # Accessors
     # ===-------------------------------------------------------------------===#
 
-    def op(ref self) -> ref[self._ptr[]] Op:
+    def op(ref self) -> ref[self._ptr[]] Op[Self.dtype]:
         return self._ptr[]
 
     def shape(ref self) -> ref[self._ptr[].shape] Shape:
@@ -181,71 +225,84 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     def shape(ref self, idx: Int) -> Int:
         return self._ptr[].shape[idx]
 
-    def dtype(ref self) -> ref[self._ptr[].dtype] DType:
-        return self._ptr[].dtype
-
-    def op_type(ref self) -> ref[self._ptr[].op_type] OpType:
+    def op_type(ref self) -> OpType:
         return self._ptr[].op_type
 
-    def srcs(ref self) -> ref[self._ptr[].srcs] List[OpRef]:
+    def srcs(ref self) -> ref[self._ptr[].srcs] List[AnyOpRef]:
         return self._ptr[].srcs
+
+    def src(ref self, i: Int) -> OpRef[Self.dtype]:
+        return self._ptr[].srcs[i].unsafe_get[OpRef[Self.dtype]]()
+
+    def srcs_count(ref self) -> Int:
+        return len(self._ptr[].srcs)
+
+    def get_src(self, i: Int) -> AnyOpRef:
+        return self._ptr[].srcs[i]
 
     def attrs(ref self) -> ref[self._ptr[].attrs] Dict[String, AttrVal]:
         return self._ptr[].attrs
+
+    def shape_val(self) -> Shape:
+        return self._ptr[].shape
+
+    def attrs_copy(self) -> Dict[String, AttrVal]:
+        return self._ptr[].attrs.copy()
 
     # ===-------------------------------------------------------------------===#
     # Pointwise operations
     # ===-------------------------------------------------------------------===#
 
-    def __add__(self, rhs: OpRef) -> OpRef:
-        return OpRef(Op(OpType.ADD, self.shape(), self.dtype(), [self, rhs]))
+    def __add__(self, rhs: OpRef) -> Self:
+        return Self(OpType.ADD, self.shape(), [self, rhs])
 
-    def __mul__(self, rhs: OpRef) -> OpRef:
-        return OpRef(Op(OpType.MUL, self.shape(), self.dtype(), [self, rhs]))
+    def __mul__(self, rhs: OpRef) -> Self:
+        return Self(OpType.MUL, self.shape(), [self, rhs])
 
-    def __truediv__(self, rhs: OpRef) -> OpRef:
-        return OpRef(Op(OpType.DIV, self.shape(), self.dtype(), [self, rhs]))
+    def __truediv__(self, rhs: OpRef) -> Self:
+        return Self(OpType.DIV, self.shape(), [self, rhs])
 
-    def __neg__(self) -> OpRef:
-        return OpRef(Op(OpType.NEG, self.shape(), self.dtype(), [self]))
+    def __neg__(self) -> Self:
+        return Self(OpType.NEG, self.shape(), [self])
 
-    def neg(self) -> OpRef:
-        return OpRef(Op(OpType.NEG, self.shape(), self.dtype(), [self]))
+    def neg(self) -> Self:
+        return Self(OpType.NEG, self.shape(), [self])
 
-    def scale(self, scalar: Float32) -> OpRef:
+    def scale(self, scalar: Scalar[Self.dtype]) -> Self:
         var attrs: Dict[String, AttrVal] = {"scalar": AttrVal(scalar)}
-        return OpRef(Op(OpType.SCALE, self.shape(), self.dtype(), [self], attrs^))
+        return Self(OpType.SCALE, self.shape(), [self], attrs=attrs^)
 
-    def exp(self) -> OpRef:
-        return OpRef(Op(OpType.EXP, self.shape(), self.dtype(), [self]))
+    def exp(self) -> Self:
+        return Self(OpType.EXP, self.shape(), [self])
 
-    def log(self) -> OpRef:
-        return OpRef(Op(OpType.LOG, self.shape(), self.dtype(), [self]))
+    def log(self) -> Self:
+        return Self(OpType.LOG, self.shape(), [self])
 
-    def relu(self) -> OpRef:
-        return OpRef(Op(OpType.RELU, self.shape(), self.dtype(), [self]))
+    def relu(self) -> Self:
+        return Self(OpType.RELU, self.shape(), [self])
 
-    def softmax(self) -> OpRef:
-        return OpRef(Op(OpType.SOFTMAX, self.shape(), self.dtype(), [self]))
+    def softmax(self) -> Self:
+        return Self(OpType.SOFTMAX, self.shape(), [self])
 
-    def eq(self, other: OpRef) -> OpRef:
-        return OpRef(Op(OpType.EQ, self.shape(), self.dtype(), [self, other]))
+    def eq(self, other: OpRef) -> Self:
+        return Self(OpType.EQ, self.shape(), [self, other])
 
     # ===-------------------------------------------------------------------===#
     # Reduction operations
     # ===-------------------------------------------------------------------===#
 
-    def sum(self) -> OpRef:
-        return OpRef(Op(OpType.SUM, (1,), self.dtype(), [self]))
+    def sum(self) -> Self:
+        return Self(OpType.SUM, (1,), [self])
 
-    def argmax(self) -> OpRef:
-        return OpRef(Op(OpType.ARGMAX, (self.shape(0),), self.dtype(), [self]))
+    def argmax(self) -> Self:
+        return Self(OpType.ARGMAX, (self.shape(0),), [self])
 
     # ===-------------------------------------------------------------------===#
     # Shape operations
     # ===-------------------------------------------------------------------===#
 
-    def reshape(self, shape: Shape) -> OpRef:
+    def reshape(self, shape: Shape) -> Self:
+        # TODO: move below to infer_size or equivalent.
         var s = shape
         var total = self.shape().numel()
         var known = 1
@@ -257,30 +314,27 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
                 known *= s[i]
         if neg_idx >= 0:
             s[neg_idx] = total // known
-        return OpRef(Op(OpType.RESHAPE, s, self.dtype(), [self]))
+        return Self(OpType.RESHAPE, s, [self])
 
-    def one_hot(self, num_classes: Int) -> OpRef:
-        return OpRef(
-            Op(
-                OpType.ONE_HOT,
-                (self.shape(0), num_classes),
-                self.dtype(),
-                [self],
-                {"num_classes": AttrVal(Float32(num_classes))},
-            )
+    def one_hot[
+        out_dtype: DType = DType.int64
+    ](self, num_classes: Int) -> OpRef[out_dtype] where out_dtype.is_integral():
+        var attrs: Dict[String, AttrVal] = {"num_classes": AttrVal(Float32(num_classes))}
+        return OpRef[out_dtype](
+            OpType.ONE_HOT,
+            (self.shape(0), num_classes),
+            [self],
+            attrs=attrs^,
         )
 
-    def transpose(self) -> OpRef:
-        return OpRef(
-            Op(
-                OpType.TRANSPOSE,
-                (self.shape(1), self.shape(0)),
-                self.dtype(),
-                [self],
-            )
-        )
+    def cast[out_dtype: DType](self) -> OpRef[out_dtype]:
+        return OpRef[out_dtype](OpType.CAST, self.shape(), [self])
 
-    def slice(self, start: Int, end: Int) -> OpRef:
+    def transpose(self) -> Self:
+        return Self(OpType.TRANSPOSE, (self.shape(1), self.shape(0)), [self])
+
+    def slice(self, start: Int, end: Int) -> Self:
+        # TODO: Use shape slice
         var src = self.shape()
         var new_dims = List[Int]()
         new_dims.append(end - start)
@@ -291,28 +345,21 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
             "start": AttrVal(Float32(start)),
             "end": AttrVal(Float32(end)),
         }
-        return OpRef(Op(OpType.SLICE, new_shape, self.dtype(), [self], attrs^))
+        return Self(OpType.SLICE, new_shape, [self], attrs=attrs^)
 
     # ===-------------------------------------------------------------------===#
     # Contraction operations
     # ===-------------------------------------------------------------------===#
 
-    def matmul(self, rhs: OpRef) -> OpRef:
-        return OpRef(
-            Op(
-                OpType.MATMUL,
-                (self.shape(0), rhs.shape(1)),
-                self.dtype(),
-                [self, rhs],
-            )
-        )
+    def matmul(self, rhs: OpRef) -> Self:
+        return Self(OpType.MATMUL, (self.shape(0), rhs.shape(1)), [self, rhs])
 
     # ===-------------------------------------------------------------------===#
     # Loss operations
     # ===-------------------------------------------------------------------===#
 
-    def cross_entropy(self, labels: OpRef) -> OpRef:
-        return OpRef(Op(OpType.CROSS_ENTROPY, (1,), self.dtype(), [self, labels]))
+    def cross_entropy(self, labels: Self) -> Self where Self.dtype.is_floating_point():
+        return Self(OpType.CROSS_ENTROPY, (1,), [self, labels])
 
     # ===-------------------------------------------------------------------===#
     # Trait methods
@@ -334,12 +381,21 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         var pad = String(" ") * indent
         writer.write(pad + self.op_type()._name + "(shape=")
         self.shape().write_to(writer)
-        writer.write(", dtype=" + String(self.dtype()))
+        writer.write(", dtype=" + String(self.dtype))
         if len(self.srcs()) == 0:
             writer.write(")")
-        else:
-            writer.write(", srcs=(\n")
-            for i in range(len(self.srcs())):
-                self.srcs()[i]._write_indented(writer, indent + 4)
-                writer.write("\n")
-            writer.write(pad + "))")
+            return
+        writer.write(", srcs=(\n")
+        for i in range(len(self.srcs())):
+            _write_any_op_ref(self.srcs()[i], writer, indent + 4)
+            writer.write("\n")
+        writer.write(pad + "))")
+
+
+def _write_any_op_ref(op: AnyOpRef, mut writer: Some[Writer], indent: Int):
+    comptime for i in range(AnyOpRef.Ts.size):
+        comptime T = AnyOpRef.Ts[i]
+        if op.isa[T]():
+            comptime assert conforms_to(T, OpPrinter)
+            trait_downcast[OpPrinter](op.unsafe_get[T]())._write_indented(writer, indent)
+            return

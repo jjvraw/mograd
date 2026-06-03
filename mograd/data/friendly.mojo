@@ -5,17 +5,21 @@ from mograd.data.lazy_loader import LazyLoader
 
 
 @fieldwise_init
-struct MNISTData(Copyable, Movable):
-    var x_train: Tensor  # [60000, 784]
-    var y_train: Tensor  # [60000]
-    var x_test: Tensor  # [10000, 784]
-    var y_test: Tensor  # [10000]
+struct MNISTData[dtype: DType = DType.float32](Copyable, Movable) where dtype.is_floating_point():
+    var x_train: Tensor[Self.dtype]  # [60000, 784]
+    var y_train: Tensor[Self.dtype]  # [60000]
+    var x_test: Tensor[Self.dtype]  # [10000, 784]
+    var y_test: Tensor[Self.dtype]  # [10000]
 
 
 comptime _BASE = "https://storage.googleapis.com/cvdf-datasets/mnist/"
 
 
-def mnist(ctx: DeviceContext, cache_dir: String = "~/.mograd/datasets") raises -> MNISTData:
+def mnist[
+    dtype: DType = DType.float32
+](ctx: DeviceContext, cache_dir: String = "~/.mograd/datasets") raises -> MNISTData[
+    dtype
+] where dtype.is_floating_point():
     var loader = LazyLoader(cache_dir)
 
     var x_train_path = loader.ensure_cached_idx(
@@ -43,9 +47,9 @@ def mnist(ctx: DeviceContext, cache_dir: String = "~/.mograd/datasets") raises -
         is_images=False,
     )
 
-    return MNISTData(
-        x_train=Tensor.disk(ctx, x_train_path, (60000, 784)),
-        y_train=Tensor.disk(ctx, y_train_path, (60000,)),
-        x_test=Tensor.disk(ctx, x_test_path, (10000, 784)),
-        y_test=Tensor.disk(ctx, y_test_path, (10000,)),
+    return MNISTData[dtype](
+        x_train=Tensor[dtype].disk(ctx, x_train_path, (60000, 784)),
+        y_train=Tensor[dtype].disk(ctx, y_train_path, (60000,)),
+        x_test=Tensor[dtype].disk(ctx, x_test_path, (10000, 784)),
+        y_test=Tensor[dtype].disk(ctx, y_test_path, (10000,)),
     )

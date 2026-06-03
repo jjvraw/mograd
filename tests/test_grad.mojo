@@ -7,7 +7,7 @@ from mograd.shape import Shape
 from mograd.testing import assert_allclose, assert_close
 
 
-comptime FwdFn = def(x: Tensor) thin raises -> Tensor
+comptime FwdFn = def(x: Tensor[]) thin raises -> Tensor[]
 
 
 def numerical_grad[
@@ -26,7 +26,7 @@ def numerical_grad[
 
 
 def test_scale_grad() raises:
-    def fwd(x: Tensor) raises -> Tensor:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
         return (x * Float32(3.0)).sum()
 
     var ctx = DeviceContext()
@@ -40,7 +40,7 @@ def test_scale_grad() raises:
 
 
 def test_sum_grad() raises:
-    def fwd(x: Tensor) raises -> Tensor:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
         return x.sum()
 
     var ctx = DeviceContext()
@@ -54,7 +54,7 @@ def test_sum_grad() raises:
 
 
 def test_relu_grad() raises:
-    def fwd(x: Tensor) raises -> Tensor:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
         return x.relu().sum()
 
     var ctx = DeviceContext()
@@ -93,7 +93,7 @@ def test_relu_zero_boundary() raises:
 
 
 def test_log_grad() raises:
-    def fwd(x: Tensor) raises -> Tensor:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
         return x.log().sum()
 
     var ctx = DeviceContext()
@@ -107,7 +107,7 @@ def test_log_grad() raises:
 
 
 def test_neg_grad() raises:
-    def fwd(x: Tensor) raises -> Tensor:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
         return (-x).sum()
 
     var ctx = DeviceContext()
@@ -121,7 +121,7 @@ def test_neg_grad() raises:
 
 
 def test_exp_grad() raises:
-    def fwd(x: Tensor) raises -> Tensor:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
         return x.exp().sum()
 
     var ctx = DeviceContext()
@@ -136,7 +136,7 @@ def test_exp_grad() raises:
 
 
 def test_div_grad_numerator() raises:
-    def fwd(x: Tensor) raises -> Tensor:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
         var b = Tensor(x.ctx.value(), [Float32(2.0), 4.0, 8.0], (3,))
         return (x / b).sum()
 
@@ -152,7 +152,7 @@ def test_div_grad_numerator() raises:
 
 
 def test_div_grad_denominator() raises:
-    def fwd(x: Tensor) raises -> Tensor:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
         var a = Tensor(x.ctx.value(), [Float32(4.0), 8.0, 16.0], (3,))
         return (a / x).sum()
 
@@ -169,7 +169,7 @@ def test_div_grad_denominator() raises:
 
 
 def test_reshape_grad() raises:
-    def fwd(x: Tensor) raises -> Tensor:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
         return x.reshape((2, 2)).sum()
 
     var ctx = DeviceContext()
@@ -183,7 +183,7 @@ def test_reshape_grad() raises:
 
 
 def test_transpose_grad() raises:
-    def fwd(x: Tensor) raises -> Tensor:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
         return x.transpose().sum()
 
     var ctx = DeviceContext()
@@ -197,7 +197,7 @@ def test_transpose_grad() raises:
 
 
 def test_matmul_grad() raises:
-    def fwd(a: Tensor) raises -> Tensor:
+    def fwd(a: Tensor[]) raises -> Tensor[]:
         var b = Tensor(a.ctx.value(), [Float32(1.0), 2.0, 3.0, 4.0, 5.0, 6.0], (3, 2))
         return (a @ b).sum()
 
@@ -212,7 +212,7 @@ def test_matmul_grad() raises:
 
 
 def test_matmul_grad_b() raises:
-    def fwd(b: Tensor) raises -> Tensor:
+    def fwd(b: Tensor[]) raises -> Tensor[]:
         var a = Tensor(b.ctx.value(), [Float32(1.0), 2.0, 3.0, 4.0, 5.0, 6.0], (2, 3))
         return (a @ b).sum()
 
@@ -227,7 +227,7 @@ def test_matmul_grad_b() raises:
 
 
 def test_softmax_grad() raises:
-    def fwd(x: Tensor) raises -> Tensor:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
         var e0 = Tensor(x.ctx.value(), [Float32(1), 0, 0, 0], (4,))
         return (x.softmax() * e0).sum()
 
@@ -247,8 +247,8 @@ def test_cross_entropy_grad_row_sums() raises:
     for _ in range(40):
         logits_data.append(Float32(1.0))
     var logits = Tensor(ctx, logits_data, (4, 10), requires_grad=True)
-    var labels = Tensor(ctx, [Float32(0), 1, 2, 3], (4,))
-    var loss = logits.cross_entropy(labels.one_hot(10))
+    var labels = Tensor(ctx, [Float32(0), 1, 2, 3], (4,)).cast[DType.float32]()
+    var loss = logits.cross_entropy(labels.one_hot(10).cast[DType.float32]())
     var grads = loss.gradient([logits])
     var grad_vals = grads[0].to_list()
     for row in range(4):
@@ -259,9 +259,9 @@ def test_cross_entropy_grad_row_sums() raises:
 
 
 def test_cross_entropy_grad() raises:
-    def fwd(x: Tensor) raises -> Tensor:
-        var labels = Tensor(x.ctx.value(), [Float32(0), 1, 2, 3], (4,))
-        return x.cross_entropy(labels.one_hot(10))
+    def fwd(x: Tensor[]) raises -> Tensor[]:
+        var labels = Tensor(x.ctx.value(), [Float32(0), 1, 2, 3], (4,)).cast[DType.float32]()
+        return x.cross_entropy(labels.one_hot(10).cast[DType.float32]())
 
     var ctx = DeviceContext()
     var logits_data = List[Float32]()
@@ -270,38 +270,38 @@ def test_cross_entropy_grad() raises:
 
     var num = numerical_grad[fwd](ctx, logits_data, (4, 10))
     var logits = Tensor(ctx, logits_data, (4, 10), requires_grad=True)
-    var labels = Tensor(ctx, [Float32(0), 1, 2, 3], (4,))
-    var loss = logits.cross_entropy(labels.one_hot(10))
+    var labels = Tensor(ctx, [Float32(0), 1, 2, 3], (4,)).cast[DType.float32]()
+    var loss = logits.cross_entropy(labels.one_hot(10).cast[DType.float32]())
     var grads = loss.gradient([logits])
     assert_allclose(grads[0], num, tol=0.05)
 
 
 def test_simple_mlp_grad() raises:
-    def fwd_w1(w1: Tensor) raises -> Tensor:
+    def fwd_w1(w1: Tensor[]) raises -> Tensor[]:
         var ctx = w1.ctx.value()
         var x = Tensor(ctx, [Float32(0.1), 0.2, 0.3, 0.4], (1, 4))
-        var labels = Tensor(ctx, [Float32(0)], (1,))
+        var labels = Tensor(ctx, [Float32(0)], (1,)).cast[DType.float32]()
         var h1 = (x @ w1.transpose()).relu()
         var l2 = nn.Linear(8, 4)
         var l3 = nn.Linear(4, 3)
-        return l3(l2(h1).relu()).cross_entropy(labels.one_hot(3))
+        return l3(l2(h1).relu()).cross_entropy(labels.one_hot(3).cast[DType.float32]())
 
-    def fwd_w2(w2: Tensor) raises -> Tensor:
+    def fwd_w2(w2: Tensor[]) raises -> Tensor[]:
         var ctx = w2.ctx.value()
         var x = Tensor(ctx, [Float32(0.1), 0.2, 0.3, 0.4], (1, 4))
-        var labels = Tensor(ctx, [Float32(0)], (1,))
+        var labels = Tensor(ctx, [Float32(0)], (1,)).cast[DType.float32]()
         var l1 = nn.Linear(4, 8)
         var h2 = (l1(x).relu() @ w2.transpose()).relu()
         var l3 = nn.Linear(4, 3)
-        return l3(h2).cross_entropy(labels.one_hot(3))
+        return l3(h2).cross_entropy(labels.one_hot(3).cast[DType.float32]())
 
-    def fwd_w3(w3: Tensor) raises -> Tensor:
+    def fwd_w3(w3: Tensor[]) raises -> Tensor[]:
         var ctx = w3.ctx.value()
         var x = Tensor(ctx, [Float32(0.1), 0.2, 0.3, 0.4], (1, 4))
         var labels = Tensor(ctx, [Float32(0)], (1,))
         var l1 = nn.Linear(4, 8)
         var l2 = nn.Linear(8, 4)
-        return (l2(l1(x).relu()).relu() @ w3.transpose()).cross_entropy(labels.one_hot(3))
+        return (l2(l1(x).relu()).relu() @ w3.transpose()).cross_entropy(labels.one_hot(3).cast[DType.float32]())
 
     var ctx = DeviceContext()
 
@@ -316,7 +316,7 @@ def test_simple_mlp_grad() raises:
     var labels = Tensor(ctx, [Float32(0)], (1,))
     var h1 = l1(x).relu()
     var h2 = l2(h1).relu()
-    var loss = l3(h2).cross_entropy(labels.one_hot(3))
+    var loss = l3(h2).cross_entropy(labels.one_hot(3).cast[DType.float32]())
     var params = opt.params()
     var grads = loss.gradient(params)
 
