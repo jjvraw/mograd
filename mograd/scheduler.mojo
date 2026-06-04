@@ -8,27 +8,44 @@ from mograd.pattern_matcher import Rule, PatternMatcher, GraphUtils, Pat
 # Exec function types
 # ===-------------------------------------------------------------------===#
 
-comptime ExecFn = def[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) thin raises -> Buffer[
-    dtype
-]
+comptime ExecFn = def[*dtypes: DType](node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) thin raises -> AnyBuffer
 
 comptime BoundExecFn = def(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) thin raises -> AnyBuffer
 
 
-def make_bound[
-    F: ExecFn, fp_only: Bool = False
-](node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def _make1[F: ExecFn, fp_only: Bool](node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
         comptime dtype = T.node_dtype
         comptime if not fp_only or dtype.is_floating_point():
             if node.dtype() == dtype:
-                var typed = List[Buffer[dtype]]()
-                for inp in inputs:
-                    typed.append(inp.unsafe_get[dtype]().copy())
-                return AnyBuffer(F[dtype](node, typed^, ctx))
+                return F[dtype](node, inputs, ctx)
     raise Error("unsupported dtype in make_bound")
+
+
+def _make2[F: ExecFn](node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+    comptime for j in range(AnyBuffer.BufVariant.Ts.size):
+        comptime InT = AnyBuffer.BufVariant.Ts[j]
+        comptime assert conforms_to(InT, BufferArm)
+        comptime in_dtype = InT.node_dtype
+        if inputs[0].isa[in_dtype]():
+            comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+                comptime OutT = AnyBuffer.BufVariant.Ts[k]
+                comptime assert conforms_to(OutT, BufferArm)
+                comptime out_dtype = OutT.node_dtype
+                if node.dtype() == out_dtype:
+                    return F[in_dtype, out_dtype](node, inputs, ctx)
+    raise Error("unsupported dtype combination in make_bound")
+
+
+def make_bound[
+    F: ExecFn, n_dtypes: Int = 1, fp_only: Bool = False
+](node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+    comptime if n_dtypes == 1:
+        return _make1[F, fp_only](node, inputs, ctx)
+    else:
+        return _make2[F](node, inputs, ctx)
 
 
 # ===-------------------------------------------------------------------===#
