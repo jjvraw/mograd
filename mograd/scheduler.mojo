@@ -15,31 +15,20 @@ comptime ExecFn = def[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ct
 comptime BoundExecFn = def(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) thin raises -> AnyBuffer
 
 
-def make_bound[F: ExecFn](node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def make_bound[
+    F: ExecFn, fp_only: Bool = False
+](node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
         comptime dtype = T.node_dtype
-        if node.dtype() == dtype:
-            var typed = List[Buffer[dtype]]()
-            for inp in inputs:
-                typed.append(inp.unsafe_get[dtype]().copy())
-            return AnyBuffer(F[dtype](node, typed^, ctx))
-    raise Error("unsupported dtype in make_bound")
-
-
-def make_bound_fp[F: ExecFn](node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime dtype = T.node_dtype
-        comptime if dtype.is_floating_point():
+        comptime if not fp_only or dtype.is_floating_point():
             if node.dtype() == dtype:
                 var typed = List[Buffer[dtype]]()
                 for inp in inputs:
                     typed.append(inp.unsafe_get[dtype]().copy())
                 return AnyBuffer(F[dtype](node, typed^, ctx))
-    raise Error("unsupported or non-floating-point dtype in make_bound_fp")
+    raise Error("unsupported dtype in make_bound")
 
 
 # ===-------------------------------------------------------------------===#

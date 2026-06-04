@@ -26,7 +26,7 @@ from mograd.runtime.native.gpu.kernels import (
 )
 from mograd.pattern_matcher import Rule, Pat
 from mograd.runtime import Runtime
-from mograd.scheduler import Scheduler, make_bound, make_bound_fp, BoundExecFn
+from mograd.scheduler import Scheduler, make_bound, BoundExecFn
 
 # ===-------------------------------------------------------------------===#
 # GPURuntime
@@ -51,14 +51,14 @@ struct GPURuntime(Runtime):
                 Rule(Pat(OpType.NEG), make_bound[neg_exec]),
                 Rule(Pat(OpType.DIV), make_bound[div_exec]),
                 Rule(Pat(OpType.SCALE), make_bound[scale_exec]),
-                Rule(Pat(OpType.EXP, fp_only=True), make_bound_fp[exp_exec]),
-                Rule(Pat(OpType.LOG, fp_only=True), make_bound_fp[log_exec]),
+                Rule(Pat(OpType.EXP, fp_only=True), make_bound[exp_exec, fp_only=True]),
+                Rule(Pat(OpType.LOG, fp_only=True), make_bound[log_exec, fp_only=True]),
                 Rule(Pat(OpType.EQ), make_bound[eq_exec]),
                 # Activations
                 Rule(Pat(OpType.RELU), make_bound[relu_exec]),
                 Rule(Pat(OpType.RELU_GRAD), make_bound[relu_grad_exec]),
-                Rule(Pat(OpType.SOFTMAX, fp_only=True), make_bound_fp[softmax_exec]),
-                Rule(Pat(OpType.SOFTMAX_GRAD, fp_only=True), make_bound_fp[softmax_grad_exec]),
+                Rule(Pat(OpType.SOFTMAX, fp_only=True), make_bound[softmax_exec, fp_only=True]),
+                Rule(Pat(OpType.SOFTMAX_GRAD, fp_only=True), make_bound[softmax_grad_exec, fp_only=True]),
                 # Reductions
                 Rule(Pat(OpType.SUM), make_bound[sum_exec]),
                 Rule(Pat(OpType.ARGMAX), make_bound[argmax_exec]),
@@ -73,8 +73,8 @@ struct GPURuntime(Runtime):
                 Rule(Pat(OpType.MATMUL), make_bound[matmul_exec]),
                 Rule(Pat(MATMUL_T), make_bound[matmul_t_exec]),
                 # Loss
-                Rule(Pat(OpType.CROSS_ENTROPY, fp_only=True), make_bound_fp[cross_entropy_exec]),
-                Rule(Pat(OpType.CROSS_ENTROPY_GRAD, fp_only=True), make_bound_fp[cross_entropy_grad_exec]),
+                Rule(Pat(OpType.CROSS_ENTROPY, fp_only=True), make_bound[cross_entropy_exec, fp_only=True]),
+                Rule(Pat(OpType.CROSS_ENTROPY_GRAD, fp_only=True), make_bound[cross_entropy_grad_exec, fp_only=True]),
             ]
         ].run(root, ctx.value())
 
@@ -441,6 +441,22 @@ def broadcast_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: 
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
+def _one_hot_gpu[
+    in_dtype: DType, out_dtype: DType
+](inp: Buffer[in_dtype], shape: Shape, ctx: DeviceContext, C: Int) raises -> AnyBuffer:
+    var N = inp.size
+    var out_buf = ctx.enqueue_create_buffer[out_dtype](N * C)
+    var inp_ptr = inp.data_ptr()
+    var out_ptr = out_buf.unsafe_ptr()
+
+    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+        var idx = Int(coord[0].value())
+        out_ptr.store(idx, Scalar[out_dtype](1) if Int(inp_ptr.load(idx // C)) == (idx % C) else Scalar[out_dtype](0))
+
+    elementwise[simd_width=1, target="gpu"](apply, Coord(N * C), ctx)
+    return AnyBuffer(Buffer[out_dtype](out_buf^, shape, N * C))
+
+
 def one_hot_bound(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
     var C = Int(node.attrs()["num_classes"][Float32])
     comptime for j in range(AnyBuffer.BufVariant.Ts.size):
@@ -449,28 +465,29 @@ def one_hot_bound(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) rais
         comptime in_dtype = InT.node_dtype
         if inputs[0].isa[in_dtype]():
             ref inp = inputs[0].unsafe_get[in_dtype]()
-            var N = inp.size
             comptime for k in range(AnyBuffer.BufVariant.Ts.size):
                 comptime OutT = AnyBuffer.BufVariant.Ts[k]
                 comptime assert conforms_to(OutT, BufferArm)
                 comptime out_dtype = OutT.node_dtype
                 if node.dtype() == out_dtype:
-                    var out_buf = ctx.enqueue_create_buffer[out_dtype](N * C)
-                    var inp_ptr = inp.data_ptr()
-                    var out_ptr = out_buf.unsafe_ptr()
-
-                    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-                        var idx = Int(coord[0].value())
-                        var row = idx // C
-                        var col = idx % C
-                        out_ptr.store(
-                            idx,
-                            Scalar[out_dtype](1) if Int(inp_ptr.load(row)) == col else Scalar[out_dtype](0),
-                        )
-
-                    elementwise[simd_width=1, target="gpu"](apply, Coord(N * C), ctx)
-                    return AnyBuffer(Buffer[out_dtype](out_buf^, node.shape(), N * C))
+                    return _one_hot_gpu[in_dtype, out_dtype](inp.copy(), node.shape(), ctx, C)
     raise Error("unsupported dtype combination in one_hot_bound")
+
+
+def _cast_gpu[
+    in_dtype: DType, out_dtype: DType
+](inp: Buffer[in_dtype], shape: Shape, ctx: DeviceContext) raises -> AnyBuffer:
+    var size = inp.size
+    var out_buf = ctx.enqueue_create_buffer[out_dtype](size)
+    var inp_ptr = inp.data_ptr()
+    var out_ptr = out_buf.unsafe_ptr()
+
+    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+        var idx = Int(coord[0].value())
+        out_ptr.store(idx, Scalar[out_dtype](inp_ptr.load(idx)))
+
+    elementwise[simd_width=1, target="gpu"](apply, Coord(size), ctx)
+    return AnyBuffer(Buffer[out_dtype](out_buf^, shape, size))
 
 
 def cast_bound(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
@@ -480,22 +497,12 @@ def cast_bound(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises 
         comptime in_dtype = InT.node_dtype
         if inputs[0].isa[in_dtype]():
             ref inp = inputs[0].unsafe_get[in_dtype]()
-            var size = inp.size
             comptime for k in range(AnyBuffer.BufVariant.Ts.size):
                 comptime OutT = AnyBuffer.BufVariant.Ts[k]
                 comptime assert conforms_to(OutT, BufferArm)
                 comptime out_dtype = OutT.node_dtype
                 if node.dtype() == out_dtype:
-                    var out_buf = ctx.enqueue_create_buffer[out_dtype](size)
-                    var inp_ptr = inp.data_ptr()
-                    var out_ptr = out_buf.unsafe_ptr()
-
-                    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-                        var idx = Int(coord[0].value())
-                        out_ptr.store(idx, Scalar[out_dtype](inp_ptr.load(idx)))
-
-                    elementwise[simd_width=1, target="gpu"](apply, Coord(size), ctx)
-                    return AnyBuffer(Buffer[out_dtype](out_buf^, node.shape(), size))
+                    return _cast_gpu[in_dtype, out_dtype](inp.copy(), node.shape(), ctx)
     raise Error("unsupported dtype combination in cast_bound")
 
 
