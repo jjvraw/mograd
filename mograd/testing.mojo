@@ -1,6 +1,6 @@
 from std.math import abs
 
-from mograd.op import Op, OpRef, OpType, AnyOpRef
+from mograd.op import Op, OpRef, OpType
 from mograd.pattern_matcher import Pat, Rule
 from mograd.shape import Shape
 from mograd.simplify import Simplifier, RewriteFn
@@ -70,17 +70,17 @@ def assert_close[
     _assert_close_impl[dtype](actual.item(), expected, tol)
 
 
-def leaf[dtype: DType = DType.float32](shape: Shape) -> OpRef[dtype]:
-    return OpRef[dtype](OpType.BUFFER, shape, [])
+def leaf(shape: Shape, dtype: DType = DType.float32) -> OpRef:
+    return OpRef(Op(OpType.BUFFER, shape, dtype, []))
 
 
-def assert_graph[dtype: DType](node: OpRef[dtype], pat: Pat) raises:
-    if not pat.matches(AnyOpRef(node)):
+def assert_graph(node: OpRef, pat: Pat) raises:
+    if not pat.matches(node):
         raise Error(
             "graph mismatch: expected pattern rooted at '" + pat.op_type._name + "', got '" + String(node) + "'"
         )
 
 
-def assert_rewrites_to[rules: List[Rule[RewriteFn]]](graph: OpRef[DType.float32], expected: Pat) raises:
-    var result = Simplifier[rules].run(AnyOpRef(graph))
-    assert_graph(result.unsafe_get[OpRef[DType.float32]](), expected)
+def assert_rewrites_to[rules: List[Rule[RewriteFn]]](graph: OpRef, expected: Pat) raises:
+    var result = Simplifier[rules].run(graph)
+    assert_graph(result, expected)

@@ -1,6 +1,6 @@
 from std.gpu.host import DeviceContext
 
-from mograd.op import OpRef, AnyOpRef
+from mograd.op import OpRef
 from mograd.buffer import Buffer, AnyBuffer
 from mograd.pattern_matcher import Rule, Pat
 from mograd.runtime import Runtime
@@ -15,7 +15,7 @@ from mograd.runtime.native.gpu.rewrites import NATIVE_GPU_REWRITES
 
 struct NativeRuntime(Runtime):
     @staticmethod
-    def run(root: AnyOpRef, ctx: Optional[DeviceContext]) raises -> AnyBuffer:
+    def run(root: OpRef, ctx: Optional[DeviceContext]) raises -> AnyBuffer:
         if ctx:
             var simplified = Simplifier[NATIVE_GPU_REWRITES].run(root)
             return GPURuntime.run(simplified, ctx)

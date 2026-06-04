@@ -1,5 +1,5 @@
 from mograd.simplify import RewriteFn
-from mograd.op import OpRef, OpType, AnyOpRef
+from mograd.op import Op, OpRef, OpType
 
 # ===-------------------------------------------------------------------===#
 # GPU-specific rewrites
@@ -20,8 +20,7 @@ comptime MATMUL_T = OpType("MATMUL_T")
 # ===-------------------------------------------------------------------===#
 
 
-def fuse_matmul_transpose(node: AnyOpRef) raises -> Optional[AnyOpRef]:
-    var n = node.unsafe_get[OpRef[DType.float32]]()
-    var A = n.src(0)
-    var B = n.src(1).src(0)
-    return AnyOpRef(OpRef[DType.float32](MATMUL_T, n.shape(), [A, B]))
+def fuse_matmul_transpose(node: OpRef) raises -> Optional[OpRef]:
+    var A = node.src(0)
+    var B = node.src(1).src(0)
+    return OpRef(Op(MATMUL_T, node.shape(), node.dtype(), [A, B]))

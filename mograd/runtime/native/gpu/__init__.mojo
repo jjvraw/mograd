@@ -13,9 +13,9 @@ from nn.rand_normal import random_normal
 from nn.rand_uniform import random_uniform
 from nn.softmax import softmax as nn_softmax
 
-from mograd.op import Op, OpRef, OpType, AttrVal, AnyOpRef, HasDtype
+from mograd.op import Op, OpRef, OpType, AttrVal
 from mograd.runtime.native.gpu.rewrites import MATMUL_T
-from mograd.buffer import Buffer, AnyBuffer
+from mograd.buffer import Buffer, AnyBuffer, BufferArm
 from mograd.runtime.native.gpu.kernels import (
     softmax_grad_kernel,
     transpose_kernel,
@@ -26,7 +26,7 @@ from mograd.runtime.native.gpu.kernels import (
 )
 from mograd.pattern_matcher import Rule, Pat
 from mograd.runtime import Runtime
-from mograd.scheduler import Scheduler, bind_exec, bind_float_exec
+from mograd.scheduler import Scheduler, make_bound, make_bound_fp, BoundExecFn
 
 # ===-------------------------------------------------------------------===#
 # GPURuntime
@@ -35,46 +35,46 @@ from mograd.scheduler import Scheduler, bind_exec, bind_float_exec
 
 struct GPURuntime(Runtime):
     @staticmethod
-    def run(root: AnyOpRef, ctx: Optional[DeviceContext]) raises -> AnyBuffer:
+    def run(root: OpRef, ctx: Optional[DeviceContext]) raises -> AnyBuffer:
         if not ctx:
             raise Error("GPURuntime requires a DeviceContext")
         return Scheduler[
             [
                 # Constructions
-                Rule(Pat(OpType.FULL), bind_exec[full_exec]),
-                Rule(Pat(OpType.UNIFORM), bind_exec[uniform_exec]),
-                Rule(Pat(OpType.RANDN), bind_exec[randn_exec]),
-                Rule(Pat(OpType.DISK), bind_exec[disk_exec]),
+                Rule(Pat(OpType.FULL), make_bound[full_exec]),
+                Rule(Pat(OpType.UNIFORM), make_bound[uniform_exec]),
+                Rule(Pat(OpType.RANDN), make_bound[randn_exec]),
+                Rule(Pat(OpType.DISK), make_bound[disk_exec]),
                 # Pointwise
-                Rule(Pat(OpType.ADD), bind_exec[add_exec]),
-                Rule(Pat(OpType.MUL), bind_exec[mul_exec]),
-                Rule(Pat(OpType.NEG), bind_exec[neg_exec]),
-                Rule(Pat(OpType.DIV), bind_exec[div_exec]),
-                Rule(Pat(OpType.SCALE), bind_exec[scale_exec]),
-                Rule(Pat(OpType.EXP), bind_float_exec[exp_exec]),
-                Rule(Pat(OpType.LOG), bind_float_exec[log_exec]),
-                Rule(Pat(OpType.EQ), bind_exec[eq_exec]),
+                Rule(Pat(OpType.ADD), make_bound[add_exec]),
+                Rule(Pat(OpType.MUL), make_bound[mul_exec]),
+                Rule(Pat(OpType.NEG), make_bound[neg_exec]),
+                Rule(Pat(OpType.DIV), make_bound[div_exec]),
+                Rule(Pat(OpType.SCALE), make_bound[scale_exec]),
+                Rule(Pat(OpType.EXP, fp_only=True), make_bound_fp[exp_exec]),
+                Rule(Pat(OpType.LOG, fp_only=True), make_bound_fp[log_exec]),
+                Rule(Pat(OpType.EQ), make_bound[eq_exec]),
                 # Activations
-                Rule(Pat(OpType.RELU), bind_exec[relu_exec]),
-                Rule(Pat(OpType.RELU_GRAD), bind_exec[relu_grad_exec]),
-                Rule(Pat(OpType.SOFTMAX), bind_float_exec[softmax_exec]),
-                Rule(Pat(OpType.SOFTMAX_GRAD), bind_float_exec[softmax_grad_exec]),
+                Rule(Pat(OpType.RELU), make_bound[relu_exec]),
+                Rule(Pat(OpType.RELU_GRAD), make_bound[relu_grad_exec]),
+                Rule(Pat(OpType.SOFTMAX, fp_only=True), make_bound_fp[softmax_exec]),
+                Rule(Pat(OpType.SOFTMAX_GRAD, fp_only=True), make_bound_fp[softmax_grad_exec]),
                 # Reductions
-                Rule(Pat(OpType.SUM), bind_exec[sum_exec]),
-                Rule(Pat(OpType.ARGMAX), bind_exec[argmax_exec]),
+                Rule(Pat(OpType.SUM), make_bound[sum_exec]),
+                Rule(Pat(OpType.ARGMAX), make_bound[argmax_exec]),
                 # Shape
-                Rule(Pat(OpType.RESHAPE), bind_exec[reshape_exec]),
-                Rule(Pat(OpType.TRANSPOSE), bind_exec[transpose_exec]),
-                Rule(Pat(OpType.SLICE), bind_exec[slice_exec]),
-                Rule(Pat(OpType.BROADCAST), bind_exec[broadcast_exec]),
-                Rule(Pat(OpType.ONE_HOT), bind_exec[one_hot_exec]),
-                Rule(Pat(OpType.CAST), bind_exec[cast_exec]),
+                Rule(Pat(OpType.RESHAPE), make_bound[reshape_exec]),
+                Rule(Pat(OpType.TRANSPOSE), make_bound[transpose_exec]),
+                Rule(Pat(OpType.SLICE), make_bound[slice_exec]),
+                Rule(Pat(OpType.BROADCAST), make_bound[broadcast_exec]),
+                Rule(Pat(OpType.ONE_HOT), one_hot_bound),
+                Rule(Pat(OpType.CAST), cast_bound),
                 # Contractions
-                Rule(Pat(OpType.MATMUL), bind_exec[matmul_exec]),
-                Rule(Pat(MATMUL_T), bind_exec[matmul_t_exec]),
+                Rule(Pat(OpType.MATMUL), make_bound[matmul_exec]),
+                Rule(Pat(MATMUL_T), make_bound[matmul_t_exec]),
                 # Loss
-                Rule(Pat(OpType.CROSS_ENTROPY), bind_float_exec[cross_entropy_exec]),
-                Rule(Pat(OpType.CROSS_ENTROPY_GRAD), bind_float_exec[cross_entropy_grad_exec]),
+                Rule(Pat(OpType.CROSS_ENTROPY, fp_only=True), make_bound_fp[cross_entropy_exec]),
+                Rule(Pat(OpType.CROSS_ENTROPY_GRAD, fp_only=True), make_bound_fp[cross_entropy_grad_exec]),
             ]
         ].run(root, ctx.value())
 
@@ -84,14 +84,14 @@ struct GPURuntime(Runtime):
 # ===-------------------------------------------------------------------===#
 
 
-def full_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
+def full_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
     var size = node.shape().numel()
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     out_buf.enqueue_fill(Scalar[dtype](node.attrs()["value"][Float32]))
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
-def uniform_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
+def uniform_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
     var size = node.shape().numel()
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var seed_buf = ctx.enqueue_create_buffer[DType.uint64](1)
@@ -108,7 +108,7 @@ def uniform_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx:
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
-def randn_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
+def randn_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
     var size = node.shape().numel()
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var seed_buf = ctx.enqueue_create_buffer[DType.uint64](1)
@@ -129,7 +129,7 @@ def randn_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: D
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
-def disk_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
+def disk_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
     var size = node.shape().numel()
     var bytes = Path(node.attrs()["path"][String]).read_bytes()
     var ptr = bytes.unsafe_ptr().bitcast[Scalar[dtype]]()
@@ -145,9 +145,9 @@ def disk_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: De
 # ===-------------------------------------------------------------------===#
 
 
-def add_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    ref inp0 = inputs[0].unsafe_get[Buffer[dtype]]()
-    ref inp1 = inputs[1].unsafe_get[Buffer[dtype]]()
+def add_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
+    ref inp0 = inputs[0]
+    ref inp1 = inputs[1]
     var size = inp0.size
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp0_ptr = inp0.data_ptr()
@@ -162,9 +162,9 @@ def add_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
-def mul_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    ref inp0 = inputs[0].unsafe_get[Buffer[dtype]]()
-    ref inp1 = inputs[1].unsafe_get[Buffer[dtype]]()
+def mul_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
+    ref inp0 = inputs[0]
+    ref inp1 = inputs[1]
     var size = inp0.size
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp0_ptr = inp0.data_ptr()
@@ -179,8 +179,8 @@ def mul_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
-def neg_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
+def neg_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
+    ref inp = inputs[0]
     var size = inp.size
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp_ptr = inp.data_ptr()
@@ -194,9 +194,9 @@ def neg_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
-def div_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    ref inp0 = inputs[0].unsafe_get[Buffer[dtype]]()
-    ref inp1 = inputs[1].unsafe_get[Buffer[dtype]]()
+def div_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
+    ref inp0 = inputs[0]
+    ref inp1 = inputs[1]
     var size = inp0.size
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp0_ptr = inp0.data_ptr()
@@ -211,8 +211,8 @@ def div_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
-def scale_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
+def scale_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
+    ref inp = inputs[0]
     var size = inp.size
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp_ptr = inp.data_ptr()
@@ -227,8 +227,8 @@ def scale_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: D
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
-def exp_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
+def exp_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
+    ref inp = inputs[0]
     var size = inp.size
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp_ptr = inp.data_ptr()
@@ -243,8 +243,8 @@ def exp_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
-def log_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
+def log_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
+    ref inp = inputs[0]
     var size = inp.size
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp_ptr = inp.data_ptr()
@@ -259,9 +259,9 @@ def log_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
-def eq_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    ref inp0 = inputs[0].unsafe_get[Buffer[dtype]]()
-    ref inp1 = inputs[1].unsafe_get[Buffer[dtype]]()
+def eq_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
+    ref inp0 = inputs[0]
+    ref inp1 = inputs[1]
     var size = inp0.size
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp0_ptr = inp0.data_ptr()
@@ -281,8 +281,8 @@ def eq_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Devi
 # ===-------------------------------------------------------------------===#
 
 
-def relu_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
+def relu_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
+    ref inp = inputs[0]
     var size = inp.size
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp_ptr = inp.data_ptr()
@@ -297,11 +297,9 @@ def relu_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: De
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
-def relu_grad_exec[
-    dtype: DType
-](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    ref x_in = inputs[0].unsafe_get[Buffer[dtype]]()
-    ref up_in = inputs[1].unsafe_get[Buffer[dtype]]()
+def relu_grad_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
+    ref x_in = inputs[0]
+    ref up_in = inputs[1]
     var size = x_in.size
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var x_ptr = x_in.data_ptr()
@@ -316,8 +314,8 @@ def relu_grad_exec[
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
-def softmax_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
+def softmax_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
+    ref inp = inputs[0]
     var shape = inp.shape
     var rank = len(shape)
     var rows = shape[0] if rank > 1 else 1
@@ -338,9 +336,9 @@ def softmax_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx:
 
 def softmax_grad_exec[
     dtype: DType
-](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    ref inp0 = inputs[0].unsafe_get[Buffer[dtype]]()
-    ref inp1 = inputs[1].unsafe_get[Buffer[dtype]]()
+](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
+    ref inp0 = inputs[0]
+    ref inp1 = inputs[1]
     var shape = inp0.shape
     var N = 1 if len(shape) == 1 else shape[0]
     var size = shape[-1]
@@ -363,8 +361,8 @@ def softmax_grad_exec[
 # ===-------------------------------------------------------------------===#
 
 
-def sum_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
+def sum_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
+    ref inp = inputs[0]
     var size = inp.size
     var out_buf = ctx.enqueue_create_buffer[dtype](1)
     var inp_ptr = inp.data_ptr()
@@ -381,8 +379,8 @@ def sum_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: Dev
     return Buffer[dtype](out_buf^, (1,), 1)
 
 
-def argmax_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
+def argmax_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
+    ref inp = inputs[0]
     var N = inp.shape[0]
     var C = inp.shape[1]
     var out_buf = ctx.enqueue_create_buffer[dtype](N)
@@ -397,15 +395,13 @@ def argmax_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: 
 # ===-------------------------------------------------------------------===#
 
 
-def reshape_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    ref src = inputs[0].unsafe_get[Buffer[dtype]]()
+def reshape_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
+    ref src = inputs[0]
     return Buffer[dtype](src._ptr, node.shape(), node.shape().strides(), src.base_offset)
 
 
-def transpose_exec[
-    dtype: DType
-](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
+def transpose_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
+    ref inp = inputs[0]
     var M = inp.shape[0]
     var N = inp.shape[1]
     var out_buf = ctx.enqueue_create_buffer[dtype](M * N)
@@ -422,17 +418,15 @@ def transpose_exec[
     return Buffer[dtype](out_buf^, (N, M), M * N)
 
 
-def slice_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
+def slice_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
+    ref inp = inputs[0]
     var start = Int(node.attrs()["start"][Float32])
     var cols = inp.size // inp.shape[0]
     return Buffer[dtype](inp._ptr, node.shape(), inp.strides, inp.base_offset + start * cols)
 
 
-def broadcast_exec[
-    dtype: DType
-](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    ref inp = inputs[0].unsafe_get[Buffer[dtype]]()
+def broadcast_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
+    ref inp = inputs[0]
     var size = node.shape().numel()
     var out_buf = ctx.enqueue_create_buffer[dtype](size)
     var inp_ptr = inp.data_ptr()
@@ -447,50 +441,62 @@ def broadcast_exec[
     return Buffer[dtype](out_buf^, node.shape(), size)
 
 
-def one_hot_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
+def one_hot_bound(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
     var C = Int(node.attrs()["num_classes"][Float32])
-    comptime for j in range(AnyBuffer.Ts.size):
-        comptime BT = AnyBuffer.Ts[j]
-        if inputs[0].isa[BT]():
-            comptime assert conforms_to(BT, HasDtype)
-            comptime inp_dtype = BT.node_dtype
-            ref inp = inputs[0].unsafe_get[Buffer[inp_dtype]]()
+    comptime for j in range(AnyBuffer.BufVariant.Ts.size):
+        comptime InT = AnyBuffer.BufVariant.Ts[j]
+        comptime assert conforms_to(InT, BufferArm)
+        comptime in_dtype = InT.node_dtype
+        if inputs[0].isa[in_dtype]():
+            ref inp = inputs[0].unsafe_get[in_dtype]()
             var N = inp.size
-            var out_buf = ctx.enqueue_create_buffer[dtype](N * C)
-            var inp_ptr = inp.data_ptr()
-            var out_ptr = out_buf.unsafe_ptr()
+            comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+                comptime OutT = AnyBuffer.BufVariant.Ts[k]
+                comptime assert conforms_to(OutT, BufferArm)
+                comptime out_dtype = OutT.node_dtype
+                if node.dtype() == out_dtype:
+                    var out_buf = ctx.enqueue_create_buffer[out_dtype](N * C)
+                    var inp_ptr = inp.data_ptr()
+                    var out_ptr = out_buf.unsafe_ptr()
 
-            def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-                var idx = Int(coord[0].value())
-                var row = idx // C
-                var col = idx % C
-                out_ptr.store(idx, Scalar[dtype](1) if Int(inp_ptr.load(row)) == col else Scalar[dtype](0))
+                    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+                        var idx = Int(coord[0].value())
+                        var row = idx // C
+                        var col = idx % C
+                        out_ptr.store(
+                            idx,
+                            Scalar[out_dtype](1) if Int(inp_ptr.load(row)) == col else Scalar[out_dtype](0),
+                        )
 
-            elementwise[simd_width=1, target="gpu"](apply, Coord(N * C), ctx)
-            return Buffer[dtype](out_buf^, node.shape(), N * C)
-    raise Error("unsupported dtype in one_hot_exec")
+                    elementwise[simd_width=1, target="gpu"](apply, Coord(N * C), ctx)
+                    return AnyBuffer(Buffer[out_dtype](out_buf^, node.shape(), N * C))
+    raise Error("unsupported dtype combination in one_hot_bound")
 
 
-def cast_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    comptime for j in range(AnyBuffer.Ts.size):
-        comptime BT = AnyBuffer.Ts[j]
-
-        if inputs[0].isa[BT]():
-            comptime assert conforms_to(BT, HasDtype)
-            comptime inp_dtype = BT.node_dtype
-            ref inp = inputs[0].unsafe_get[Buffer[inp_dtype]]()
+def cast_bound(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+    comptime for j in range(AnyBuffer.BufVariant.Ts.size):
+        comptime InT = AnyBuffer.BufVariant.Ts[j]
+        comptime assert conforms_to(InT, BufferArm)
+        comptime in_dtype = InT.node_dtype
+        if inputs[0].isa[in_dtype]():
+            ref inp = inputs[0].unsafe_get[in_dtype]()
             var size = inp.size
-            var out_buf = ctx.enqueue_create_buffer[dtype](size)
-            var inp_ptr = inp.data_ptr()
-            var out_ptr = out_buf.unsafe_ptr()
+            comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+                comptime OutT = AnyBuffer.BufVariant.Ts[k]
+                comptime assert conforms_to(OutT, BufferArm)
+                comptime out_dtype = OutT.node_dtype
+                if node.dtype() == out_dtype:
+                    var out_buf = ctx.enqueue_create_buffer[out_dtype](size)
+                    var inp_ptr = inp.data_ptr()
+                    var out_ptr = out_buf.unsafe_ptr()
 
-            def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-                var idx = Int(coord[0].value())
-                out_ptr.store(idx, Scalar[dtype](inp_ptr.load(idx)))
+                    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+                        var idx = Int(coord[0].value())
+                        out_ptr.store(idx, Scalar[out_dtype](inp_ptr.load(idx)))
 
-            elementwise[simd_width=1, target="gpu"](apply, Coord(size), ctx)
-            return Buffer[dtype](out_buf^, node.shape(), size)
-    raise Error("unsupported dtype in cast_exec")
+                    elementwise[simd_width=1, target="gpu"](apply, Coord(size), ctx)
+                    return AnyBuffer(Buffer[out_dtype](out_buf^, node.shape(), size))
+    raise Error("unsupported dtype combination in cast_bound")
 
 
 # ===-------------------------------------------------------------------===#
@@ -498,9 +504,9 @@ def cast_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: De
 # ===-------------------------------------------------------------------===#
 
 
-def matmul_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    ref inp0 = inputs[0].unsafe_get[Buffer[dtype]]()
-    ref inp1 = inputs[1].unsafe_get[Buffer[dtype]]()
+def matmul_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
+    ref inp0 = inputs[0]
+    ref inp1 = inputs[1]
     var M = inp0.shape[0]
     var K = inp0.shape[1]
     var N = inp1.shape[1]
@@ -512,11 +518,9 @@ def matmul_exec[dtype: DType](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: 
     return Buffer[dtype](out_buf^, (M, N), M * N)
 
 
-def matmul_t_exec[
-    dtype: DType
-](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
-    ref inp0 = inputs[0].unsafe_get[Buffer[dtype]]()
-    ref inp1 = inputs[1].unsafe_get[Buffer[dtype]]()
+def matmul_t_exec[dtype: DType](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
+    ref inp0 = inputs[0]
+    ref inp1 = inputs[1]
     var M = inp0.shape[0]
     var K = inp0.shape[1]
     var N = inp1.shape[0]
@@ -539,10 +543,10 @@ comptime CE_SMEM_LIMIT = DeviceContext.default_device_info.shared_memory_per_mul
 
 def cross_entropy_exec[
     dtype: DType
-](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
+](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
     comptime assert dtype.is_floating_point(), "cross_entropy requires a floating point dtype"
-    ref logits = inputs[0].unsafe_get[Buffer[dtype]]()
-    ref labels = inputs[1].unsafe_get[Buffer[dtype]]()
+    ref logits = inputs[0]
+    ref labels = inputs[1]
     var N = logits.shape[0]
     var C = logits.shape[1]
     var row_buf = ctx.enqueue_create_buffer[dtype](N)
@@ -586,11 +590,11 @@ def cross_entropy_exec[
 
 def cross_entropy_grad_exec[
     dtype: DType
-](node: OpRef[dtype], inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Buffer[dtype]:
+](node: OpRef, inputs: List[Buffer[dtype]], ctx: DeviceContext) raises -> Buffer[dtype]:
     comptime assert dtype.is_floating_point(), "cross_entropy requires a floating point dtype"
-    ref logits = inputs[0].unsafe_get[Buffer[dtype]]()
-    ref labels = inputs[1].unsafe_get[Buffer[dtype]]()
-    ref upstream = inputs[2].unsafe_get[Buffer[dtype]]()
+    ref logits = inputs[0]
+    ref labels = inputs[1]
+    ref upstream = inputs[2]
     var N = logits.shape[0]
     var C = logits.shape[1]
     var out_buf = ctx.enqueue_create_buffer[dtype](N * C)

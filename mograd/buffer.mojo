@@ -3,7 +3,21 @@ from std.gpu.host import DeviceContext, DeviceBuffer
 from std.utils import Variant
 
 from mograd.shape import Shape
-from mograd.op import HasDtype
+
+
+# ===-------------------------------------------------------------------===#
+# BufferArm
+# ===-------------------------------------------------------------------===#
+
+
+trait BufferArm(Copyable, Movable, Writable):
+    comptime node_dtype: DType
+
+    def get_shape(ref self) -> Shape:
+        ...
+
+    def get_size(ref self) -> Int:
+        ...
 
 
 # ===-------------------------------------------------------------------===#
@@ -11,7 +25,7 @@ from mograd.op import HasDtype
 # ===-------------------------------------------------------------------===#
 
 
-struct Buffer[dtype: DType](Copyable, HasDtype, Movable, Writable):
+struct Buffer[dtype: DType](BufferArm, Copyable, Movable, Writable):
     comptime node_dtype = Self.dtype
     var _ptr: ArcPointer[DeviceBuffer[Self.dtype]]
     var shape: Shape
@@ -49,6 +63,12 @@ struct Buffer[dtype: DType](Copyable, HasDtype, Movable, Writable):
 
     def data_ptr(ref self) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
         return self.buf().unsafe_ptr() + self.base_offset
+
+    def get_shape(ref self) -> Shape:
+        return self.shape
+
+    def get_size(ref self) -> Int:
+        return self.size
 
     def broadcast_to(self, new_shape: Shape) -> Self:
         var old_rank = len(self.shape)
@@ -100,4 +120,56 @@ struct Buffer[dtype: DType](Copyable, HasDtype, Movable, Writable):
         writer.write(", size=", String(self.size), ")")
 
 
-comptime AnyBuffer = Variant[Buffer[DType.float32], Buffer[DType.int64]]
+# ===-------------------------------------------------------------------===#
+# AnyBuffer
+# ===-------------------------------------------------------------------===#
+
+
+struct AnyBuffer(Copyable, Movable, Writable):
+    comptime BufVariant = Variant[Buffer[DType.float32], Buffer[DType.int64]]
+    var _buf: Self.BufVariant
+
+    @implicit
+    def __init__[dtype: DType](out self, var buf: Buffer[dtype]):
+        self._buf = Self.BufVariant(buf^)
+
+    def __init__(out self, *, copy: Self):
+        self._buf = copy._buf.copy()
+
+    def isa[dtype: DType](self) -> Bool:
+        return self._buf.isa[Buffer[dtype]]()
+
+    def unsafe_get[dtype: DType](ref self) -> ref[self._buf] Buffer[dtype]:
+        return self._buf.unsafe_get[Buffer[dtype]]()
+
+    def dtype(self) -> DType:
+        comptime for k in range(Self.BufVariant.Ts.size):
+            comptime T = Self.BufVariant.Ts[k]
+            comptime assert conforms_to(T, BufferArm)
+            if self._buf.isa[T]():
+                return T.node_dtype
+        return DType.invalid
+
+    def shape(ref self) -> Shape:
+        comptime for k in range(Self.BufVariant.Ts.size):
+            comptime T = Self.BufVariant.Ts[k]
+            comptime assert conforms_to(T, BufferArm)
+            if self._buf.isa[T]():
+                return trait_downcast[BufferArm](self._buf.unsafe_get[T]()).get_shape()
+        return Shape()
+
+    def size(ref self) -> Int:
+        comptime for k in range(Self.BufVariant.Ts.size):
+            comptime T = Self.BufVariant.Ts[k]
+            comptime assert conforms_to(T, BufferArm)
+            if self._buf.isa[T]():
+                return trait_downcast[BufferArm](self._buf.unsafe_get[T]()).get_size()
+        return 0
+
+    def write_to(self, mut writer: Some[Writer]):
+        comptime for k in range(Self.BufVariant.Ts.size):
+            comptime T = Self.BufVariant.Ts[k]
+            comptime assert conforms_to(T, Writable)
+            if self._buf.isa[T]():
+                trait_downcast[Writable](self._buf.unsafe_get[T]()).write_to(writer)
+                return
