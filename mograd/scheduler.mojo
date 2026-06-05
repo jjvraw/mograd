@@ -53,10 +53,14 @@ def make_bound[
 # ===-------------------------------------------------------------------===#
 
 
-struct Scheduler[rules: List[Rule[BoundExecFn]]]:
-    @staticmethod
-    def run(root: OpRef, ctx: DeviceContext) raises -> AnyBuffer:
-        var pm = PatternMatcher[BoundExecFn, Self.rules]()
+struct Scheduler:
+    var rules: List[Rule[BoundExecFn]]
+
+    def __init__(out self, var rules: List[Rule[BoundExecFn]]):
+        self.rules = rules^
+
+    def run(self, root: OpRef, ctx: DeviceContext) raises -> AnyBuffer:
+        var pm = PatternMatcher[BoundExecFn](self.rules)
         var bufs = Dict[OpRef, AnyBuffer]()
         var topo = GraphUtils.toposort(root)
 

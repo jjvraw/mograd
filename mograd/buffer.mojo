@@ -19,6 +19,9 @@ trait BufferArm(Copyable, Movable, Writable):
     def get_size(ref self) -> Int:
         ...
 
+    def raw_ptr(ref self) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
+        ...
+
 
 # ===-------------------------------------------------------------------===#
 # Buffer
@@ -63,6 +66,9 @@ struct Buffer[dtype: DType](BufferArm, Copyable, Movable, Writable):
 
     def data_ptr(ref self) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
         return self.buf().unsafe_ptr() + self.base_offset
+
+    def raw_ptr(ref self) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
+        return self.data_ptr().bitcast[NoneType]()
 
     def get_shape(ref self) -> Shape:
         return self.shape
@@ -165,6 +171,45 @@ struct AnyBuffer(Copyable, Movable, Writable):
             if self._buf.isa[T]():
                 return trait_downcast[BufferArm](self._buf.unsafe_get[T]()).get_size()
         return 0
+
+    def data_ptr(ref self) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
+        comptime for k in range(Self.BufVariant.Ts.size):
+            comptime T = Self.BufVariant.Ts[k]
+            comptime assert conforms_to(T, BufferArm)
+            if self._buf.isa[T]():
+                return trait_downcast[BufferArm](self._buf.unsafe_get[T]()).raw_ptr()
+        raise Error("AnyBuffer.data_ptr: unknown variant")
+
+    def reshape(ref self, shape: Shape) raises -> AnyBuffer:
+        comptime for k in range(Self.BufVariant.Ts.size):
+            comptime T = Self.BufVariant.Ts[k]
+            comptime assert conforms_to(T, BufferArm)
+            comptime d = T.node_dtype
+            if self._buf.isa[T]():
+                ref src = self.unsafe_get[d]()
+                return AnyBuffer(Buffer[d](src._ptr.copy(), shape, shape.strides(), src.base_offset))
+        raise Error("unsupported dtype")
+
+    def view(ref self, shape: Shape, offset_elements: Int) raises -> AnyBuffer:
+        comptime for k in range(Self.BufVariant.Ts.size):
+            comptime T = Self.BufVariant.Ts[k]
+            comptime assert conforms_to(T, BufferArm)
+            comptime d = T.node_dtype
+            if self._buf.isa[T]():
+                ref src = self.unsafe_get[d]()
+                return AnyBuffer(Buffer[d](src._ptr.copy(), shape, src.strides, src.base_offset + offset_elements))
+        raise Error("unsupported dtype")
+
+    @staticmethod
+    def empty(dtype: DType, shape: Shape, ctx: DeviceContext) raises -> AnyBuffer:
+        comptime for k in range(Self.BufVariant.Ts.size):
+            comptime T = Self.BufVariant.Ts[k]
+            comptime assert conforms_to(T, BufferArm)
+            comptime d = T.node_dtype
+            if dtype == d:
+                var dev_buf = ctx.enqueue_create_buffer[d](shape.numel())
+                return AnyBuffer(Buffer[d](dev_buf^, shape, shape.numel()))
+        raise Error("unsupported dtype: " + String(dtype))
 
     def write_to(self, mut writer: Some[Writer]):
         comptime for k in range(Self.BufVariant.Ts.size):

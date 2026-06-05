@@ -23,8 +23,7 @@ struct Grad[dtype: DType] where dtype.is_floating_point():
         var grad = Grad[Self.dtype]()
         grad.grad_map[root] = initial_grad
 
-        var pm = PatternMatcher[
-            GradFn,
+        var pm = PatternMatcher[GradFn](
             [
                 Rule(Pat(OpType.MUL), mul_grad),
                 Rule(Pat(OpType.ADD), add_grad),
@@ -40,8 +39,8 @@ struct Grad[dtype: DType] where dtype.is_floating_point():
                 Rule(Pat(OpType.CROSS_ENTROPY), cross_entropy_grad),
                 Rule(Pat(OpType.SCALE), scale_grad),
                 Rule(Pat(OpType.TRANSPOSE), transpose_grad),
-            ],
-        ]()
+            ]
+        )
 
         var topo = GraphUtils.toposort(root)
         for i in reversed(range(len(topo))):

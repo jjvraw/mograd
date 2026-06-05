@@ -5,9 +5,10 @@ from mograd.op import Op, OpRef, OpType
 # GPU-specific rewrites
 # ===-------------------------------------------------------------------===#
 
-comptime NATIVE_GPU_REWRITES: List[Rule[RewriteFn]] = [
-    Rule(Pat(OpType.MATMUL, [Pat(), Pat(OpType.TRANSPOSE)]), fuse_matmul_transpose)
-]
+
+def native_gpu_rewrites() -> List[Rule[RewriteFn]]:
+    return [Rule(Pat(OpType.MATMUL, [Pat(), Pat(OpType.TRANSPOSE)]), fuse_matmul_transpose)]
+
 
 # ===-------------------------------------------------------------------===#
 # GPU-specific OpTypes

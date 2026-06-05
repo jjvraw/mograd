@@ -8,10 +8,14 @@ from mograd.pattern_matcher import PatternMatcher, Rule, Pat, GraphUtils
 comptime RewriteFn = def(node: OpRef) thin raises -> Optional[OpRef]
 
 
-struct Simplifier[rules: List[Rule[RewriteFn]]]:
-    @staticmethod
-    def run(root: OpRef) raises -> OpRef:
-        var pm = PatternMatcher[RewriteFn, Self.rules]()
+struct Simplifier:
+    var rules: List[Rule[RewriteFn]]
+
+    def __init__(out self, var rules: List[Rule[RewriteFn]]):
+        self.rules = rules^
+
+    def run(self, root: OpRef) raises -> OpRef:
+        var pm = PatternMatcher[RewriteFn](self.rules)
         var subst = Dict[OpRef, OpRef]()
         var topo = GraphUtils.toposort(root)
 

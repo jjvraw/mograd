@@ -4,7 +4,7 @@ from std.gpu.host import DeviceContext
 from mograd.op import AttrVal, Op, OpRef, OpType
 from mograd.shape import Shape
 from mograd.buffer import Buffer
-from mograd.runtime.native import NativeRuntime
+from mograd.runtime import NativeRuntime
 from mograd.grad import Grad
 
 # ===-------------------------------------------------------------------===#
@@ -13,12 +13,12 @@ from mograd.grad import Grad
 
 
 struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movable, Writable):
-    var ctx: Optional[DeviceContext]
     var op: OpRef
     var requires_grad: Bool
     # TODO: Use ArcPointer when Optional[ArcPointer] is resolved:
     # https://github.com/modular/modular/issues/3293
     var _grad: ArcPointer[Optional[Tensor[Self.dtype]]]
+    var ctx: Optional[DeviceContext]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods

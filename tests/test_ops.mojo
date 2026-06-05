@@ -4,6 +4,8 @@ from std.testing import TestSuite, assert_almost_equal, assert_true
 from mograd import Tensor, DeviceContext
 from mograd.testing import assert_allclose, assert_close
 
+# TODO: Uniform, reshape, broadcast
+
 # ===-------------------------------------------------------------------===#
 # Pointwise operations
 # ===-------------------------------------------------------------------===#

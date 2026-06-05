@@ -25,19 +25,24 @@ max = ">=26.4.0.dev2026052815,<27"
 numpy = "*" # (LazyLoader)
 
 
+[activation.env]
+MOGRAD_SO = "mograd/runtime/gpu/kernels/libmograd_gpu.so"
+
 [tasks]
-format = { cmd = "mojo format -l 120 ."}
+build-gpu = { cmd = "mojo build --emit shared-lib mograd/runtime/gpu/kernels/__init__.mojo -o $PIXI_PROJECT_ROOT/$MOGRAD_SO" }
+
+format = { cmd = "mojo format -l 120 mograd/"}
 
 # Tests
 test-grad     = { cmd = "mojo -I . tests/test_grad.mojo" }
 test-nn       = { cmd = "mojo -I . tests/test_nn.mojo" }
-test-ops      = { cmd = "mojo -I . tests/test_ops.mojo" }
+test-ops      = { cmd = "mojo -I . tests/test_ops.mojo", }
 test-native-gpu-rewrites = { cmd = "mojo -I . tests/test_native_gpu_rewrites.mojo" }
 test-pattern-matcher     = { cmd = "mojo -I . tests/test_pattern_matcher.mojo" }
 test-shape               = { cmd = "mojo -I . tests/test_shape.mojo" }
 test-data                = { cmd = "mojo -I . tests/test_data.mojo" }
 test-graph               = { depends-on = ["test-pattern-matcher", "test-native-gpu-rewrites"] }
-test-all                 = { depends-on = ["test-grad", "test-nn", "test-ops", "test-graph", "test-shape", "test-data"] }
+test-all                 = { depends-on = ["build-gpu", "test-grad", "test-nn", "test-ops", "test-graph", "test-shape", "test-data"] }
 
 # Examples
 mnist     = { cmd = "mojo -I . examples/mnist/train.mojo" }

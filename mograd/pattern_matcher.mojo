@@ -57,20 +57,14 @@ struct Pat(Copyable, ImplicitlyCopyable, Movable):
         return True
 
 
-def build_rule_table[F: TrivialRegisterPassable, rules: List[Rule[F]]]() -> Dict[OpType, List[Rule[F]]]:
-    var d = Dict[OpType, List[Rule[F]]]()
-    comptime for rule in rules:
-        key = rule.pat.op_type
-        r = materialize[rule]()
-        d.setdefault(key, List[Rule[F]]()).append(r^)
-    return d^
-
-
-struct PatternMatcher[F: TrivialRegisterPassable, rules: List[Rule[F]]]:
+struct PatternMatcher[F: TrivialRegisterPassable]:
     var rule_table: Dict[OpType, List[Rule[Self.F]]]
 
-    def __init__(out self):
-        self.rule_table = build_rule_table[Self.F, Self.rules]()
+    def __init__(out self, ref rules: List[Rule[Self.F]]):
+        self.rule_table = Dict[OpType, List[Rule[Self.F]]]()
+        for i in range(len(rules)):
+            var key = rules[i].pat.op_type
+            self.rule_table.setdefault(key, List[Rule[Self.F]]()).append(rules[i].copy())
 
     def match(self, node: OpRef) -> Optional[Self.F]:
         var matches = self.rule_table.get(node.op_type())
