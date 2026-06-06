@@ -31,6 +31,14 @@ MOGRAD_SO = "mograd/runtime/gpu/kernels/libmograd_gpu.so"
 [target.osx-arm64.tasks]
 build-gpu = { cmd = "xcrun clang -c -fPIC -o mograd/runtime/gpu/kernels/pin.o mograd/runtime/gpu/kernels/pin.c && mojo build --emit shared-lib mograd/runtime/gpu/kernels/__init__.mojo -o $PIXI_PROJECT_ROOT/$MOGRAD_SO -Xlinker $PIXI_PROJECT_ROOT/mograd/runtime/gpu/kernels/pin.o" }
 
+[environments]
+lint = {features = ["lint"]}
+
+[feature.lint.dependencies]
+mojo = ">=1.0.0b2.dev2026050306,<2"
+
+[feature.lint.tasks]
+format-check = { cmd = "mojo format -l 120 mograd/ && git diff --exit-code" }
 
 [tasks]
 build-gpu = { cmd = "gcc -c -fPIC -o mograd/runtime/gpu/kernels/pin.o mograd/runtime/gpu/kernels/pin.c && mojo build --emit shared-lib mograd/runtime/gpu/kernels/__init__.mojo -o $PIXI_PROJECT_ROOT/$MOGRAD_SO -Xlinker $PIXI_PROJECT_ROOT/mograd/runtime/gpu/kernels/pin.o" }
