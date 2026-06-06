@@ -29,7 +29,7 @@ numpy = "*" # (LazyLoader)
 MOGRAD_SO = "mograd/runtime/gpu/kernels/libmograd_gpu.so"
 
 [tasks]
-build-gpu = { cmd = "mojo build --emit shared-lib mograd/runtime/gpu/kernels/__init__.mojo -o $PIXI_PROJECT_ROOT/$MOGRAD_SO" }
+build-gpu = { cmd = "gcc -c -fPIC -o mograd/runtime/gpu/kernels/pin.o mograd/runtime/gpu/kernels/pin.c && mojo build --emit shared-lib mograd/runtime/gpu/kernels/__init__.mojo -o $PIXI_PROJECT_ROOT/$MOGRAD_SO -Xlinker $PIXI_PROJECT_ROOT/mograd/runtime/gpu/kernels/pin.o" }
 
 format = { cmd = "mojo format -l 120 mograd/"}
 
