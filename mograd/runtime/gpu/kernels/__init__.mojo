@@ -15,7 +15,6 @@ from nn.argmaxmin_gpu import argmax_gpu
 from nn.rand_normal import random_normal
 from nn.rand_uniform import random_uniform
 from nn.softmax import softmax as nn_softmax
-from std.gpu.memory import external_memory
 from std.gpu.primitives.warp import max as warp_max, sum as warp_sum
 
 
@@ -681,6 +680,9 @@ def mograd_argmax(
     raise Error("unsupported dtype")
 
 
+comptime CE_BLOCK = 256
+
+
 def cross_entropy_kernel[
     dtype: DType, BLOCK_SIZE: Int
 ](
@@ -690,72 +692,81 @@ def cross_entropy_kernel[
     N: Int,
     C: Int,
 ) where dtype.is_floating_point():
-    from std.gpu.primitives.warp import max as warp_max, sum as warp_sum
-    from std.gpu.memory import AddressSpace, external_memory
     from std.math import exp, log
+    from std.gpu import lane_id, WARP_SIZE
 
+    var smem = stack_allocation[BLOCK_SIZE // WARP_SIZE, Scalar[dtype], address_space=AddressSpace.SHARED]()
     var row = block_idx.x
     if row >= N:
         return
     var row_offset = row * C
-    var tmp = external_memory[Scalar[dtype], address_space=AddressSpace.SHARED, alignment=4]()
-    var max_val = Scalar[dtype].MIN
-    for i in range(thread_idx.x, C, BLOCK_SIZE):
-        val = logits[row_offset + i]
-        tmp[i] = val
-        if val > max_val:
-            max_val = val
-    max_val = warp_max(max_val)
+    var tid = thread_idx.x
+
+    var local_max = Scalar[dtype].MIN
+    for i in range(tid, C, BLOCK_SIZE):
+        var v = logits[row_offset + i]
+        if v > local_max:
+            local_max = v
+    local_max = warp_max(local_max)
+    if lane_id() == 0:
+        smem[tid // WARP_SIZE] = local_max
     barrier()
-    var sum_exp = Scalar[dtype](0.0)
-    for i in range(thread_idx.x, C, BLOCK_SIZE):
-        sum_exp += exp(tmp[i] - max_val)
-    sum_exp = warp_sum(sum_exp)
-    var log_sum = log(sum_exp)
-    var loss = Scalar[dtype](0.0)
-    for i in range(thread_idx.x, C, BLOCK_SIZE):
-        loss += (tmp[i] - max_val - log_sum) * labels[row_offset + i]
-    loss = -warp_sum(loss) / Scalar[dtype](N)
-    if thread_idx.x == 0:
-        dst[row] = loss
+    if tid == 0:
+        for w in range(1, BLOCK_SIZE // WARP_SIZE):
+            if smem[w] > smem[0]:
+                smem[0] = smem[w]
+    barrier()
+    var global_max = smem[0]
+
+    var local_sum = Scalar[dtype](0)
+    for i in range(tid, C, BLOCK_SIZE):
+        local_sum += exp(logits[row_offset + i] - global_max)
+    local_sum = warp_sum(local_sum)
+    if lane_id() == 0:
+        smem[tid // WARP_SIZE] = local_sum
+    barrier()
+    if tid == 0:
+        for w in range(1, BLOCK_SIZE // WARP_SIZE):
+            smem[0] += smem[w]
+        smem[0] = log(smem[0])
+    barrier()
+    var log_sum_exp = smem[0]
+
+    var local_loss = Scalar[dtype](0)
+    for i in range(tid, C, BLOCK_SIZE):
+        local_loss += (logits[row_offset + i] - global_max - log_sum_exp) * labels[row_offset + i]
+    local_loss = warp_sum(local_loss)
+    if lane_id() == 0:
+        smem[tid // WARP_SIZE] = local_loss
+    barrier()
+    if tid == 0:
+        for w in range(1, BLOCK_SIZE // WARP_SIZE):
+            smem[0] += smem[w]
+        dst[row] = -smem[0] / Scalar[dtype](N)
 
 
-def cross_entropy_kernel_no_smem[
+def sum_rows_kernel[
     dtype: DType, BLOCK_SIZE: Int
 ](
-    logits: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    labels: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     N: Int,
-    C: Int,
 ) where dtype.is_floating_point():
-    from std.gpu.primitives.warp import max as warp_max, sum as warp_sum
-    from std.math import exp, log
+    from std.gpu import lane_id, WARP_SIZE
 
-    var row = block_idx.x
-    if row >= N:
-        return
-    var row_offset = row * C
-    var max_val = Scalar[dtype].MIN
-    for i in range(thread_idx.x, C, BLOCK_SIZE):
-        val = logits[row_offset + i]
-        if val > max_val:
-            max_val = val
-    max_val = warp_max(max_val)
-    var sum_exp = Scalar[dtype](0.0)
-    for i in range(thread_idx.x, C, BLOCK_SIZE):
-        sum_exp += exp(logits[row_offset + i] - max_val)
-    sum_exp = warp_sum(sum_exp)
-    var log_sum = log(sum_exp)
-    var loss = Scalar[dtype](0.0)
-    for i in range(thread_idx.x, C, BLOCK_SIZE):
-        loss += (logits[row_offset + i] - max_val - log_sum) * labels[row_offset + i]
-    loss = -warp_sum(loss) / Scalar[dtype](N)
-    if thread_idx.x == 0:
-        dst[row] = loss
-
-
-comptime CE_BLOCK = 32
+    var smem = stack_allocation[BLOCK_SIZE // WARP_SIZE, Scalar[dtype], address_space=AddressSpace.SHARED]()
+    var tid = thread_idx.x
+    var local = Scalar[dtype](0)
+    for i in range(tid, N, BLOCK_SIZE):
+        local += src[i]
+    local = warp_sum(local)
+    if lane_id() == 0:
+        smem[tid // WARP_SIZE] = local
+    barrier()
+    if tid == 0:
+        for w in range(1, BLOCK_SIZE // WARP_SIZE):
+            smem[0] += smem[w]
+        dst[0] = smem[0]
 
 
 @export
@@ -778,41 +789,22 @@ def mograd_cross_entropy(
                 var N = Int(p[0])
                 var C = Int(p[1])
                 var row_buf = ctx.enqueue_create_buffer[d](N)
-                var shared_mem_bytes = C * size_of[Scalar[d]]()
-                var smem_limit = DeviceContext.default_device_info.shared_memory_per_multiprocessor - 1024
-                comptime use_smem = not has_apple_gpu_accelerator()
-                if use_smem and shared_mem_bytes <= smem_limit:
-                    ctx.enqueue_function[cross_entropy_kernel[d, CE_BLOCK]](
-                        logits.bitcast[Scalar[d]](),
-                        labels.bitcast[Scalar[d]](),
-                        row_buf.unsafe_ptr(),
-                        N,
-                        C,
-                        grid_dim=(N,),
-                        block_dim=(CE_BLOCK,),
-                        shared_mem_bytes=shared_mem_bytes,
-                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(UInt32(shared_mem_bytes)),
-                    )
-                else:
-                    ctx.enqueue_function[cross_entropy_kernel_no_smem[d, CE_BLOCK]](
-                        logits.bitcast[Scalar[d]](),
-                        labels.bitcast[Scalar[d]](),
-                        row_buf.unsafe_ptr(),
-                        N,
-                        C,
-                        grid_dim=(N,),
-                        block_dim=(CE_BLOCK,),
-                    )
-                var row_ptr = row_buf.unsafe_ptr()
-                var out_ptr = dst.bitcast[Scalar[d]]()
-
-                def input_fn[width: Int, rank: Int](coords: IndexList[rank]) capturing -> SIMD[d, width]:
-                    return row_ptr.load[width=width](coords[0])
-
-                def output_fn[width: Int, rank: Int](coords: IndexList[rank], val: SIMD[d, width]) capturing:
-                    out_ptr.store[width=width](coords[0], val)
-
-                reduce_sum[d, input_fn, output_fn, target="gpu", reduce_dim=0](IndexList[1](N), ctx)
+                ctx.enqueue_function[cross_entropy_kernel[d, CE_BLOCK]](
+                    logits.bitcast[Scalar[d]](),
+                    labels.bitcast[Scalar[d]](),
+                    row_buf.unsafe_ptr(),
+                    N,
+                    C,
+                    grid_dim=(N,),
+                    block_dim=(CE_BLOCK,),
+                )
+                ctx.enqueue_function[sum_rows_kernel[d, CE_BLOCK]](
+                    row_buf.unsafe_ptr(),
+                    dst.bitcast[Scalar[d]](),
+                    N,
+                    grid_dim=(1,),
+                    block_dim=(CE_BLOCK,),
+                )
                 ctx.synchronize()
                 return
     raise Error("unsupported dtype")
@@ -1057,64 +1049,49 @@ def cross_entropy_grad_kernel[
     C: Int,
 ) where dtype.is_floating_point():
     from std.math import exp as math_exp
+    from std.gpu import lane_id, WARP_SIZE
 
+    var smem = stack_allocation[BLOCK_SIZE // WARP_SIZE, Scalar[dtype], address_space=AddressSpace.SHARED]()
     var row = block_idx.x
     if row >= N:
         return
     var row_offset = row * C
-    var tmp = external_memory[Scalar[dtype], address_space=AddressSpace.SHARED, alignment=4]()
-    var max_val = Scalar[dtype].MIN
-    for i in range(thread_idx.x, C, BLOCK_SIZE):
-        val = logits[row_offset + i]
-        tmp[i] = val
-        if val > max_val:
-            max_val = val
-    max_val = warp_max(max_val)
+    var tid = thread_idx.x
+
+    var local_max = Scalar[dtype].MIN
+    for i in range(tid, C, BLOCK_SIZE):
+        var v = logits[row_offset + i]
+        if v > local_max:
+            local_max = v
+    local_max = warp_max(local_max)
+    if lane_id() == 0:
+        smem[tid // WARP_SIZE] = local_max
     barrier()
-    var sum_exp = Scalar[dtype](0.0)
-    for i in range(thread_idx.x, C, BLOCK_SIZE):
-        val = math_exp(tmp[i] - max_val)
-        sum_exp += val
-        tmp[i] = val
-    sum_exp = warp_sum(sum_exp)
-    var sm_scale = Scalar[dtype](1.0) / sum_exp
+    if tid == 0:
+        for w in range(1, BLOCK_SIZE // WARP_SIZE):
+            if smem[w] > smem[0]:
+                smem[0] = smem[w]
+    barrier()
+    var global_max = smem[0]
+
+    var local_sum = Scalar[dtype](0)
+    for i in range(tid, C, BLOCK_SIZE):
+        local_sum += math_exp(logits[row_offset + i] - global_max)
+    local_sum = warp_sum(local_sum)
+    if lane_id() == 0:
+        smem[tid // WARP_SIZE] = local_sum
+    barrier()
+    if tid == 0:
+        for w in range(1, BLOCK_SIZE // WARP_SIZE):
+            smem[0] += smem[w]
+    barrier()
+    var sm_scale = Scalar[dtype](1) / smem[0]
     var d_by_nrows = grad[0] / Scalar[dtype](N)
-    for i in range(thread_idx.x, C, BLOCK_SIZE):
-        dst[row_offset + i] = (tmp[i] * sm_scale - labels[row_offset + i]) * d_by_nrows
 
-
-def cross_entropy_grad_kernel_no_smem[
-    dtype: DType, BLOCK_SIZE: Int
-](
-    grad: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    logits: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    labels: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    N: Int,
-    C: Int,
-) where dtype.is_floating_point():
-    from std.math import exp as math_exp
-
-    var row = block_idx.x
-    if row >= N:
-        return
-    var row_offset = row * C
-    var max_val = Scalar[dtype].MIN
-    for i in range(thread_idx.x, C, BLOCK_SIZE):
-        val = logits[row_offset + i]
-        if val > max_val:
-            max_val = val
-    max_val = warp_max(max_val)
-    var sum_exp = Scalar[dtype](0.0)
-    for i in range(thread_idx.x, C, BLOCK_SIZE):
-        val = math_exp(logits[row_offset + i] - max_val)
-        sum_exp += val
-        dst[row_offset + i] = val
-    sum_exp = warp_sum(sum_exp)
-    var sm_scale = Scalar[dtype](1.0) / sum_exp
-    var d_by_nrows = grad[0] / Scalar[dtype](N)
-    for i in range(thread_idx.x, C, BLOCK_SIZE):
-        dst[row_offset + i] = (dst[row_offset + i] * sm_scale - labels[row_offset + i]) * d_by_nrows
+    for i in range(tid, C, BLOCK_SIZE):
+        dst[row_offset + i] = (
+            math_exp(logits[row_offset + i] - global_max) * sm_scale - labels[row_offset + i]
+        ) * d_by_nrows
 
 
 @export
@@ -1137,33 +1114,15 @@ def mograd_cross_entropy_grad(
                 var p = shape_ptr.bitcast[Float32]()
                 var N = Int(p[0])
                 var C = Int(p[1])
-                var shared_mem_bytes = C * size_of[Scalar[kd]]()
-                comptime BLOCK_SIZE = CE_BLOCK
-                var smem_limit = DeviceContext.default_device_info.shared_memory_per_multiprocessor - 1024
-                comptime use_smem = not has_apple_gpu_accelerator()
-                if use_smem and shared_mem_bytes <= smem_limit:
-                    ctx.enqueue_function[cross_entropy_grad_kernel[kd, BLOCK_SIZE]](
-                        grad.bitcast[Scalar[kd]](),
-                        logits.bitcast[Scalar[kd]](),
-                        labels.bitcast[Scalar[kd]](),
-                        dst.bitcast[Scalar[kd]](),
-                        N,
-                        C,
-                        grid_dim=(N,),
-                        block_dim=(BLOCK_SIZE,),
-                        shared_mem_bytes=shared_mem_bytes,
-                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(UInt32(shared_mem_bytes)),
-                    )
-                else:
-                    ctx.enqueue_function[cross_entropy_grad_kernel_no_smem[kd, BLOCK_SIZE]](
-                        grad.bitcast[Scalar[kd]](),
-                        logits.bitcast[Scalar[kd]](),
-                        labels.bitcast[Scalar[kd]](),
-                        dst.bitcast[Scalar[kd]](),
-                        N,
-                        C,
-                        grid_dim=(N,),
-                        block_dim=(BLOCK_SIZE,),
-                    )
+                ctx.enqueue_function[cross_entropy_grad_kernel[kd, CE_BLOCK]](
+                    grad.bitcast[Scalar[kd]](),
+                    logits.bitcast[Scalar[kd]](),
+                    labels.bitcast[Scalar[kd]](),
+                    dst.bitcast[Scalar[kd]](),
+                    N,
+                    C,
+                    grid_dim=(N,),
+                    block_dim=(CE_BLOCK,),
+                )
                 return
     raise Error("unsupported dtype")
