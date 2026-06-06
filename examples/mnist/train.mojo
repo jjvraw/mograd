@@ -45,3 +45,4 @@ def main() raises:
     var acc = accuracy(model, data.x_test, data.y_test, batch_size)
     print("\n" + "=" * 10)
     print("\nfinal val_acc:", acc)
+    assert acc > 0.9

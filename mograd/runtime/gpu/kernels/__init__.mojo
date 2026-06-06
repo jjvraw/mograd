@@ -338,14 +338,12 @@ def eq[
     n: Int,
     ctx: DeviceContext,
 ) raises:
+    # TODO: Vectorise
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var idx = Int(coord[0].value())
-        dst.store[simd_width](
-            idx, Scalar[dtype](1) if a.load[simd_width](idx) == b.load[simd_width](idx) else Scalar[dtype](0)
-        )
+        dst.store(idx, Scalar[dtype](1) if a.load(idx) == b.load(idx) else Scalar[dtype](0))
 
-    comptime width = simd_width_of[dtype, target=get_gpu_target()]()
-    elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
+    elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
 
 
 @export
@@ -872,7 +870,9 @@ def cast[
         var idx = Int(coord[0].value())
         dst.store[simd_width](idx, a.load[simd_width](idx).cast[dst_dtype]())
 
-    comptime width = simd_width_of[dst_dtype, target=get_gpu_target()]()
+    comptime width = min(
+        simd_width_of[src_dtype, target=get_gpu_target()](), simd_width_of[dst_dtype, target=get_gpu_target()]()
+    )
     elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
 
 
