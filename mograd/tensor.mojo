@@ -1,6 +1,7 @@
 from std.memory import ArcPointer
 from std.gpu.host import DeviceContext
 
+from mograd import Device
 from mograd.op import AttrVal, Op, OpRef, OpType
 from mograd.shape import Shape
 from mograd.buffer import Buffer
@@ -18,7 +19,7 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
     # TODO: Use ArcPointer when Optional[ArcPointer] is resolved:
     # https://github.com/modular/modular/issues/3293
     var _grad: ArcPointer[Optional[Tensor[Self.dtype]]]
-    var ctx: Optional[DeviceContext]
+    var ctx: Optional[Device]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -26,7 +27,7 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
 
     def __init__(
         out self,
-        ctx: Optional[DeviceContext],
+        ctx: Optional[Device],
         var op: OpRef,
         requires_grad: Bool = False,
     ):
@@ -37,7 +38,7 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
 
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: Device,
         data: List[Scalar[Self.dtype]],
         shape: Shape,
         requires_grad: Bool = False,
@@ -54,7 +55,7 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
 
     @staticmethod
     def empty(
-        ctx: DeviceContext,
+        ctx: Device,
         shape: Shape,
         requires_grad: Bool = False,
     ) raises -> Self:
@@ -63,7 +64,7 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
 
     @staticmethod
     def ones(
-        ctx: DeviceContext,
+        ctx: Device,
         shape: Shape,
         requires_grad: Bool = False,
     ) raises -> Self:
@@ -72,7 +73,7 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
 
     @staticmethod
     def uniform(
-        ctx: DeviceContext,
+        ctx: Device,
         shape: Shape,
         low: Float32 = 0.0,
         high: Float32 = 1.0,
@@ -84,7 +85,7 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
 
     @staticmethod
     def randn(
-        ctx: DeviceContext,
+        ctx: Device,
         shape: Shape,
         mean: Float32 = 0.0,
         std: Float32 = 1.0,
@@ -96,7 +97,7 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
 
     @staticmethod
     def disk(
-        ctx: DeviceContext,
+        ctx: Device,
         path: String,
         shape: Shape,
     ) -> Self:
@@ -104,7 +105,7 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
 
     @staticmethod
     def full(
-        ctx: DeviceContext,
+        ctx: Device,
         shape: Shape,
         fill_value: Float32,
         requires_grad: Bool = False,
@@ -120,7 +121,7 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
         return Tensor[other_dtype].ones(other.ctx.value(), other.op.shape(), requires_grad)
 
     @staticmethod
-    def from_buffer(ctx: DeviceContext, var buf: Buffer[Self.dtype]) -> Self:
+    def from_buffer(ctx: Device, var buf: Buffer[Self.dtype]) -> Self:
         var shape = buf.shape
         return Tensor[Self.dtype](ctx, OpRef(Op(OpType.BUFFER, shape, Self.dtype, [], buf^)))
 

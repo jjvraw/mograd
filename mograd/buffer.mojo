@@ -3,6 +3,7 @@ from std.gpu.host import DeviceContext, DeviceBuffer
 from std.utils import Variant
 
 from mograd.shape import Shape
+from mograd import Device
 
 
 # ===-------------------------------------------------------------------===#
@@ -93,31 +94,31 @@ struct Buffer[dtype: DType](BufferArm, Copyable, Movable, Writable):
         return Self(self._ptr, new_shape, Shape(new_strides_list), self.base_offset)
 
     @staticmethod
-    def empty(ctx: DeviceContext, shape: Shape) raises -> Self:
+    def empty(ctx: Device, shape: Shape) raises -> Self:
         var size = shape.numel()
-        var dev_buf = ctx.enqueue_create_buffer[Self.dtype](size)
+        var dev_buf = ctx.ctx.enqueue_create_buffer[Self.dtype](size)
         return Self(dev_buf^, shape, size)
 
     @staticmethod
-    def ones(ctx: DeviceContext, shape: Shape) raises -> Self:
+    def ones(ctx: Device, shape: Shape) raises -> Self:
         var size = shape.numel()
-        var dev_buf = ctx.enqueue_create_buffer[Self.dtype](size)
+        var dev_buf = ctx.ctx.enqueue_create_buffer[Self.dtype](size)
         dev_buf.enqueue_fill(1.0)
         return Self(dev_buf^, shape, size)
 
     @staticmethod
     def from_data(
-        ctx: DeviceContext,
+        ctx: Device,
         data: List[Scalar[Self.dtype]],
         shape: Shape,
     ) raises -> Self:
         var size = len(data)
-        var host_buf = ctx.enqueue_create_host_buffer[Self.dtype](size)
+        var host_buf = ctx.ctx.enqueue_create_host_buffer[Self.dtype](size)
         var host_ptr = host_buf.unsafe_ptr()
         for i in range(size):
             host_ptr[i] = data[i]
-        var dev_buf = ctx.enqueue_create_buffer[Self.dtype](size)
-        ctx.enqueue_copy(dst_buf=dev_buf, src_buf=host_buf)
+        var dev_buf = ctx.ctx.enqueue_create_buffer[Self.dtype](size)
+        ctx.ctx.enqueue_copy(dst_buf=dev_buf, src_buf=host_buf)
         return Self(dev_buf^, shape, size)
 
     def write_to(self, mut writer: Some[Writer]):
@@ -201,13 +202,13 @@ struct AnyBuffer(Copyable, Movable, Writable):
         raise Error("unsupported dtype")
 
     @staticmethod
-    def empty(dtype: DType, shape: Shape, ctx: DeviceContext) raises -> AnyBuffer:
+    def empty(dtype: DType, shape: Shape, ctx: Device) raises -> AnyBuffer:
         comptime for k in range(Self.BufVariant.Ts.size):
             comptime T = Self.BufVariant.Ts[k]
             comptime assert conforms_to(T, BufferArm)
             comptime d = T.node_dtype
             if dtype == d:
-                var dev_buf = ctx.enqueue_create_buffer[d](shape.numel())
+                var dev_buf = ctx.ctx.enqueue_create_buffer[d](shape.numel())
                 return AnyBuffer(Buffer[d](dev_buf^, shape, shape.numel()))
         raise Error("unsupported dtype: " + String(dtype))
 

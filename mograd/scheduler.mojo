@@ -1,5 +1,6 @@
 from std.gpu.host import DeviceContext
 
+from mograd import Device
 from mograd.op import OpRef, OpType
 from mograd.buffer import Buffer, AnyBuffer, BufferArm
 from mograd.pattern_matcher import Rule, PatternMatcher, GraphUtils, Pat
@@ -10,7 +11,7 @@ from mograd.pattern_matcher import Rule, PatternMatcher, GraphUtils, Pat
 
 comptime ExecFn = def[*dtypes: DType](node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) thin raises -> AnyBuffer
 
-comptime BoundExecFn = def(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) thin raises -> AnyBuffer
+comptime BoundExecFn = def(node: OpRef, inputs: List[AnyBuffer], ctx: Device) thin raises -> AnyBuffer
 
 
 def _make1[F: ExecFn, fp_only: Bool](node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
@@ -59,7 +60,7 @@ struct Scheduler:
     def __init__(out self, var rules: List[Rule[BoundExecFn]]):
         self.rules = rules^
 
-    def run(self, root: OpRef, ctx: DeviceContext) raises -> AnyBuffer:
+    def run(self, root: OpRef, ctx: Device) raises -> AnyBuffer:
         var pm = PatternMatcher[BoundExecFn](self.rules)
         var bufs = Dict[OpRef, AnyBuffer]()
         var topo = GraphUtils.toposort(root)
@@ -81,5 +82,5 @@ struct Scheduler:
                 node.op().buf = Optional[AnyBuffer](result.copy())
                 bufs[node] = result^
 
-        ctx.synchronize()
+        ctx.ctx.synchronize()
         return bufs[root].copy()

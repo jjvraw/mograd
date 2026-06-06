@@ -1,6 +1,4 @@
-from std.gpu.host import DeviceContext
-
-from mograd.tensor import Tensor
+from mograd.tensor import Tensor, Device
 from mograd.data.lazy_loader import LazyLoader
 
 
@@ -17,9 +15,7 @@ comptime _BASE = "https://storage.googleapis.com/cvdf-datasets/mnist/"
 
 def mnist[
     dtype: DType = DType.float32
-](ctx: DeviceContext, cache_dir: String = "~/.mograd/datasets") raises -> MNISTData[
-    dtype
-] where dtype.is_floating_point():
+](ctx: Device, cache_dir: String = "~/.mograd/datasets") raises -> MNISTData[dtype] where dtype.is_floating_point():
     var loader = LazyLoader(cache_dir)
 
     var x_train_path = loader.ensure_cached_idx(

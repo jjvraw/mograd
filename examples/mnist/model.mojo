@@ -1,4 +1,4 @@
-from mograd import Tensor
+from mograd import Tensor, Device
 import mograd.nn as nn
 
 
@@ -7,7 +7,7 @@ struct MLP:
     var l2: nn.Linear[]
     var l3: nn.Linear[]
 
-    def __init__(out self):
+    def __init__(out self, device: Device):
         self.l1 = nn.Linear(784, 256)
         self.l2 = nn.Linear(256, 128)
         self.l3 = nn.Linear(128, 10)

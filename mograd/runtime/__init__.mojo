@@ -3,6 +3,7 @@ from std.ffi import OwnedDLHandle
 from std.pathlib.path import Path
 from std.os.env import getenv
 
+from mograd import Device
 from mograd.op import OpRef, OpType
 from mograd.buffer import AnyBuffer, Buffer, BufferArm
 from mograd.pattern_matcher import Rule, Pat
@@ -25,15 +26,15 @@ def path() raises -> String:
 
 trait Runtime:
     @staticmethod
-    def run(root: OpRef, ctx: Optional[DeviceContext]) raises -> AnyBuffer:
+    def run(root: OpRef, ctx: Optional[Device]) raises -> AnyBuffer:
         ...
 
 
 struct NativeRuntime(Runtime):
     @staticmethod
-    def run(root: OpRef, ctx: Optional[DeviceContext]) raises -> AnyBuffer:
+    def run(root: OpRef, ctx: Optional[Device]) raises -> AnyBuffer:
         if not ctx:
-            raise Error("NativeRuntime requires a DeviceContext")
+            raise Error("NativeRuntime requires a Device")
         var optimized = Simplifier(native_gpu_rewrites()).run(root)
         return Scheduler(
             [
@@ -95,151 +96,147 @@ comptime OneHotOp = def(
 ) thin abi("C") raises -> None
 
 
-def one_hot(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def one_hot(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var c_ptr = alloc[Float32](1)
     c_ptr[0] = node.attrs()["num_classes"][Float32]
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
-    OwnedDLHandle(path()).get_function[OneHotOp]("mograd_one_hot")(
+    ctx.handle[].get_function[OneHotOp]("mograd_one_hot")(
         inputs[0].data_ptr(),
         c_ptr.bitcast[NoneType](),
         out.data_ptr(),
         node.shape().numel(),
         inputs[0].dtype(),
         node.dtype(),
-        ctx,
+        ctx.ctx,
     )
     c_ptr.free()
     return out^
 
 
-def randn(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def randn(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var params = alloc[Float32](3)
     params[0] = node.attrs()["mean"][Float32]
     params[1] = node.attrs()["std"][Float32]
     params[2] = node.attrs()["seed"][Float32]
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
-    OwnedDLHandle(path()).get_function[UnaryOp]("mograd_randn")(
+    ctx.handle[].get_function[UnaryOp]("mograd_randn")(
         params.bitcast[NoneType](),
         out.data_ptr(),
         node.shape().numel(),
         node.dtype(),
-        ctx,
+        ctx.ctx,
     )
     params.free()
     return out^
 
 
-def full(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def full(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var v = alloc[Float32](1)
     v[0] = node.attrs()["value"][Float32]
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
-    OwnedDLHandle(path()).get_function[UnaryOp]("mograd_full")(
+    ctx.handle[].get_function[UnaryOp]("mograd_full")(
         v.bitcast[NoneType](),
         out.data_ptr(),
         node.shape().numel(),
         node.dtype(),
-        ctx,
+        ctx.ctx,
     )
     v.free()
     return out^
 
 
-def argmax(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def argmax(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var p = alloc[Float32](2)
     p[0] = Float32(inputs[0].shape()[0])
     p[1] = Float32(inputs[0].shape()[1])
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
-    OwnedDLHandle(path()).get_function[BinaryOp]("mograd_argmax")(
+    ctx.handle[].get_function[BinaryOp]("mograd_argmax")(
         inputs[0].data_ptr(),
         p.bitcast[NoneType](),
         out.data_ptr(),
         node.shape().numel(),
         node.dtype(),
-        ctx,
+        ctx.ctx,
     )
     p.free()
     return out^
 
 
-def sum(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def sum(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var out = AnyBuffer.empty(node.dtype(), (1,), ctx)
-    OwnedDLHandle(path()).get_function[UnaryOp]("mograd_sum")(
+    ctx.handle[].get_function[UnaryOp]("mograd_sum")(
         inputs[0].data_ptr(),
         out.data_ptr(),
         node.src(0).shape().numel(),
         node.dtype(),
-        ctx,
+        ctx.ctx,
     )
     return out^
 
 
-def softmax(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def softmax(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var shape = node.shape()
     var rank = len(shape)
     var params = alloc[Float32](2)
     params[0] = Float32(shape[0] if rank > 1 else 1)
     params[1] = Float32(shape[rank - 1])
     var out = AnyBuffer.empty(node.dtype(), shape, ctx)
-    OwnedDLHandle(path()).get_function[BinaryOp]("mograd_softmax")(
+    ctx.handle[].get_function[BinaryOp]("mograd_softmax")(
         inputs[0].data_ptr(),
         params.bitcast[NoneType](),
         out.data_ptr(),
         shape.numel(),
         node.dtype(),
-        ctx,
+        ctx.ctx,
     )
     params.free()
     return out^
 
 
-def log(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
-    var lib = OwnedDLHandle(path())
+def log(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
-    lib.get_function[UnaryOp]("mograd_log")(
+    ctx.handle[].get_function[UnaryOp]("mograd_log")(
         inputs[0].data_ptr(),
         out.data_ptr(),
         node.shape().numel(),
         node.dtype(),
-        ctx,
+        ctx.ctx,
     )
     return out^
 
 
-def relu(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
-    var lib = OwnedDLHandle(path())
+def relu(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
-    lib.get_function[UnaryOp]("mograd_relu")(
+    ctx.handle[].get_function[UnaryOp]("mograd_relu")(
         inputs[0].data_ptr(),
         out.data_ptr(),
         node.shape().numel(),
         node.dtype(),
-        ctx,
+        ctx.ctx,
     )
     return out^
 
 
-def exp(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
-    var lib = OwnedDLHandle(path())
+def exp(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
-    lib.get_function[UnaryOp]("mograd_exp")(
+    ctx.handle[].get_function[UnaryOp]("mograd_exp")(
         inputs[0].data_ptr(),
         out.data_ptr(),
         node.shape().numel(),
         node.dtype(),
-        ctx,
+        ctx.ctx,
     )
     return out^
 
 
-def neg(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
-    var lib = OwnedDLHandle(path())
+def neg(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
-    lib.get_function[UnaryOp]("mograd_neg")(
+    ctx.handle[].get_function[UnaryOp]("mograd_neg")(
         inputs[0].data_ptr(),
         out.data_ptr(),
         node.shape().numel(),
         node.dtype(),
-        ctx,
+        ctx.ctx,
     )
     return out^
 
@@ -258,80 +255,75 @@ comptime BinaryOp = def(
 ) thin abi("C") raises -> None
 
 
-def eq(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
-    var lib = OwnedDLHandle(path())
+def eq(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
-    lib.get_function[BinaryOp]("mograd_eq")(
+    ctx.handle[].get_function[BinaryOp]("mograd_eq")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         out.data_ptr(),
         node.shape().numel(),
         node.dtype(),
-        ctx,
+        ctx.ctx,
     )
     return out^
 
 
-def mul(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
-    var lib = OwnedDLHandle(path())
+def mul(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
-    lib.get_function[BinaryOp]("mograd_mul")(
+    ctx.handle[].get_function[BinaryOp]("mograd_mul")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         out.data_ptr(),
         node.shape().numel(),
         node.dtype(),
-        ctx,
+        ctx.ctx,
     )
     return out^
 
 
-def div(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
-    var lib = OwnedDLHandle(path())
+def div(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
-    lib.get_function[BinaryOp]("mograd_div")(
+    ctx.handle[].get_function[BinaryOp]("mograd_div")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         out.data_ptr(),
         node.shape().numel(),
         node.dtype(),
-        ctx,
+        ctx.ctx,
     )
     return out^
 
 
-def add(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
-    var lib = OwnedDLHandle(path())
-    var func = lib.get_function[BinaryOp]("mograd_add")
+def add(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
+    var func = ctx.handle[].get_function[BinaryOp]("mograd_add")
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
-    func(inputs[0].data_ptr(), inputs[1].data_ptr(), out.data_ptr(), node.shape().numel(), node.dtype(), ctx)
+    func(inputs[0].data_ptr(), inputs[1].data_ptr(), out.data_ptr(), node.shape().numel(), node.dtype(), ctx.ctx)
     return out^
 
 
-def transpose(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def transpose(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var p = alloc[Float32](2)
     p[0] = Float32(inputs[0].shape()[0])
     p[1] = Float32(inputs[0].shape()[1])
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
-    OwnedDLHandle(path()).get_function[BinaryOp]("mograd_transpose")(
+    ctx.handle[].get_function[BinaryOp]("mograd_transpose")(
         inputs[0].data_ptr(),
         p.bitcast[NoneType](),
         out.data_ptr(),
         node.shape().numel(),
         node.dtype(),
-        ctx,
+        ctx.ctx,
     )
     p.free()
     return out^
 
 
-def scale(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
-    var lib = OwnedDLHandle(path())
-    var func = lib.get_function[BinaryOp]("mograd_scale")
+def scale(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
+    var func = ctx.handle[].get_function[BinaryOp]("mograd_scale")
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
     var s = alloc[Float32](1)
     s[0] = node.attrs()["scalar"][Float32]
-    func(inputs[0].data_ptr(), s.bitcast[NoneType](), out.data_ptr(), node.shape().numel(), node.dtype(), ctx)
+    func(inputs[0].data_ptr(), s.bitcast[NoneType](), out.data_ptr(), node.shape().numel(), node.dtype(), ctx.ctx)
     s.free()
     return out^
 
@@ -351,44 +343,44 @@ comptime TernaryOp = def(
 ) thin abi("C") raises -> None
 
 
-def cross_entropy(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def cross_entropy(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var p = alloc[Float32](2)
     p[0] = Float32(inputs[0].shape()[0])
     p[1] = Float32(inputs[0].shape()[1])
     var out = AnyBuffer.empty(node.dtype(), (1,), ctx)
-    OwnedDLHandle(path()).get_function[TernaryOp]("mograd_cross_entropy")(
+    ctx.handle[].get_function[TernaryOp]("mograd_cross_entropy")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         p.bitcast[NoneType](),
         out.data_ptr(),
         node.shape().numel(),
         node.dtype(),
-        ctx,
+        ctx.ctx,
     )
     p.free()
     return out^
 
 
-def matmul(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def matmul(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var p = alloc[Float32](3)
     p[0] = Float32(inputs[0].shape()[0])
     p[1] = Float32(inputs[0].shape()[1])
     p[2] = Float32(inputs[1].shape()[1])
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
-    OwnedDLHandle(path()).get_function[TernaryOp]("mograd_matmul")(
+    ctx.handle[].get_function[TernaryOp]("mograd_matmul")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         p.bitcast[NoneType](),
         out.data_ptr(),
         node.shape().numel(),
         node.dtype(),
-        ctx,
+        ctx.ctx,
     )
     p.free()
     return out^
 
 
-def disk(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def disk(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var size = node.shape().numel()
     var bytes = Path(node.attrs()["path"][String]).read_bytes()
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
@@ -405,26 +397,26 @@ def disk(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Any
     raise Error("unsupported dtype")
 
 
-def slice(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def slice(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var start = Int(node.attrs()["start"][Float32])
     var cols = node.src(0).shape().numel() // node.src(0).shape()[0]
     return inputs[0].view(node.shape(), start * cols)
 
 
-def matmul_t(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def matmul_t(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var p = alloc[Float32](3)
     p[0] = Float32(inputs[0].shape()[0])
     p[1] = Float32(inputs[0].shape()[1])
     p[2] = Float32(inputs[1].shape()[0])
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
-    OwnedDLHandle(path()).get_function[TernaryOp]("mograd_matmul_t")(
+    ctx.handle[].get_function[TernaryOp]("mograd_matmul_t")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         p.bitcast[NoneType](),
         out.data_ptr(),
         node.shape().numel(),
         node.dtype(),
-        ctx,
+        ctx.ctx,
     )
     p.free()
     return out^
@@ -444,15 +436,10 @@ comptime CastOp = def(
 ) thin abi("C") raises -> None
 
 
-def cast(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def cast(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
-    OwnedDLHandle(path()).get_function[CastOp]("mograd_cast")(
-        inputs[0].data_ptr(),
-        out.data_ptr(),
-        node.shape().numel(),
-        inputs[0].dtype(),
-        node.dtype(),
-        ctx,
+    ctx.handle[].get_function[CastOp]("mograd_cast")(
+        inputs[0].data_ptr(), out.data_ptr(), node.shape().numel(), inputs[0].dtype(), node.dtype(), ctx.ctx
     )
     return out^
 
@@ -462,40 +449,31 @@ def cast(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> Any
 # ===-------------------------------------------------------------------===#
 
 
-def broadcast(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def broadcast(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var p = alloc[Float32](1)
     p[0] = Float32(inputs[0].size())
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
-    OwnedDLHandle(path()).get_function[BinaryOp]("mograd_broadcast")(
-        inputs[0].data_ptr(),
-        p.bitcast[NoneType](),
-        out.data_ptr(),
-        node.shape().numel(),
-        node.dtype(),
-        ctx,
+    ctx.handle[].get_function[BinaryOp]("mograd_broadcast")(
+        inputs[0].data_ptr(), p.bitcast[NoneType](), out.data_ptr(), node.shape().numel(), node.dtype(), ctx.ctx
     )
     p.free()
     return out^
 
 
-def uniform(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def uniform(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var params = alloc[Float32](3)
     params[0] = node.attrs()["low"][Float32]
     params[1] = node.attrs()["high"][Float32]
     params[2] = node.attrs()["seed"][Float32]
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
-    OwnedDLHandle(path()).get_function[UnaryOp]("mograd_uniform")(
-        params.bitcast[NoneType](),
-        out.data_ptr(),
-        node.shape().numel(),
-        node.dtype(),
-        ctx,
+    ctx.handle[].get_function[UnaryOp]("mograd_uniform")(
+        params.bitcast[NoneType](), out.data_ptr(), node.shape().numel(), node.dtype(), ctx.ctx
     )
     params.free()
     return out^
 
 
-def reshape(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def reshape(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     return inputs[0].reshape(node.shape())
 
 
@@ -504,20 +482,15 @@ def reshape(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> 
 # ===-------------------------------------------------------------------===#
 
 
-def relu_grad(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def relu_grad(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
-    OwnedDLHandle(path()).get_function[BinaryOp]("mograd_relu_grad")(
-        inputs[0].data_ptr(),
-        inputs[1].data_ptr(),
-        out.data_ptr(),
-        node.shape().numel(),
-        node.dtype(),
-        ctx,
+    ctx.handle[].get_function[BinaryOp]("mograd_relu_grad")(
+        inputs[0].data_ptr(), inputs[1].data_ptr(), out.data_ptr(), node.shape().numel(), node.dtype(), ctx.ctx
     )
     return out^
 
 
-def softmax_grad(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def softmax_grad(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var shape = node.shape()
     var rank = len(shape)
     var N = 1 if rank == 1 else shape[0]
@@ -526,14 +499,14 @@ def softmax_grad(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raise
     p[0] = Float32(N)
     p[1] = Float32(size)
     var out = AnyBuffer.empty(node.dtype(), shape, ctx)
-    OwnedDLHandle(path()).get_function[TernaryOp]("mograd_softmax_grad")(
+    ctx.handle[].get_function[TernaryOp]("mograd_softmax_grad")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         p.bitcast[NoneType](),
         out.data_ptr(),
         shape.numel(),
         node.dtype(),
-        ctx,
+        ctx.ctx,
     )
     p.free()
     return out^
@@ -551,12 +524,12 @@ comptime QuaternaryOp = def(
 ) thin abi("C") raises -> None
 
 
-def cross_entropy_grad(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext) raises -> AnyBuffer:
+def cross_entropy_grad(node: OpRef, inputs: List[AnyBuffer], ctx: Device) raises -> AnyBuffer:
     var p = alloc[Float32](2)
     p[0] = Float32(inputs[0].shape()[0])
     p[1] = Float32(inputs[0].shape()[1])
     var out = AnyBuffer.empty(node.dtype(), node.shape(), ctx)
-    OwnedDLHandle(path()).get_function[QuaternaryOp]("mograd_cross_entropy_grad")(
+    ctx.handle[].get_function[QuaternaryOp]("mograd_cross_entropy_grad")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         inputs[2].data_ptr(),
@@ -564,7 +537,7 @@ def cross_entropy_grad(node: OpRef, inputs: List[AnyBuffer], ctx: DeviceContext)
         out.data_ptr(),
         node.shape().numel(),
         node.dtype(),
-        ctx,
+        ctx.ctx,
     )
     p.free()
     return out^

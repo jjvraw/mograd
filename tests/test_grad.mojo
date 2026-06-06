@@ -2,7 +2,7 @@ from std.sys import has_accelerator
 from std.testing import TestSuite, assert_almost_equal, assert_equal, assert_true
 
 import mograd.nn as nn
-from mograd import Tensor, DeviceContext
+from mograd import Tensor, Device
 from mograd.shape import Shape
 from mograd.testing import assert_allclose, assert_close
 
@@ -12,7 +12,7 @@ comptime FwdFn = def(x: Tensor[]) thin raises -> Tensor[]
 
 def numerical_grad[
     fwd: FwdFn
-](ctx: DeviceContext, data: List[Float32], shape: Shape, eps: Float32 = 1e-3,) raises -> List[Float32]:
+](ctx: Device, data: List[Float32], shape: Shape, eps: Float32 = 1e-3,) raises -> List[Float32]:
     var grads = List[Float32]()
     for i in range(len(data)):
         var d_plus = data.copy()
@@ -29,7 +29,7 @@ def test_scale_grad() raises:
     def fwd(x: Tensor[]) raises -> Tensor[]:
         return (x * Float32(3.0)).sum()
 
-    var ctx = DeviceContext()
+    var ctx = Device()
     var data: List[Float32] = [1.0, 2.0, 3.0, 4.0]
     var num = numerical_grad[fwd](ctx, data, (4,))
     var x = Tensor(ctx, data, (4,), requires_grad=True)
@@ -43,7 +43,7 @@ def test_sum_grad() raises:
     def fwd(x: Tensor[]) raises -> Tensor[]:
         return x.sum()
 
-    var ctx = DeviceContext()
+    var ctx = Device()
     var data: List[Float32] = [1.0, 2.0, 3.0, 4.0]
     var num = numerical_grad[fwd](ctx, data, (4,))
     var x = Tensor(ctx, data, (4,), requires_grad=True)
@@ -57,7 +57,7 @@ def test_relu_grad() raises:
     def fwd(x: Tensor[]) raises -> Tensor[]:
         return x.relu().sum()
 
-    var ctx = DeviceContext()
+    var ctx = Device()
     var data: List[Float32] = [-1.0, -0.5, 0.5, 1.0]
     var num = numerical_grad[fwd](ctx, data, (4,))
     var x = Tensor(ctx, data, (4,), requires_grad=True)
@@ -68,7 +68,7 @@ def test_relu_grad() raises:
 
 
 def test_sum_large_grad() raises:
-    var ctx = DeviceContext()
+    var ctx = Device()
     var n = 4096
     var x = Tensor.ones(ctx, (n,), requires_grad=True)
     var loss = x.sum()
@@ -77,7 +77,7 @@ def test_sum_large_grad() raises:
 
 
 def test_sum_of_softmax_grad_is_zero() raises:
-    var ctx = DeviceContext()
+    var ctx = Device()
     var x = Tensor.randn(ctx, (8,), seed=42, requires_grad=True)
     var loss = x.softmax().sum()
     var grads = loss.gradient([x])
@@ -85,7 +85,7 @@ def test_sum_of_softmax_grad_is_zero() raises:
 
 
 def test_relu_zero_boundary() raises:
-    var ctx = DeviceContext()
+    var ctx = Device()
     var x = Tensor(ctx, [Float32(0.0)], (1,), requires_grad=True)
     var loss = x.relu().sum()
     var grads = loss.gradient([x])
@@ -96,7 +96,7 @@ def test_log_grad() raises:
     def fwd(x: Tensor[]) raises -> Tensor[]:
         return x.log().sum()
 
-    var ctx = DeviceContext()
+    var ctx = Device()
     var data: List[Float32] = [1.0, 2.0, 4.0]
     var num = numerical_grad[fwd](ctx, data, (3,))
     var x = Tensor(ctx, data, (3,), requires_grad=True)
@@ -110,7 +110,7 @@ def test_neg_grad() raises:
     def fwd(x: Tensor[]) raises -> Tensor[]:
         return (-x).sum()
 
-    var ctx = DeviceContext()
+    var ctx = Device()
     var data: List[Float32] = [1.0, 2.0, 3.0, 4.0]
     var num = numerical_grad[fwd](ctx, data, (4,))
     var x = Tensor(ctx, data, (4,), requires_grad=True)
@@ -124,7 +124,7 @@ def test_exp_grad() raises:
     def fwd(x: Tensor[]) raises -> Tensor[]:
         return x.exp().sum()
 
-    var ctx = DeviceContext()
+    var ctx = Device()
     var data: List[Float32] = [0.0, 1.0, 2.0]
     var num = numerical_grad[fwd](ctx, data, (3,))
     var x = Tensor(ctx, data, (3,), requires_grad=True)
@@ -140,7 +140,7 @@ def test_div_grad_numerator() raises:
         var b = Tensor(x.ctx.value(), [Float32(2.0), 4.0, 8.0], (3,))
         return (x / b).sum()
 
-    var ctx = DeviceContext()
+    var ctx = Device()
     var data: List[Float32] = [1.0, 2.0, 4.0]
     var num = numerical_grad[fwd](ctx, data, (3,))
     var x = Tensor(ctx, data, (3,), requires_grad=True)
@@ -156,7 +156,7 @@ def test_div_grad_denominator() raises:
         var a = Tensor(x.ctx.value(), [Float32(4.0), 8.0, 16.0], (3,))
         return (a / x).sum()
 
-    var ctx = DeviceContext()
+    var ctx = Device()
     var data: List[Float32] = [2.0, 2.0, 2.0]
     var num = numerical_grad[fwd](ctx, data, (3,))
     var a = Tensor(ctx, [Float32(4.0), 8.0, 16.0], (3,))
@@ -172,7 +172,7 @@ def test_reshape_grad() raises:
     def fwd(x: Tensor[]) raises -> Tensor[]:
         return x.reshape((2, 2)).sum()
 
-    var ctx = DeviceContext()
+    var ctx = Device()
     var data: List[Float32] = [1.0, 2.0, 3.0, 4.0]
     var num = numerical_grad[fwd](ctx, data, (4,))
     var x = Tensor(ctx, data, (4,), requires_grad=True)
@@ -186,7 +186,7 @@ def test_transpose_grad() raises:
     def fwd(x: Tensor[]) raises -> Tensor[]:
         return x.transpose().sum()
 
-    var ctx = DeviceContext()
+    var ctx = Device()
     var data: List[Float32] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     var num = numerical_grad[fwd](ctx, data, (2, 3))
     var x = Tensor(ctx, data, (2, 3), requires_grad=True)
@@ -201,7 +201,7 @@ def test_matmul_grad() raises:
         var b = Tensor(a.ctx.value(), [Float32(1.0), 2.0, 3.0, 4.0, 5.0, 6.0], (3, 2))
         return (a @ b).sum()
 
-    var ctx = DeviceContext()
+    var ctx = Device()
     var a_data: List[Float32] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     var num = numerical_grad[fwd](ctx, a_data, (2, 3))
     var a = Tensor(ctx, a_data, (2, 3), requires_grad=True)
@@ -216,7 +216,7 @@ def test_matmul_grad_b() raises:
         var a = Tensor(b.ctx.value(), [Float32(1.0), 2.0, 3.0, 4.0, 5.0, 6.0], (2, 3))
         return (a @ b).sum()
 
-    var ctx = DeviceContext()
+    var ctx = Device()
     var b_data: List[Float32] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     var num = numerical_grad[fwd](ctx, b_data, (3, 2))
     var a = Tensor(ctx, [Float32(1.0), 2.0, 3.0, 4.0, 5.0, 6.0], (2, 3))
@@ -231,7 +231,7 @@ def test_softmax_grad() raises:
         var e0 = Tensor(x.ctx.value(), [Float32(1), 0, 0, 0], (4,))
         return (x.softmax() * e0).sum()
 
-    var ctx = DeviceContext()
+    var ctx = Device()
     var data: List[Float32] = [1.0, 2.0, 3.0, 4.0]
     var num = numerical_grad[fwd](ctx, data, (4,))
     var x = Tensor(ctx, data, (4,), requires_grad=True)
@@ -242,7 +242,7 @@ def test_softmax_grad() raises:
 
 
 def test_cross_entropy_grad_row_sums() raises:
-    var ctx = DeviceContext()
+    var ctx = Device()
     var logits_data = List[Float32]()
     for _ in range(40):
         logits_data.append(Float32(1.0))
@@ -263,7 +263,7 @@ def test_cross_entropy_grad() raises:
         var labels = Tensor(x.ctx.value(), [Float32(0), 1, 2, 3], (4,)).cast[DType.float32]()
         return x.cross_entropy(labels.one_hot(10).cast[DType.float32]())
 
-    var ctx = DeviceContext()
+    var ctx = Device()
     var logits_data = List[Float32]()
     for _ in range(40):
         logits_data.append(Float32(1.0))
@@ -303,7 +303,7 @@ def test_simple_mlp_grad() raises:
         var l2 = nn.Linear(8, 4)
         return (l2(l1(x).relu()).relu() @ w3.transpose()).cross_entropy(labels.one_hot(3).cast[DType.float32]())
 
-    var ctx = DeviceContext()
+    var ctx = Device()
 
     # Linear seeds are deterministic (UInt32(out * in)), so the same weights
     # are produced every call: numerical and analytical grads see the same network

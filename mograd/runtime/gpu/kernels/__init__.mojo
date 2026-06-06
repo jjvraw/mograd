@@ -756,7 +756,6 @@ def cross_entropy_kernel_no_smem[
 
 
 comptime CE_BLOCK = 32
-comptime CE_SMEM_LIMIT = DeviceContext.default_device_info.shared_memory_per_multiprocessor - 1024
 
 
 @export
@@ -780,7 +779,8 @@ def mograd_cross_entropy(
                 var C = Int(p[1])
                 var row_buf = ctx.enqueue_create_buffer[d](N)
                 var shared_mem_bytes = C * size_of[Scalar[d]]()
-                if shared_mem_bytes <= CE_SMEM_LIMIT:
+                var smem_limit = DeviceContext.default_device_info.shared_memory_per_multiprocessor - 1024
+                if shared_mem_bytes <= smem_limit:
                     ctx.enqueue_function[cross_entropy_kernel[d, CE_BLOCK]](
                         logits.bitcast[Scalar[d]](),
                         labels.bitcast[Scalar[d]](),
@@ -1137,7 +1137,8 @@ def mograd_cross_entropy_grad(
                 var C = Int(p[1])
                 var shared_mem_bytes = C * size_of[Scalar[kd]]()
                 comptime BLOCK_SIZE = CE_BLOCK
-                if shared_mem_bytes <= CE_SMEM_LIMIT:
+                var smem_limit = DeviceContext.default_device_info.shared_memory_per_multiprocessor - 1024
+                if shared_mem_bytes <= smem_limit:
                     ctx.enqueue_function[cross_entropy_grad_kernel[kd, BLOCK_SIZE]](
                         c.bitcast[Scalar[kd]](),
                         a.bitcast[Scalar[kd]](),

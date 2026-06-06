@@ -1,12 +1,12 @@
 from std.sys import has_accelerator
 from std.testing import TestSuite, assert_true
 
-from mograd import Tensor, DeviceContext
+from mograd import Tensor, Device
 from mograd.data import mnist
 
 
 def test_mnist_shapes() raises:
-    var ctx = DeviceContext()
+    var ctx = Device()
     var data = mnist(ctx)
     assert_true(data.x_train.shape(0) == 60000 and data.x_train.shape(1) == 784)
     assert_true(data.y_train.shape(0) == 60000)
@@ -15,7 +15,7 @@ def test_mnist_shapes() raises:
 
 
 def test_mnist_images_in_unit_range() raises:
-    var ctx = DeviceContext()
+    var ctx = Device()
     var data = mnist(ctx)
     var sample = data.x_train[0:1].to_list()
     for v in sample:
@@ -23,7 +23,7 @@ def test_mnist_images_in_unit_range() raises:
 
 
 def test_mnist_labels_are_integer_0_to_9() raises:
-    var ctx = DeviceContext()
+    var ctx = Device()
     var data = mnist(ctx)
     var labels = data.y_train[0:100].to_list()
     for l in labels:
@@ -33,7 +33,7 @@ def test_mnist_labels_are_integer_0_to_9() raises:
 
 
 def test_mnist_slice_shape() raises:
-    var ctx = DeviceContext()
+    var ctx = Device()
     var data = mnist(ctx)
     var xb = data.x_train[0:32]
     assert_true(xb.shape(0) == 32 and xb.shape(1) == 784)

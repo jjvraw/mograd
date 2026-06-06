@@ -1,7 +1,7 @@
 from std.math import sqrt
 from std.memory import ArcPointer
 
-from mograd.tensor import Tensor
+from mograd.tensor import Tensor, Device
 
 # ===-------------------------------------------------------------------===#
 # Linear

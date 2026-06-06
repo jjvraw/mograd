@@ -1,4 +1,4 @@
-from mograd import Tensor, DeviceContext
+from mograd import Tensor, Device
 from mograd.data import mnist
 import mograd.nn as nn
 from model import MLP
@@ -15,10 +15,10 @@ def accuracy(mut model: MLP, x: Tensor[DType.float32], y: Tensor[DType.float32],
 
 
 def main() raises:
-    var ctx = DeviceContext()
+    var ctx = Device()
     var data = mnist(ctx)
 
-    var model = MLP()
+    var model = MLP(ctx)
     var opt = nn.SGD([model.l1, model.l2, model.l3], lr=Float32(0.01))
 
     var batch_size = 32

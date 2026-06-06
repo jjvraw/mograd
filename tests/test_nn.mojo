@@ -2,13 +2,13 @@ from std.sys import has_accelerator
 from std.testing import TestSuite
 from std.math import abs
 
-from mograd import Tensor, DeviceContext
+from mograd import Tensor, Device
 from mograd.testing import assert_allclose
 import mograd.nn as nn
 
 
 def test_linear_lazy_init() raises:
-    var ctx = DeviceContext()
+    var ctx = Device()
     var l = nn.Linear(4, 2)
     var is_none = False
     if not l._weight[]:
@@ -28,7 +28,7 @@ def test_linear_lazy_init() raises:
 
 
 def test_sgd_updates_weights() raises:
-    var ctx = DeviceContext()
+    var ctx = Device()
     var l = nn.Linear(4, 2)
     var opt = nn.SGD([l], lr=Float32(0.1))
     var x = Tensor(ctx, [Float32(1), 2, 3, 4], (1, 4))
@@ -48,7 +48,7 @@ def test_sgd_updates_weights() raises:
 
 
 def test_sgd_arc_sharing() raises:
-    var ctx = DeviceContext()
+    var ctx = Device()
     var l = nn.Linear(4, 2)
     var opt = nn.SGD([l], lr=Float32(0.1))
     var x = Tensor(ctx, [Float32(1), 2, 3, 4], (1, 4))
