@@ -1,7 +1,8 @@
 from mograd.buffer import AnyBuffer, BufferArm
 from layout import Coord, TileTensor, row_major
 from std.algorithm.functional import elementwise
-from std.algorithm.reduction import sum as reduce_sum
+from std.algorithm.backend.gpu.reduction import reduce_kernel
+from std.utils.static_tuple import StaticTuple
 from std.gpu import global_idx, thread_idx, block_idx, barrier
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.sys.info import size_of, has_apple_gpu_accelerator
@@ -519,13 +520,25 @@ def sum[
     n: Int,
     ctx: DeviceContext,
 ) raises:
-    def input_fn[width: Int, rank: Int](coords: IndexList[rank]) capturing -> SIMD[dtype, width]:
-        return a.load[width=width](coords[0])
+    @always_inline
+    def input_fn[_d: DType, w: Int, r: Int](coords: IndexList[r]) capturing -> SIMD[_d, w]:
+        return a.load[width=w](coords[0])._refine[_d]()
 
-    def output_fn[width: Int, rank: Int](coords: IndexList[rank], val: SIMD[dtype, width]) capturing:
-        dst.store[width=width](coords[0], val)
+    @always_inline
+    def output_fn[_d: DType, w: SIMDSize, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
+        dst.store[width=w](coords[0], val[0]._refine[dtype]())
 
-    reduce_sum[dtype, input_fn, output_fn, target="gpu", reduce_dim=0](IndexList[1](n), ctx)
+    @always_inline
+    def reduce_fn[ty: DType, w: SIMDSize, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
+        return v1 + v2
+
+    comptime kernel = reduce_kernel[1, 0, 1, CE_BLOCK, input_fn, output_fn, reduce_fn, dtype, 1]
+    ctx.enqueue_function[kernel](
+        IndexList[1](n),
+        StaticTuple[Scalar[dtype], 1](0),
+        grid_dim=(1,),
+        block_dim=(CE_BLOCK,),
+    )
     ctx.synchronize()
 
 
