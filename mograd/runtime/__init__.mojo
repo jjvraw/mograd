@@ -9,7 +9,7 @@ from mograd.buffer import AnyBuffer, Buffer, BufferArm
 from mograd.pattern_matcher import Rule, Pat
 from mograd.scheduler import Scheduler, BoundExecFn
 from mograd.simplify import Simplifier
-from mograd.runtime.native.gpu.rewrites import MATMUL_T, native_gpu_rewrites
+from mograd.runtime.gpu.rewrites import MATMUL_T, GPU_REWRITES
 
 
 def path() raises -> String:
@@ -35,7 +35,7 @@ struct NativeRuntime(Runtime):
     def run(root: OpRef, ctx: Optional[Device]) raises -> AnyBuffer:
         if not ctx:
             raise Error("NativeRuntime requires a Device")
-        var optimized = Simplifier(native_gpu_rewrites()).run(root)
+        var simplified = Simplifier(GPU_REWRITES()).run(root)
         return Scheduler(
             [
                 # Unary
@@ -69,7 +69,7 @@ struct NativeRuntime(Runtime):
                 Rule(Pat(OpType.SOFTMAX_GRAD), softmax_grad),
                 Rule(Pat(OpType.CROSS_ENTROPY_GRAD), cross_entropy_grad),
             ]
-        ).run(optimized, ctx.value())
+        ).run(simplified, ctx.value())
 
 
 # ===-------------------------------------------------------------------===#

@@ -6,7 +6,7 @@ from mograd.op import Op, OpRef, OpType
 # ===-------------------------------------------------------------------===#
 
 
-def native_gpu_rewrites() -> List[Rule[RewriteFn]]:
+def GPU_REWRITES() -> List[Rule[RewriteFn]]:
     return [Rule(Pat(OpType.MATMUL, [Pat(), Pat(OpType.TRANSPOSE)]), fuse_matmul_transpose)]
 
 

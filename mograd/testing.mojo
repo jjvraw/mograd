@@ -81,6 +81,6 @@ def assert_graph(node: OpRef, pat: Pat) raises:
         )
 
 
-def assert_rewrites_to[rules: List[Rule[RewriteFn]]](graph: OpRef, expected: Pat) raises:
-    var result = Simplifier[rules].run(graph)
+def assert_rewrites_to(var rules: List[Rule[RewriteFn]], graph: OpRef, expected: Pat) raises:
+    var result = Simplifier(rules^).run(graph)
     assert_graph(result, expected)
