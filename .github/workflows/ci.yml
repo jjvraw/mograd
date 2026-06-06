@@ -24,4 +24,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run MNIST
-        run: pixi run mnist
+        run: pixi run mnist-b

@@ -54,3 +54,4 @@ test-all-b                 = { depends-on = ["build-gpu", "test-grad", "test-nn"
 
 # Examples
 mnist     = { cmd = "mojo -I . examples/mnist/train.mojo" }
+mnist-b     = { cmd = "mojo -I . examples/mnist/train.mojo", depends-on = ["build-gpu"]}
