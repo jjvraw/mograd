@@ -20,12 +20,12 @@ struct Linear[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
 
     def __call__(mut self, x: Tensor[Self.dtype]) raises -> Tensor[Self.dtype]:
         if not self._weight[]:
-            if not x.ctx:
+            if not x.device:
                 raise Error("Linear requires a device context on first call")
             var bound = Float32(sqrt(Float32(6) / Float32(self.in_features)))
             var seed = UInt32(self.out_features * self.in_features)
             self._weight[] = Tensor[Self.dtype].uniform(
-                x.ctx.value(),
+                x.device.value(),
                 (self.out_features, self.in_features),
                 low=-bound,
                 high=bound,

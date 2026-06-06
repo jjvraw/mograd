@@ -15,7 +15,7 @@ def accuracy(mut model: MLP, x: Tensor[DType.float32], y: Tensor[DType.float32],
 
 
 def main() raises:
-    var ctx = Device()
+    var device = Device()
     var data = mnist(ctx)
 
     var model = MLP(ctx)

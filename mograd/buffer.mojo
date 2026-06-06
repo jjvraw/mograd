@@ -94,31 +94,31 @@ struct Buffer[dtype: DType](BufferArm, Copyable, Movable, Writable):
         return Self(self._ptr, new_shape, Shape(new_strides_list), self.base_offset)
 
     @staticmethod
-    def empty(ctx: Device, shape: Shape) raises -> Self:
+    def empty(device: Device, shape: Shape) raises -> Self:
         var size = shape.numel()
-        var dev_buf = ctx.ctx.enqueue_create_buffer[Self.dtype](size)
+        var dev_buf = device.ctx.enqueue_create_buffer[Self.dtype](size)
         return Self(dev_buf^, shape, size)
 
     @staticmethod
-    def ones(ctx: Device, shape: Shape) raises -> Self:
+    def ones(device: Device, shape: Shape) raises -> Self:
         var size = shape.numel()
-        var dev_buf = ctx.ctx.enqueue_create_buffer[Self.dtype](size)
+        var dev_buf = device.ctx.enqueue_create_buffer[Self.dtype](size)
         dev_buf.enqueue_fill(1.0)
         return Self(dev_buf^, shape, size)
 
     @staticmethod
     def from_data(
-        ctx: Device,
+        device: Device,
         data: List[Scalar[Self.dtype]],
         shape: Shape,
     ) raises -> Self:
         var size = len(data)
-        var host_buf = ctx.ctx.enqueue_create_host_buffer[Self.dtype](size)
+        var host_buf = device.ctx.enqueue_create_host_buffer[Self.dtype](size)
         var host_ptr = host_buf.unsafe_ptr()
         for i in range(size):
             host_ptr[i] = data[i]
-        var dev_buf = ctx.ctx.enqueue_create_buffer[Self.dtype](size)
-        ctx.ctx.enqueue_copy(dst_buf=dev_buf, src_buf=host_buf)
+        var dev_buf = device.ctx.enqueue_create_buffer[Self.dtype](size)
+        device.ctx.enqueue_copy(dst_buf=dev_buf, src_buf=host_buf)
         return Self(dev_buf^, shape, size)
 
     def write_to(self, mut writer: Some[Writer]):
@@ -202,13 +202,13 @@ struct AnyBuffer(Copyable, Movable, Writable):
         raise Error("unsupported dtype")
 
     @staticmethod
-    def empty(dtype: DType, shape: Shape, ctx: Device) raises -> AnyBuffer:
+    def empty(dtype: DType, shape: Shape, device: Device) raises -> AnyBuffer:
         comptime for k in range(Self.BufVariant.Ts.size):
             comptime T = Self.BufVariant.Ts[k]
             comptime assert conforms_to(T, BufferArm)
             comptime d = T.node_dtype
             if dtype == d:
-                var dev_buf = ctx.ctx.enqueue_create_buffer[d](shape.numel())
+                var dev_buf = device.ctx.enqueue_create_buffer[d](shape.numel())
                 return AnyBuffer(Buffer[d](dev_buf^, shape, shape.numel()))
         raise Error("unsupported dtype: " + String(dtype))
 

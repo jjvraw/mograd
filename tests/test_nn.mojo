@@ -8,14 +8,14 @@ import mograd.nn as nn
 
 
 def test_linear_lazy_init() raises:
-    var ctx = Device()
+    var device = Device()
     var l = nn.Linear(4, 2)
     var is_none = False
     if not l._weight[]:
         is_none = True
     if not is_none:
         raise Error("weight should be None before first call")
-    var x = Tensor(ctx, [Float32(1), 0, 0, 0], (1, 4))
+    var x = Tensor(device, [Float32(1), 0, 0, 0], (1, 4))
     _ = l(x)
     var is_set = False
     if l._weight[]:
@@ -28,10 +28,10 @@ def test_linear_lazy_init() raises:
 
 
 def test_sgd_updates_weights() raises:
-    var ctx = Device()
+    var device = Device()
     var l = nn.Linear(4, 2)
     var opt = nn.SGD([l], lr=Float32(0.1))
-    var x = Tensor(ctx, [Float32(1), 2, 3, 4], (1, 4))
+    var x = Tensor(device, [Float32(1), 2, 3, 4], (1, 4))
     var logits = l(x)
     var params = opt.params()
     var before = params[0].to_list()
@@ -48,10 +48,10 @@ def test_sgd_updates_weights() raises:
 
 
 def test_sgd_arc_sharing() raises:
-    var ctx = Device()
+    var device = Device()
     var l = nn.Linear(4, 2)
     var opt = nn.SGD([l], lr=Float32(0.1))
-    var x = Tensor(ctx, [Float32(1), 2, 3, 4], (1, 4))
+    var x = Tensor(device, [Float32(1), 2, 3, 4], (1, 4))
     _ = l(x)
     var params = opt.params()
     var before = l._weight[].value().to_list()

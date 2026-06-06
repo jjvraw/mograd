@@ -1,13 +1,21 @@
 from std.memory import ArcPointer
-from std.gpu.host import DeviceContext
+from std.gpu.host import DeviceContext, DeviceBuffer, HostBuffer
 from std.ffi import OwnedDLHandle
 from std.os.env import getenv
+
+# ===-------------------------------------------------------------------===#
+# Device
+# ===-------------------------------------------------------------------===#
 
 
 @fieldwise_init
 struct Device(Copyable, ImplicitlyCopyable, Movable):
     var ctx: DeviceContext
     var handle: ArcPointer[OwnedDLHandle]
+
+    # ===-------------------------------------------------------------------===#
+    # Lifecycle
+    # ===-------------------------------------------------------------------===#
 
     def __init__(out self) raises:
         self.ctx = DeviceContext()

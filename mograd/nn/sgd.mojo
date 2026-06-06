@@ -30,4 +30,4 @@ struct SGD[dtype: DType = DType.float32](Copyable, Movable) where dtype.is_float
             if self._weights[i][]:
                 var w = self._weights[i][].value()
                 var updated = (w - grads[i] * self.lr).value()
-                self._weights[i][] = Tensor[Self.dtype].from_buffer(w.ctx.value(), updated^)
+                self._weights[i][] = Tensor[Self.dtype].from_buffer(w.device.value(), updated^)
