@@ -49,9 +49,10 @@ def add[
 ) raises:
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var idx = Int(coord[0].value())
-        dst.store(idx, a.load(idx) + b.load(idx))
+        dst.store[simd_width](idx, a.load[simd_width](idx) + b.load[simd_width](idx))
 
-    elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
+    comptime width = simd_width_of[dtype, target=get_gpu_target()]()
+    elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
 
 
 @export
@@ -90,6 +91,7 @@ def one_hot[
     C: Int,
     ctx: DeviceContext,
 ) raises where out_dtype.is_integral():
+    # TODO: Vectorise
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var idx = Int(coord[0].value())
         var class_idx = Int(a.load(idx // C))
@@ -121,9 +123,10 @@ def full[
     dtype: DType
 ](val: Scalar[dtype], dst: UnsafePointer[Scalar[dtype], MutAnyOrigin], n: Int, ctx: DeviceContext,) raises:
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-        dst.store(Int(coord[0].value()), val)
+        dst.store[simd_width](Int(coord[0].value()), val)
 
-    elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
+    comptime width = simd_width_of[dtype, target=get_gpu_target()]()
+    elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
 
 
 @export
@@ -157,9 +160,10 @@ def log[
 
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var idx = Int(coord[0].value())
-        dst.store(idx, math_log(a.load(idx)))
+        dst.store[simd_width](idx, math_log(a.load[simd_width](idx)))
 
-    elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
+    comptime width = simd_width_of[dtype, target=get_gpu_target()]()
+    elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
 
 
 @export
@@ -188,6 +192,7 @@ def relu[
     n: Int,
     ctx: DeviceContext,
 ) raises:
+    # TODO: Vectorise
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var idx = Int(coord[0].value())
         var x = a.load(idx)
@@ -227,9 +232,10 @@ def exp[
 
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var idx = Int(coord[0].value())
-        dst.store(idx, math_exp(a.load(idx)))
+        dst.store[simd_width](idx, math_exp(a.load[simd_width](idx)))
 
-    elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
+    comptime width = simd_width_of[dtype, target=get_gpu_target()]()
+    elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
 
 
 @export
@@ -260,9 +266,10 @@ def neg[
 ) raises:
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var idx = Int(coord[0].value())
-        dst.store(idx, -a.load(idx))
+        dst.store[simd_width](idx, -a.load[simd_width](idx))
 
-    elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
+    comptime width = simd_width_of[dtype, target=get_gpu_target()]()
+    elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
 
 
 @export
@@ -297,9 +304,10 @@ def scale[
 
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var idx = Int(coord[0].value())
-        dst.store(idx, a.load(idx) * scalar_val)
+        dst.store[simd_width](idx, a.load[simd_width](idx) * scalar_val)
 
-    elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
+    comptime width = simd_width_of[dtype, target=get_gpu_target()]()
+    elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
 
 
 @export
@@ -332,9 +340,12 @@ def eq[
 ) raises:
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var idx = Int(coord[0].value())
-        dst.store(idx, Scalar[dtype](1) if a.load(idx) == b.load(idx) else Scalar[dtype](0))
+        dst.store[simd_width](
+            idx, Scalar[dtype](1) if a.load[simd_width](idx) == b.load[simd_width](idx) else Scalar[dtype](0)
+        )
 
-    elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
+    comptime width = simd_width_of[dtype, target=get_gpu_target()]()
+    elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
 
 
 @export
@@ -367,9 +378,10 @@ def mul[
 ) raises:
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var idx = Int(coord[0].value())
-        dst.store(idx, a.load(idx) * b.load(idx))
+        dst.store[simd_width](idx, a.load[simd_width](idx) * b.load[simd_width](idx))
 
-    elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
+    comptime width = simd_width_of[dtype, target=get_gpu_target()]()
+    elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
 
 
 @export
@@ -402,9 +414,10 @@ def div[
 ) raises:
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var idx = Int(coord[0].value())
-        dst.store(idx, a.load(idx) / b.load(idx))
+        dst.store[simd_width](idx, a.load[simd_width](idx) / b.load[simd_width](idx))
 
-    elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
+    comptime width = simd_width_of[dtype, target=get_gpu_target()]()
+    elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
 
 
 @export
@@ -857,9 +870,10 @@ def cast[
 ) raises:
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var idx = Int(coord[0].value())
-        dst.store(idx, a.load(idx).cast[dst_dtype]())
+        dst.store[simd_width](idx, a.load[simd_width](idx).cast[dst_dtype]())
 
-    elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
+    comptime width = simd_width_of[dst_dtype, target=get_gpu_target()]()
+    elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
 
 
 # ===-------------------------------------------------------------------===#
@@ -896,6 +910,7 @@ def broadcast[
     n: Int,
     ctx: DeviceContext,
 ) raises:
+    # TODO: Vectorise
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var idx = Int(coord[0].value())
         dst.store(idx, a.load(idx % inp_size))
@@ -980,6 +995,7 @@ def relu_grad[
     n: Int,
     ctx: DeviceContext,
 ) raises:
+    # TODO: Vectorise
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var idx = Int(coord[0].value())
         dst.store(idx, upstream.load(idx) if x.load(idx) > Scalar[dtype](0) else Scalar[dtype](0))
