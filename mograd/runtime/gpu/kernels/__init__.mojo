@@ -699,7 +699,7 @@ def cross_entropy_kernel[
         return
     var row_offset = row * C
     var tmp = external_memory[Scalar[dtype], address_space=AddressSpace.SHARED, alignment=4]()
-    var max_val = Scalar[dtype](-1e38)
+    var max_val = Scalar[dtype].MIN
     for i in range(thread_idx.x, C, BLOCK_SIZE):
         val = logits[row_offset + i]
         tmp[i] = val
@@ -736,7 +736,7 @@ def cross_entropy_kernel_no_smem[
     if row >= N:
         return
     var row_offset = row * C
-    var max_val = Scalar[dtype](-1e38)
+    var max_val = Scalar[dtype].MIN
     for i in range(thread_idx.x, C, BLOCK_SIZE):
         val = logits[row_offset + i]
         if val > max_val:
@@ -1063,13 +1063,14 @@ def cross_entropy_grad_kernel[
         return
     var row_offset = row * C
     var tmp = external_memory[Scalar[dtype], address_space=AddressSpace.SHARED, alignment=4]()
-    var max_val = Scalar[dtype](-1e38)
+    var max_val = Scalar[dtype].MIN
     for i in range(thread_idx.x, C, BLOCK_SIZE):
         val = logits[row_offset + i]
         tmp[i] = val
         if val > max_val:
             max_val = val
     max_val = warp_max(max_val)
+    barrier()
     var sum_exp = Scalar[dtype](0.0)
     for i in range(thread_idx.x, C, BLOCK_SIZE):
         val = math_exp(tmp[i] - max_val)
@@ -1098,7 +1099,7 @@ def cross_entropy_grad_kernel_no_smem[
     if row >= N:
         return
     var row_offset = row * C
-    var max_val = Scalar[dtype](-1e38)
+    var max_val = Scalar[dtype].MIN
     for i in range(thread_idx.x, C, BLOCK_SIZE):
         val = logits[row_offset + i]
         if val > max_val:
@@ -1118,10 +1119,10 @@ def cross_entropy_grad_kernel_no_smem[
 
 @export
 def mograd_cross_entropy_grad(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    b: UnsafePointer[NoneType, MutAnyOrigin],
-    c: UnsafePointer[NoneType, MutAnyOrigin],
-    d: UnsafePointer[NoneType, MutAnyOrigin],
+    logits: UnsafePointer[NoneType, MutAnyOrigin],
+    labels: UnsafePointer[NoneType, MutAnyOrigin],
+    grad: UnsafePointer[NoneType, MutAnyOrigin],
+    shape_ptr: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     n: Int,
     dtype: DType,
@@ -1133,7 +1134,7 @@ def mograd_cross_entropy_grad(
         comptime kd = T.node_dtype
         comptime if kd.is_floating_point():
             if dtype == kd:
-                var p = d.bitcast[Float32]()
+                var p = shape_ptr.bitcast[Float32]()
                 var N = Int(p[0])
                 var C = Int(p[1])
                 var shared_mem_bytes = C * size_of[Scalar[kd]]()
@@ -1142,9 +1143,9 @@ def mograd_cross_entropy_grad(
                 comptime use_smem = not has_apple_gpu_accelerator()
                 if use_smem and shared_mem_bytes <= smem_limit:
                     ctx.enqueue_function[cross_entropy_grad_kernel[kd, BLOCK_SIZE]](
-                        c.bitcast[Scalar[kd]](),
-                        a.bitcast[Scalar[kd]](),
-                        b.bitcast[Scalar[kd]](),
+                        grad.bitcast[Scalar[kd]](),
+                        logits.bitcast[Scalar[kd]](),
+                        labels.bitcast[Scalar[kd]](),
                         dst.bitcast[Scalar[kd]](),
                         N,
                         C,
@@ -1155,9 +1156,9 @@ def mograd_cross_entropy_grad(
                     )
                 else:
                     ctx.enqueue_function[cross_entropy_grad_kernel_no_smem[kd, BLOCK_SIZE]](
-                        c.bitcast[Scalar[kd]](),
-                        a.bitcast[Scalar[kd]](),
-                        b.bitcast[Scalar[kd]](),
+                        grad.bitcast[Scalar[kd]](),
+                        logits.bitcast[Scalar[kd]](),
+                        labels.bitcast[Scalar[kd]](),
                         dst.bitcast[Scalar[kd]](),
                         N,
                         C,
