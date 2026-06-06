@@ -16,9 +16,9 @@ def accuracy(mut model: MLP, x: Tensor[DType.float32], y: Tensor[DType.float32],
 
 def main() raises:
     var device = Device()
-    var data = mnist(ctx)
+    var data = mnist(device)
 
-    var model = MLP(ctx)
+    var model = MLP()
     var opt = nn.SGD([model.l1, model.l2, model.l3], lr=Float32(0.01))
 
     var batch_size = 32
