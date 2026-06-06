@@ -4,7 +4,7 @@ from std.algorithm.functional import elementwise
 from std.algorithm.reduction import sum as reduce_sum
 from std.gpu import global_idx, thread_idx, block_idx, barrier
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from std.sys.info import size_of
+from std.sys.info import size_of, has_apple_gpu_accelerator
 from std.gpu.memory import AddressSpace
 from std.math import ceildiv
 from std.memory import stack_allocation
@@ -780,7 +780,8 @@ def mograd_cross_entropy(
                 var row_buf = ctx.enqueue_create_buffer[d](N)
                 var shared_mem_bytes = C * size_of[Scalar[d]]()
                 var smem_limit = DeviceContext.default_device_info.shared_memory_per_multiprocessor - 1024
-                if shared_mem_bytes <= smem_limit:
+                comptime use_smem = not has_apple_gpu_accelerator()
+                if use_smem and shared_mem_bytes <= smem_limit:
                     ctx.enqueue_function[cross_entropy_kernel[d, CE_BLOCK]](
                         logits.bitcast[Scalar[d]](),
                         labels.bitcast[Scalar[d]](),
@@ -1138,7 +1139,8 @@ def mograd_cross_entropy_grad(
                 var shared_mem_bytes = C * size_of[Scalar[kd]]()
                 comptime BLOCK_SIZE = CE_BLOCK
                 var smem_limit = DeviceContext.default_device_info.shared_memory_per_multiprocessor - 1024
-                if shared_mem_bytes <= smem_limit:
+                comptime use_smem = not has_apple_gpu_accelerator()
+                if use_smem and shared_mem_bytes <= smem_limit:
                     ctx.enqueue_function[cross_entropy_grad_kernel[kd, BLOCK_SIZE]](
                         c.bitcast[Scalar[kd]](),
                         a.bitcast[Scalar[kd]](),
