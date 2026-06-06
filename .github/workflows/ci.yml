@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-gpu:
+    name: Tests (M1)
+    runs-on: [self-hosted, runner-m1]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run GPU tests
+        run: pixi run test-all-b
+
+  examples:
+    name: Examples (M1)
+    runs-on: [self-hosted, runner-m1]
+    needs: test-gpu
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run MNIST
+        run: pixi run mnist
