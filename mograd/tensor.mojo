@@ -68,7 +68,16 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
         shape: Layout,
         requires_grad: Bool = False,
     ) raises -> Self:
-        var b = Buffer[Self.dtype].ones(device, shape.numel())
+        return Self.full(device, Scalar[Self.dtype](1.0), shape, requires_grad)
+
+    @staticmethod
+    def full(
+        device: Device,
+        value: Scalar[Self.dtype],
+        shape: Layout,
+        requires_grad: Bool = False,
+    ) raises -> Self:
+        var b = Buffer[Self.dtype].full(device, value, shape.numel())
         return Tensor[Self.dtype](device, OpRef(Op(OpType.BUFFER, shape, Self.dtype, [], b^)), requires_grad)
 
     @staticmethod
@@ -310,7 +319,7 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
         var buf = self.value()
         with buf.buf().map_to_host() as host:
             var ptr = host.unsafe_ptr() + buf.base_offset
-            for i in range(buf.size):
+            for i in range(self.op.layout().numel()):
                 result.append(ptr[i])
         return result^
 

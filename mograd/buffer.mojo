@@ -27,7 +27,6 @@ struct Buffer[dtype: DType](BufferArm, Copyable):
     comptime node_dtype = Self.dtype
     var _ptr: ArcPointer[DeviceBuffer[Self.dtype]]
     var base_offset: Int
-    var size: Int
 
     def __init__(
         out self,
@@ -36,7 +35,6 @@ struct Buffer[dtype: DType](BufferArm, Copyable):
     ):
         self._ptr = ArcPointer(buf^)
         self.base_offset = 0
-        self.size = size
 
     def __init__(
         out self,
@@ -45,7 +43,6 @@ struct Buffer[dtype: DType](BufferArm, Copyable):
         base_offset: Int,
     ):
         self._ptr = ptr
-        self.size = size
         self.base_offset = base_offset
 
     def buf(ref self) -> ref[self._ptr[]] DeviceBuffer[Self.dtype]:
@@ -57,18 +54,15 @@ struct Buffer[dtype: DType](BufferArm, Copyable):
     def raw_ptr(ref self) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
         return self.data_ptr().bitcast[NoneType]()
 
-    def get_size(ref self) -> Int:
-        return self.size
-
     @staticmethod
     def empty(device: Device, numel: Int) raises -> Self:
         var dev_buf = device.ctx.enqueue_create_buffer[Self.dtype](numel)
         return Self(dev_buf^, numel)
 
     @staticmethod
-    def ones(device: Device, numel: Int) raises -> Self:
+    def full(device: Device, value: Scalar[Self.dtype], numel: Int) raises -> Self:
         var dev_buf = device.ctx.enqueue_create_buffer[Self.dtype](numel)
-        dev_buf.enqueue_fill(1.0)
+        dev_buf.enqueue_fill(value)
         return Self(dev_buf^, numel)
 
     @staticmethod
@@ -101,9 +95,6 @@ struct AnyBuffer(Copyable, Movable):
 
     def __init__(out self, *, copy: Self):
         self._buf = copy._buf.copy()
-
-    def isa[dtype: DType](self) -> Bool:
-        return self._buf.isa[Buffer[dtype]]()
 
     def unsafe_get[dtype: DType](ref self) -> ref[self._buf] Buffer[dtype]:
         return self._buf.unsafe_get[Buffer[dtype]]()
