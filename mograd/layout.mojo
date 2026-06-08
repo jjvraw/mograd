@@ -138,6 +138,9 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
         # Should never have nested IntArrays, safe to call value().
         return self.strides[self.normalise_dim(idx)].value()
 
+    def __call__(self, idx: Int) -> Int:
+        return self.shape[idx].value()
+
     def is_contiguous(self) -> Bool:
         """Returns true if layout is contiguous in memory."""
         return self.strides == Self.row_major_strides(self.shape)
@@ -211,7 +214,8 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
         with the current shape and strides. No data is copied.
         """
 
-        if product(shape) != self.numel():
+        var inferred_shape = Self._infer_view_shape(shape, self.numel())
+        if product(inferred_shape) != self.numel():
             raise Error(
                 t"Cannot view layout with {String(self.numel())} elements "
                 t"as shape {String(shape)} with {String(product(shape))} elements."
@@ -220,14 +224,14 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
         # Scalar / empty-shape edge case.
         if self.rank == 0:
             var scalar_strides = IntTuple()
-            for _ in range(len(shape)):
+            for _ in range(len(inferred_shape)):
                 scalar_strides.append(IntTuple(1))
 
-            layout = Self(len(shape), shape, scalar_strides, self.base_offset)
+            layout = Self(len(inferred_shape), inferred_shape, scalar_strides, self.base_offset)
             return
 
-        var new_strides = IntTuple(num_elems=len(shape))
-        var view_d = len(shape) - 1
+        var new_strides = IntTuple(num_elems=len(inferred_shape))
+        var view_d = len(inferred_shape) - 1
         var block_base_stride = self.strides.value(self.rank - 1)
         var tensor_numel = 1  # Number of logical elements accumulated in the current old contiguous block
         var view_numel = 1  # Number of logical elements consumed from the new shape for this contiguous.
@@ -254,13 +258,13 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
                 #
                 # The `shape.value(view_d) == 1` case lets size-1 dimensions be
                 # inserted without changing the represented storage span.
-                while view_d >= 0 and (view_numel < tensor_numel or shape.value(view_d) == 1):
+                while view_d >= 0 and (view_numel < tensor_numel or inferred_shape.value(view_d) == 1):
                     new_strides.replace_entry(
                         view_d,
                         int_value=view_numel * block_base_stride,
                     )
 
-                    view_numel *= shape.value(view_d)
+                    view_numel *= inferred_shape.value(view_d)
                     view_d -= 1
 
                 if view_numel != tensor_numel:
@@ -279,7 +283,43 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
                 t"Cannot view shape {String(self.shape)} with strides {String(self.strides)} as shape {String(shape)}."
             )
 
-        layout = Self(len(shape), shape, new_strides, self.base_offset)
+        layout = Self(len(inferred_shape), inferred_shape, new_strides, self.base_offset)
+
+    @staticmethod
+    def _infer_view_shape(shape: IntTuple, numel: Int) raises -> IntTuple:
+        var inferred = IntTuple()
+        var known = 1
+        var infer_dim = -1
+
+        for i in range(len(shape)):
+            var dim = shape.value(i)
+
+            if dim == -1:
+                if infer_dim != -1:
+                    raise Error(t"Only one dimension can be inferred in shape {String(shape)}.")
+                infer_dim = i
+                inferred.append(IntTuple(-1))
+
+            elif dim < 0:
+                raise Error(t"Invalid negative dimension {String(dim)} in shape {String(shape)}.")
+
+            else:
+                known *= dim
+                inferred.append(IntTuple(dim))
+
+        if infer_dim != -1:
+            if known == 0:
+                raise Error(t"Cannot infer reshape dimension for shape {String(shape)}.")
+
+            if numel % known != 0:
+                raise Error(t"Cannot infer reshape dimension for {String(numel)} elements and shape {String(shape)}.")
+
+            inferred.replace_entry(
+                infer_dim,
+                int_value=numel // known,
+            )
+
+        return inferred
 
     # ===-------------------------------------------------------------------===#
     # Reshape
@@ -300,7 +340,7 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
     def __getitem__(self, *slices: StridedSlice, out layout: Self) raises:
         """Returns a strided slice view."""
 
-        if len(slices) != self.rank:
+        if len(slices) > self.rank:
             raise Error(t"Invalid slice: expected {String(self.rank)} slices, got {String(len(slices))}.")
 
         var new_shape = IntTuple()
@@ -309,7 +349,19 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
 
         for dim in range(self.rank):
             var dim_size = self.shape.value(dim)
-            start, stop, step = slices[dim].indices(dim_size)
+
+            var start: Int
+            var stop: Int
+            var step: Int
+
+            if dim < len(slices):
+                start, stop, step = slices[dim].indices(dim_size)
+            else:
+                # Missing trailing dimensions become full slices
+                start = 0
+                stop = dim_size
+                step = 1
+
             var size: Int
 
             if step > 0:

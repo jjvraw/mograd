@@ -2,8 +2,11 @@ from std.memory import ArcPointer
 from std.hashlib.hasher import Hasher
 from std.utils import Variant
 
+from layout import IntTuple
+
 from mograd.buffer import Buffer, AnyBuffer
-from mograd.shape import Shape
+from mograd.layout import Layout
+
 
 # ===-------------------------------------------------------------------===#
 # OpType
@@ -50,7 +53,7 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime ARGMAX = OpType("ARGMAX")
 
     # ===-------------------------------------------------------------------===#
-    # Shape ops
+    # Layout ops
     # ===-------------------------------------------------------------------===#
 
     comptime RESHAPE = OpType("RESHAPE")
@@ -97,7 +100,7 @@ comptime AttrVal = Variant[Float32, String]
 
 struct Op(Copyable, Movable, Writable):
     var op_type: OpType
-    var shape: Shape
+    var layout: Layout
     var dtype: DType
     var srcs: List[OpRef]
     var buf: Optional[AnyBuffer]
@@ -106,12 +109,12 @@ struct Op(Copyable, Movable, Writable):
     def __init__(
         out self,
         op_type: OpType,
-        shape: Shape,
+        shape: Layout,
         dtype: DType,
         var srcs: List[OpRef],
     ):
         self.op_type = op_type
-        self.shape = shape
+        self.layout = shape
         self.dtype = dtype
         self.srcs = srcs^
         self.buf = None
@@ -120,13 +123,13 @@ struct Op(Copyable, Movable, Writable):
     def __init__(
         out self,
         op_type: OpType,
-        shape: Shape,
+        shape: Layout,
         dtype: DType,
         var srcs: List[OpRef],
         var buf: AnyBuffer,
     ):
         self.op_type = op_type
-        self.shape = shape
+        self.layout = shape
         self.dtype = dtype
         self.srcs = srcs^
         self.buf = buf^
@@ -135,13 +138,13 @@ struct Op(Copyable, Movable, Writable):
     def __init__(
         out self,
         op_type: OpType,
-        shape: Shape,
+        shape: Layout,
         dtype: DType,
         var srcs: List[OpRef],
         var attrs: Dict[String, AttrVal],
     ):
         self.op_type = op_type
-        self.shape = shape
+        self.layout = shape
         self.dtype = dtype
         self.srcs = srcs^
         self.buf = None
@@ -177,11 +180,11 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     def op(ref self) -> ref[self._ptr[]] Op:
         return self._ptr[]
 
-    def shape(ref self) -> ref[self._ptr[].shape] Shape:
-        return self._ptr[].shape
+    def layout(ref self) -> ref[self._ptr[].layout] Layout:
+        return self._ptr[].layout
 
     def shape(ref self, i: Int) -> Int:
-        return self._ptr[].shape[i]
+        return self._ptr[].layout.shape[i].value()
 
     def dtype(ref self) -> ref[self._ptr[].dtype] DType:
         return self._ptr[].dtype
@@ -206,38 +209,38 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def __add__(self, rhs: OpRef) -> Self:
-        return Self(Op(OpType.ADD, self.shape(), self.dtype(), [self, rhs]))
+        return Self(Op(OpType.ADD, self.layout(), self.dtype(), [self, rhs]))
 
     def __mul__(self, rhs: OpRef) -> Self:
-        return Self(Op(OpType.MUL, self.shape(), self.dtype(), [self, rhs]))
+        return Self(Op(OpType.MUL, self.layout(), self.dtype(), [self, rhs]))
 
     def __truediv__(self, rhs: OpRef) -> Self:
-        return Self(Op(OpType.DIV, self.shape(), self.dtype(), [self, rhs]))
+        return Self(Op(OpType.DIV, self.layout(), self.dtype(), [self, rhs]))
 
     def __neg__(self) -> Self:
-        return Self(Op(OpType.NEG, self.shape(), self.dtype(), [self]))
+        return Self(Op(OpType.NEG, self.layout(), self.dtype(), [self]))
 
     def neg(self) -> Self:
-        return Self(Op(OpType.NEG, self.shape(), self.dtype(), [self]))
+        return Self(Op(OpType.NEG, self.layout(), self.dtype(), [self]))
 
     def scale(self, scalar: Scalar) -> Self:
         var attrs: Dict[String, AttrVal] = {"scalar": AttrVal(scalar)}
-        return Self(Op(OpType.SCALE, self.shape(), self.dtype(), [self], attrs=attrs^))
+        return Self(Op(OpType.SCALE, self.layout(), self.dtype(), [self], attrs=attrs^))
 
     def exp(self) -> Self:
-        return Self(Op(OpType.EXP, self.shape(), self.dtype(), [self]))
+        return Self(Op(OpType.EXP, self.layout(), self.dtype(), [self]))
 
     def log(self) -> Self:
-        return Self(Op(OpType.LOG, self.shape(), self.dtype(), [self]))
+        return Self(Op(OpType.LOG, self.layout(), self.dtype(), [self]))
 
     def relu(self) -> Self:
-        return Self(Op(OpType.RELU, self.shape(), self.dtype(), [self]))
+        return Self(Op(OpType.RELU, self.layout(), self.dtype(), [self]))
 
     def softmax(self) -> Self:
-        return Self(Op(OpType.SOFTMAX, self.shape(), self.dtype(), [self]))
+        return Self(Op(OpType.SOFTMAX, self.layout(), self.dtype(), [self]))
 
     def eq(self, other: OpRef) -> Self:
-        return Self(Op(OpType.EQ, self.shape(), self.dtype(), [self, other]))
+        return Self(Op(OpType.EQ, self.layout(), self.dtype(), [self, other]))
 
     # ===-------------------------------------------------------------------===#
     # Reduction operations
@@ -253,44 +256,27 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     # Shape operations
     # ===-------------------------------------------------------------------===#
 
-    def reshape(self, shape: Shape) -> Self:
-        # TODO: move below to infer_size or equivalent.
-        var s = shape
-        var total = self.shape().numel()
-        var known = 1
-        var neg_idx = -1
-        for i in range(len(s)):
-            if s[i] == -1:
-                neg_idx = i
-            else:
-                known *= s[i]
-        if neg_idx >= 0:
-            s[neg_idx] = total // known
-        return Self(Op(OpType.RESHAPE, s, self.dtype(), [self]))
+    def reshape(self, shape: Layout) raises -> Self:
+        return Self(Op(OpType.RESHAPE, self.layout().view(shape.shape), self.dtype(), [self]))
 
     def one_hot(self, num_classes: Int, out_dtype: DType) -> OpRef:
         var attrs: Dict[String, AttrVal] = {"num_classes": AttrVal(Float32(num_classes))}
         return OpRef(Op(OpType.ONE_HOT, (self.shape(0), num_classes), out_dtype, [self], attrs=attrs^))
 
     def cast(self, out_dtype: DType) -> OpRef:
-        return OpRef(Op(OpType.CAST, self.shape(), out_dtype, [self]))
+        return OpRef(Op(OpType.CAST, self.layout(), out_dtype, [self]))
 
     def transpose(self) -> Self:
         return Self(Op(OpType.TRANSPOSE, (self.shape(1), self.shape(0)), self.dtype(), [self]))
 
-    def slice(self, start: Int, end: Int) -> Self:
-        # TODO: Use shape slice
-        var src = self.shape()
-        var new_dims = List[Int]()
-        new_dims.append(end - start)
-        for i in range(1, len(src)):
-            new_dims.append(src[i])
-        var new_shape = Shape(new_dims)
+    def slice(self, start: Int, stop: Int, step: Int = 1) raises -> Self:
         var attrs: Dict[String, AttrVal] = {
             "start": AttrVal(Float32(start)),
-            "end": AttrVal(Float32(end)),
+            "stop": AttrVal(Float32(stop)),
+            "step": AttrVal(Float32(step)),
         }
-        return Self(Op(OpType.SLICE, new_shape, self.dtype(), [self], attrs=attrs^))
+
+        return Self(Op(OpType.SLICE, self.layout()[start:stop:step], self.dtype(), [self], attrs=attrs^))
 
     # ===-------------------------------------------------------------------===#
     # Contraction operations
@@ -327,7 +313,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     # def _write_indented(self, mut writer: Some[Writer], indent: Int):
     #     var pad = String(" ") * indent
     #     writer.write(pad + self.op_type()._name + "(shape=")
-    #     self.shape().write_to(writer)
+    #     self.layout().write_to(writer)
     #     writer.write(", dtype=" + String(self.dtype())
     #     if len(self.srcs()) == 0:
     #         writer.write(")")

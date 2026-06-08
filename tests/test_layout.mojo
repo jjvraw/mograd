@@ -182,6 +182,52 @@ def test_slice_1d_reverse() raises:
     assert_equal(s.strides, IntTuple(-1))
     assert_equal(s.base_offset, 9)
 
+def test_view_infers_last_dim() raises:
+    var l = Layout(25088)
+
+    var v = l.view(32, -1)
+
+    assert_equal(v.rank, 2)
+    assert_equal(v.shape, IntTuple(32, 784))
+    assert_equal(v.strides, IntTuple(784, 1))
+    assert_equal(v.base_offset, l.base_offset)
+    assert_equal(v.numel(), l.numel())
+    assert_true(v.is_contiguous())
+
+def test_view_infers_first_dim() raises:
+    var l = Layout(25088)
+
+    var v = l.view(-1, 784)
+
+    assert_equal(v.rank, 2)
+    assert_equal(v.shape, IntTuple(32, 784))
+    assert_equal(v.strides, IntTuple(784, 1))
+    assert_equal(v.base_offset, l.base_offset)
+    assert_equal(v.numel(), l.numel())
+    assert_true(v.is_contiguous())
+
+def test_view_inferred_shape_preserves_linear_offsets() raises:
+    var l = Layout(25088)
+    var v = l.view(32, -1)
+
+    for i in range(l.numel()):
+        var old_coord = IntTuple(i)
+        var new_coord = IntTuple(i // 784, i % 784)
+
+        var old_offset = crd2idx(old_coord, l.shape, l.strides)
+        var new_offset = crd2idx(new_coord, v.shape, v.strides)
+
+        assert_equal(old_offset, new_offset)
+
+def test_view_rejects_multiple_inferred_dims() raises:
+    var l = Layout(12)
+
+    try:
+        _ = l.view(-1, -1)
+        assert_true(False)
+    except:
+        assert_true(True)
+
 
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

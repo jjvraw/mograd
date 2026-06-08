@@ -50,4 +50,4 @@ def _apply_subst(node: OpRef, subst: Dict[OpRef, OpRef]) raises -> OpRef:
             new_srcs.append(src)
     if not changed:
         return node
-    return OpRef(Op(node.op_type(), node.shape(), node.dtype(), new_srcs^, node.attrs_copy()))
+    return OpRef(Op(node.op_type(), node.layout(), node.dtype(), new_srcs^, node.attrs_copy()))

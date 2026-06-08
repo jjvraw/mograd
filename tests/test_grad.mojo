@@ -3,7 +3,7 @@ from std.testing import TestSuite, assert_almost_equal, assert_equal, assert_tru
 
 import mograd.nn as nn
 from mograd import Tensor, Device
-from mograd.shape import Shape
+from mograd.layout import Layout 
 from mograd.testing import assert_allclose, assert_close
 
 
@@ -12,7 +12,7 @@ comptime FwdFn = def(x: Tensor[]) thin raises -> Tensor[]
 
 def numerical_grad[
     fwd: FwdFn
-](device: Device, data: List[Float32], shape: Shape, eps: Float32 = 1e-3,) raises -> List[Float32]:
+](device: Device, data: List[Float32], shape: Layout, eps: Float32 = 1e-3,) raises -> List[Float32]:
     var grads = List[Float32]()
     for i in range(len(data)):
         var d_plus = data.copy()

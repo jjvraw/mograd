@@ -2,7 +2,7 @@ from std.math import abs
 
 from mograd.op import Op, OpRef, OpType
 from mograd.pattern_matcher import Pat, Rule
-from mograd.shape import Shape
+from mograd.layout import Layout
 from mograd.simplify import Simplifier, RewriteFn
 from mograd.tensor import Tensor
 
@@ -70,7 +70,7 @@ def assert_close[
     _assert_close_impl[dtype](actual.item(), expected, tol)
 
 
-def leaf(shape: Shape, dtype: DType = DType.float32) -> OpRef:
+def leaf(shape: Layout, dtype: DType = DType.float32) -> OpRef:
     return OpRef(Op(OpType.BUFFER, shape, dtype, []))
 
 

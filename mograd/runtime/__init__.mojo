@@ -92,12 +92,12 @@ comptime OneHotOp = def(
 def one_hot(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var c_ptr = alloc[Float32](1)
     c_ptr[0] = node.attrs()["num_classes"][Float32]
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[OneHotOp]("mograd_one_hot")(
         inputs[0].data_ptr(),
         c_ptr.bitcast[NoneType](),
         out.data_ptr(),
-        node.shape().numel(),
+        node.layout().numel(),
         inputs[0].dtype(),
         node.dtype(),
         device.ctx,
@@ -111,11 +111,11 @@ def randn(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuf
     params[0] = node.attrs()["mean"][Float32]
     params[1] = node.attrs()["std"][Float32]
     params[2] = node.attrs()["seed"][Float32]
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[UnaryOp]("mograd_randn")(
         params.bitcast[NoneType](),
         out.data_ptr(),
-        node.shape().numel(),
+        node.layout().numel(),
         node.dtype(),
         device.ctx,
     )
@@ -126,11 +126,11 @@ def randn(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuf
 def full(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var v = alloc[Float32](1)
     v[0] = node.attrs()["value"][Float32]
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[UnaryOp]("mograd_full")(
         v.bitcast[NoneType](),
         out.data_ptr(),
-        node.shape().numel(),
+        node.layout().numel(),
         node.dtype(),
         device.ctx,
     )
@@ -140,14 +140,14 @@ def full(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
 
 def argmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var p = alloc[Float32](2)
-    p[0] = Float32(inputs[0].shape()[0])
-    p[1] = Float32(inputs[0].shape()[1])
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
+    p[0] = Float32(node.src(0).shape(0))
+    p[1] = Float32(node.src(0).shape(1))
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[BinaryOp]("mograd_argmax")(
         inputs[0].data_ptr(),
         p.bitcast[NoneType](),
         out.data_ptr(),
-        node.shape().numel(),
+        node.layout().numel(),
         node.dtype(),
         device.ctx,
     )
@@ -156,11 +156,11 @@ def argmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBu
 
 
 def sum(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var out = AnyBuffer.empty(node.dtype(), (1,), device)
+    var out = AnyBuffer.empty(node.dtype(), device, 1)
     device.handle[].get_function[UnaryOp]("mograd_sum")(
         inputs[0].data_ptr(),
         out.data_ptr(),
-        node.src(0).shape().numel(),
+        node.src(0).layout().numel(),
         node.dtype(),
         device.ctx,
     )
@@ -168,17 +168,17 @@ def sum(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffe
 
 
 def softmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var shape = node.shape()
-    var rank = len(shape)
+    var layout = node.layout()
+    var rank = len(layout)
     var params = alloc[Float32](2)
-    params[0] = Float32(shape[0] if rank > 1 else 1)
-    params[1] = Float32(shape[rank - 1])
-    var out = AnyBuffer.empty(node.dtype(), shape, device)
+    params[0] = Float32(layout.shape[0].value() if rank > 1 else 1)
+    params[1] = Float32(layout.shape[rank - 1].value())
+    var out = AnyBuffer.empty(node.dtype(), device, layout.numel())
     device.handle[].get_function[BinaryOp]("mograd_softmax")(
         inputs[0].data_ptr(),
         params.bitcast[NoneType](),
         out.data_ptr(),
-        shape.numel(),
+        layout.numel(),
         node.dtype(),
         device.ctx,
     )
@@ -187,11 +187,11 @@ def softmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyB
 
 
 def log(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[UnaryOp]("mograd_log")(
         inputs[0].data_ptr(),
         out.data_ptr(),
-        node.shape().numel(),
+        node.layout().numel(),
         node.dtype(),
         device.ctx,
     )
@@ -199,11 +199,11 @@ def log(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffe
 
 
 def relu(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[UnaryOp]("mograd_relu")(
         inputs[0].data_ptr(),
         out.data_ptr(),
-        node.shape().numel(),
+        node.layout().numel(),
         node.dtype(),
         device.ctx,
     )
@@ -211,11 +211,11 @@ def relu(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
 
 
 def exp(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[UnaryOp]("mograd_exp")(
         inputs[0].data_ptr(),
         out.data_ptr(),
-        node.shape().numel(),
+        node.layout().numel(),
         node.dtype(),
         device.ctx,
     )
@@ -223,11 +223,11 @@ def exp(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffe
 
 
 def neg(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[UnaryOp]("mograd_neg")(
         inputs[0].data_ptr(),
         out.data_ptr(),
-        node.shape().numel(),
+        node.layout().numel(),
         node.dtype(),
         device.ctx,
     )
@@ -249,12 +249,12 @@ comptime BinaryOp = def(
 
 
 def eq(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[BinaryOp]("mograd_eq")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         out.data_ptr(),
-        node.shape().numel(),
+        node.layout().numel(),
         node.dtype(),
         device.ctx,
     )
@@ -262,12 +262,12 @@ def eq(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer
 
 
 def mul(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[BinaryOp]("mograd_mul")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         out.data_ptr(),
-        node.shape().numel(),
+        node.layout().numel(),
         node.dtype(),
         device.ctx,
     )
@@ -275,12 +275,12 @@ def mul(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffe
 
 
 def div(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[BinaryOp]("mograd_div")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         out.data_ptr(),
-        node.shape().numel(),
+        node.layout().numel(),
         node.dtype(),
         device.ctx,
     )
@@ -288,22 +288,22 @@ def div(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffe
 
 
 def add(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     var func = device.handle[].get_function[BinaryOp]("mograd_add")
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
-    func(inputs[0].data_ptr(), inputs[1].data_ptr(), out.data_ptr(), node.shape().numel(), node.dtype(), device.ctx)
+    func(inputs[0].data_ptr(), inputs[1].data_ptr(), out.data_ptr(), node.layout().numel(), node.dtype(), device.ctx)
     return out^
 
 
 def transpose(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var p = alloc[Float32](2)
-    p[0] = Float32(inputs[0].shape()[0])
-    p[1] = Float32(inputs[0].shape()[1])
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
+    p[0] = Float32(node.src(0).layout().shape[0].value())
+    p[1] = Float32(node.src(0).layout().shape[1].value())
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[BinaryOp]("mograd_transpose")(
         inputs[0].data_ptr(),
         p.bitcast[NoneType](),
         out.data_ptr(),
-        node.shape().numel(),
+        node.layout().numel(),
         node.dtype(),
         device.ctx,
     )
@@ -313,10 +313,10 @@ def transpose(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> An
 
 def scale(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var func = device.handle[].get_function[BinaryOp]("mograd_scale")
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     var s = alloc[Float32](1)
     s[0] = node.attrs()["scalar"][Float32]
-    func(inputs[0].data_ptr(), s.bitcast[NoneType](), out.data_ptr(), node.shape().numel(), node.dtype(), device.ctx)
+    func(inputs[0].data_ptr(), s.bitcast[NoneType](), out.data_ptr(), node.layout().numel(), node.dtype(), device.ctx)
     s.free()
     return out^
 
@@ -338,15 +338,15 @@ comptime TernaryOp = def(
 
 def cross_entropy(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var p = alloc[Float32](2)
-    p[0] = Float32(inputs[0].shape()[0])
-    p[1] = Float32(inputs[0].shape()[1])
-    var out = AnyBuffer.empty(node.dtype(), (1,), device)
+    p[0] = Float32(node.src(0).layout().shape[0].value())
+    p[1] = Float32(node.src(0).layout().shape[1].value())
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[TernaryOp]("mograd_cross_entropy")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         p.bitcast[NoneType](),
         out.data_ptr(),
-        node.shape().numel(),
+        node.layout().numel(),
         node.dtype(),
         device.ctx,
     )
@@ -356,16 +356,16 @@ def cross_entropy(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -
 
 def matmul(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var p = alloc[Float32](3)
-    p[0] = Float32(inputs[0].shape()[0])
-    p[1] = Float32(inputs[0].shape()[1])
-    p[2] = Float32(inputs[1].shape()[1])
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
+    p[0] = Float32(node.src(0).layout().shape[0].value())
+    p[1] = Float32(node.src(0).layout().shape[1].value())
+    p[2] = Float32(node.src(1).layout().shape[1].value())
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[TernaryOp]("mograd_matmul")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         p.bitcast[NoneType](),
         out.data_ptr(),
-        node.shape().numel(),
+        node.layout().numel(),
         node.dtype(),
         device.ctx,
     )
@@ -373,8 +373,9 @@ def matmul(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBu
     return out^
 
 
+# TODO: Revisit this, this is slop and can probably be cleaned up.
 def disk(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var size = node.shape().numel()
+    var size = node.layout().numel()
     var bytes = Path(node.attrs()["path"][String]).read_bytes()
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
@@ -386,28 +387,26 @@ def disk(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
             data.reserve(size)
             for i in range(size):
                 data.append(ptr[i])
-            return AnyBuffer(Buffer[d].from_data(device, data, node.shape()))
+            return AnyBuffer(Buffer[d].from_data(device, data))
     raise Error("unsupported dtype")
 
 
 def slice(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var start = Int(node.attrs()["start"][Float32])
-    var cols = node.src(0).shape().numel() // node.src(0).shape()[0]
-    return inputs[0].view(node.shape(), start * cols)
+    return inputs[0].view(node.layout())
 
 
 def matmul_t(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var p = alloc[Float32](3)
-    p[0] = Float32(inputs[0].shape()[0])
-    p[1] = Float32(inputs[0].shape()[1])
-    p[2] = Float32(inputs[1].shape()[0])
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
+    p[0] = Float32(node.src(0).layout().shape[0].value())
+    p[1] = Float32(node.src(0).layout().shape[1].value())
+    p[2] = Float32(node.src(1).layout().shape[0].value())
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[TernaryOp]("mograd_matmul_t")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         p.bitcast[NoneType](),
         out.data_ptr(),
-        node.shape().numel(),
+        node.layout().numel(),
         node.dtype(),
         device.ctx,
     )
@@ -430,9 +429,9 @@ comptime CastOp = def(
 
 
 def cast(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[CastOp]("mograd_cast")(
-        inputs[0].data_ptr(), out.data_ptr(), node.shape().numel(), inputs[0].dtype(), node.dtype(), device.ctx
+        inputs[0].data_ptr(), out.data_ptr(), node.layout().numel(), inputs[0].dtype(), node.dtype(), device.ctx
     )
     return out^
 
@@ -444,10 +443,10 @@ def cast(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
 
 def broadcast(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var p = alloc[Float32](1)
-    p[0] = Float32(inputs[0].size())
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
+    p[0] = Float32(node.src(0).layout().numel())
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[BinaryOp]("mograd_broadcast")(
-        inputs[0].data_ptr(), p.bitcast[NoneType](), out.data_ptr(), node.shape().numel(), node.dtype(), device.ctx
+        inputs[0].data_ptr(), p.bitcast[NoneType](), out.data_ptr(), node.layout().numel(), node.dtype(), device.ctx
     )
     p.free()
     return out^
@@ -458,16 +457,16 @@ def uniform(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyB
     params[0] = node.attrs()["low"][Float32]
     params[1] = node.attrs()["high"][Float32]
     params[2] = node.attrs()["seed"][Float32]
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[UnaryOp]("mograd_uniform")(
-        params.bitcast[NoneType](), out.data_ptr(), node.shape().numel(), node.dtype(), device.ctx
+        params.bitcast[NoneType](), out.data_ptr(), node.layout().numel(), node.dtype(), device.ctx
     )
     params.free()
     return out^
 
 
 def reshape(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return inputs[0].reshape(node.shape())
+    return inputs[0].view(node.layout())
 
 
 # ===-------------------------------------------------------------------===#
@@ -476,28 +475,28 @@ def reshape(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyB
 
 
 def relu_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[BinaryOp]("mograd_relu_grad")(
-        inputs[0].data_ptr(), inputs[1].data_ptr(), out.data_ptr(), node.shape().numel(), node.dtype(), device.ctx
+        inputs[0].data_ptr(), inputs[1].data_ptr(), out.data_ptr(), node.layout().numel(), node.dtype(), device.ctx
     )
     return out^
 
 
 def softmax_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var shape = node.shape()
-    var rank = len(shape)
-    var N = 1 if rank == 1 else shape[0]
-    var size = shape[rank - 1]
+    var layout = node.layout()
+    var rank = len(layout)
+    var N = 1 if rank == 1 else layout.shape[0].value()
+    var size = layout.shape[rank - 1].value()
     var p = alloc[Float32](2)
     p[0] = Float32(N)
     p[1] = Float32(size)
-    var out = AnyBuffer.empty(node.dtype(), shape, device)
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[TernaryOp]("mograd_softmax_grad")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         p.bitcast[NoneType](),
         out.data_ptr(),
-        shape.numel(),
+        layout.numel(),
         node.dtype(),
         device.ctx,
     )
@@ -519,16 +518,16 @@ comptime QuaternaryOp = def(
 
 def cross_entropy_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var p = alloc[Float32](2)
-    p[0] = Float32(inputs[0].shape()[0])
-    p[1] = Float32(inputs[0].shape()[1])
-    var out = AnyBuffer.empty(node.dtype(), node.shape(), device)
+    p[0] = Float32(node.src(0).layout().shape[0].value())
+    p[1] = Float32(node.src(0).layout().shape[1].value())
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[QuaternaryOp]("mograd_cross_entropy_grad")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         inputs[2].data_ptr(),
         p.bitcast[NoneType](),
         out.data_ptr(),
-        node.shape().numel(),
+        node.layout().numel(),
         node.dtype(),
         device.ctx,
     )

@@ -22,8 +22,8 @@ def test_linear_lazy_init() raises:
         is_set = True
     if not is_set:
         raise Error("weight should be initialized after first call")
-    var shape = l._weight[].value().shape()
-    if shape[0] != 2 or shape[1] != 4:
+    var shape = l._weight[].value().shape().shape
+    if shape[0].value() != 2 or shape[1].value() != 4:
         raise Error("weight shape should be [2, 4], got " + String(shape[0]) + "x" + String(shape[1]))
 
 

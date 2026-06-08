@@ -3,7 +3,7 @@ from std.gpu.host import DeviceContext
 
 from mograd import Device
 from mograd.op import AttrVal, Op, OpRef, OpType
-from mograd.shape import Shape
+from mograd.layout import Layout
 from mograd.buffer import Buffer
 from mograd.runtime import NativeRuntime
 from mograd.grad import Grad
@@ -40,10 +40,10 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
         out self,
         device: Device,
         data: List[Scalar[Self.dtype]],
-        shape: Shape,
+        shape: Layout,
         requires_grad: Bool = False,
     ) raises:
-        var b = Buffer.from_data(device, data, shape)
+        var b = Buffer.from_data(device, data)
         self.device = device
         self.op = OpRef(Op(OpType.BUFFER, shape, self.dtype, [], b^))
         self.requires_grad = requires_grad
@@ -56,25 +56,25 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
     @staticmethod
     def empty(
         device: Device,
-        shape: Shape,
+        shape: Layout,
         requires_grad: Bool = False,
     ) raises -> Self:
-        var b = Buffer[Self.dtype].empty(device, shape)
+        var b = Buffer[Self.dtype].empty(device, shape.numel())
         return Tensor[Self.dtype](device, OpRef(Op(OpType.BUFFER, shape, Self.dtype, [], b^)), requires_grad)
 
     @staticmethod
     def ones(
         device: Device,
-        shape: Shape,
+        shape: Layout,
         requires_grad: Bool = False,
     ) raises -> Self:
-        var b = Buffer[Self.dtype].ones(device, shape)
+        var b = Buffer[Self.dtype].ones(device, shape.numel())
         return Tensor[Self.dtype](device, OpRef(Op(OpType.BUFFER, shape, Self.dtype, [], b^)), requires_grad)
 
     @staticmethod
     def uniform(
         device: Device,
-        shape: Shape,
+        shape: Layout,
         low: Float32 = 0.0,
         high: Float32 = 1.0,
         seed: UInt32 = 42,
@@ -86,7 +86,7 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
     @staticmethod
     def randn(
         device: Device,
-        shape: Shape,
+        shape: Layout,
         mean: Float32 = 0.0,
         std: Float32 = 1.0,
         seed: UInt32 = 42,
@@ -99,14 +99,14 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
     def disk(
         device: Device,
         path: String,
-        shape: Shape,
+        shape: Layout,
     ) -> Self:
         return Tensor[Self.dtype](device, OpRef(Op(OpType.DISK, shape, Self.dtype, [], {"path": path})))
 
     @staticmethod
     def full(
         device: Device,
-        shape: Shape,
+        shape: Layout,
         fill_value: Float32,
         requires_grad: Bool = False,
     ) -> Self:
@@ -118,36 +118,35 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
     def ones_like[
         other_dtype: DType
     ](other: Tensor[other_dtype], requires_grad: Bool = False) raises -> Tensor[other_dtype]:
-        return Tensor[other_dtype].ones(other.device.value(), other.op.shape(), requires_grad)
+        return Tensor[other_dtype].ones(other.device.value(), other.op.layout(), requires_grad)
 
     @staticmethod
-    def from_buffer(device: Device, var buf: Buffer[Self.dtype]) -> Self:
-        var shape = buf.shape
-        return Tensor[Self.dtype](device, OpRef(Op(OpType.BUFFER, shape, Self.dtype, [], buf^)))
+    def from_buffer(device: Device, layout: Layout, var buf: Buffer[Self.dtype]) -> Self:
+        return Tensor[Self.dtype](
+            device,
+            OpRef(Op(OpType.BUFFER, layout, Self.dtype, [], buf^)),
+        )
 
     # ===-------------------------------------------------------------------===#
     # Layout transformative operations
     # ===-------------------------------------------------------------------===#
 
-    def shape(self) -> Shape:
-        return self.op.shape()
+    def shape(self) -> Layout:
+        return self.op.layout().copy()
 
     def shape(self, idx: Int) -> Int:
         return self.op.shape(idx)
 
-    def reshape(self, shape: Shape) -> Self:
+    def reshape(self, shape: Layout) raises -> Self:
         return Self(self.device, self.op.reshape(shape), self.requires_grad)
 
     def transpose(self) -> Self:
         return Self(self.device, self.op.transpose(), self.requires_grad)
 
-    def slice(self, start: Int, end: Int) -> Self:
-        return Self(self.device, self.op.slice(start, end), self.requires_grad)
-
-    def __getitem__(self, s: Slice) -> Self:
-        var start = s.start.value() if s.start else 0
-        var end = s.end.value() if s.end else self.op.shape(0)
-        return self.slice(start, end)
+    def __getitem__(self, s: Slice) raises -> Self:
+        var dim = self.op.layout().shape.value(0)
+        var start, stop, step = s.indices(dim)
+        return Self(self.device, self.op.slice(start, stop, step), self.requires_grad)
 
     def cast[out_dtype: DType](self) -> Tensor[out_dtype]:
         return Tensor[out_dtype](self.device, self.op.cast(out_dtype), self.requires_grad)
@@ -172,7 +171,7 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
         var attrs: Dict[String, AttrVal] = {"value": AttrVal(scalar)}
         return Self(
             self.device,
-            self.op + OpRef(Op(OpType.FULL, self.op.shape(), self.dtype, [], attrs=attrs^)),
+            self.op + OpRef(Op(OpType.FULL, self.op.layout(), self.dtype, [], attrs=attrs^)),
             self.requires_grad,
         )
 
@@ -223,7 +222,7 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
         return Self(self.device, self.op.sum(), self.requires_grad)
 
     def mean(self) -> Self:
-        return self.sum() * (1.0 / Scalar[Self.dtype](self.op.shape().numel()))
+        return self.sum() * (1.0 / Scalar[Self.dtype](self.op.layout().numel()))
 
     def argmax(self) -> Self:
         return Self(self.device, self.op.argmax(), self.requires_grad)
@@ -288,7 +287,7 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
             else:
                 if not self.device:
                     raise Error("gradient requires a device context")
-                result.append(Tensor[Self.dtype].empty(self.device.value(), targets[i].op.shape()))
+                result.append(Tensor[Self.dtype].empty(self.device.value(), targets[i].op.layout()))
         return result^
 
     # ===-------------------------------------------------------------------===#

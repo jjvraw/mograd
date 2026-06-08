@@ -24,4 +24,4 @@ comptime MATMUL_T = OpType("MATMUL_T")
 def fuse_matmul_transpose(node: OpRef) raises -> Optional[OpRef]:
     var A = node.src(0)
     var B = node.src(1).src(0)
-    return OpRef(Op(MATMUL_T, node.shape(), node.dtype(), [A, B]))
+    return OpRef(Op(MATMUL_T, node.layout(), node.dtype(), [A, B]))
