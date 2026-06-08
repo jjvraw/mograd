@@ -105,7 +105,7 @@ struct AnyBuffer(Copyable, Movable):
             comptime assert conforms_to(T, BufferArm)
             if self._buf.isa[T]():
                 return trait_downcast[BufferArm](self._buf.unsafe_get[T]()).raw_ptr()
-        raise Error("AnyBuffer.data_ptr: unknown variant")
+        raise Error("Unsupported dtype")
 
     def view(ref self, layout: Layout) raises -> AnyBuffer:
         comptime for k in range(Self.BufVariant.Ts.size):
@@ -116,8 +116,7 @@ struct AnyBuffer(Copyable, Movable):
             if self._buf.isa[T]():
                 ref src = self.unsafe_get[d]()
                 return AnyBuffer(Buffer[d](src._ptr.copy(), layout.numel(), layout.base_offset))
-
-        raise Error("unsupported dtype")
+        raise Error("Unsupported dtype")
 
     @staticmethod
     def empty(dtype: DType, device: Device, numel: Int) raises -> AnyBuffer:
@@ -128,4 +127,4 @@ struct AnyBuffer(Copyable, Movable):
             if dtype == d:
                 var dev_buf = device.ctx.enqueue_create_buffer[d](numel)
                 return AnyBuffer(Buffer[d](dev_buf^, numel))
-        raise Error("unsupported dtype: " + String(dtype))
+        raise Error("Unsupported dtype: " + String(dtype))
