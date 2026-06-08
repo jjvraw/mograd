@@ -11,11 +11,8 @@ from mograd import Device
 # ===-------------------------------------------------------------------===#
 
 
-trait BufferArm(Copyable, Movable, Writable):
+trait BufferArm(Copyable, Movable):
     comptime node_dtype: DType
-
-    def get_size(ref self) -> Int:
-        ...
 
     def raw_ptr(ref self) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
         ...
@@ -26,7 +23,7 @@ trait BufferArm(Copyable, Movable, Writable):
 # ===-------------------------------------------------------------------===#
 
 
-struct Buffer[dtype: DType](BufferArm, Copyable, Movable, Writable):
+struct Buffer[dtype: DType](BufferArm, Copyable):
     comptime node_dtype = Self.dtype
     var _ptr: ArcPointer[DeviceBuffer[Self.dtype]]
     var base_offset: Int
@@ -88,17 +85,13 @@ struct Buffer[dtype: DType](BufferArm, Copyable, Movable, Writable):
         device.ctx.enqueue_copy(dst_buf=dev_buf, src_buf=host_buf)
         return Self(dev_buf^, size)
 
-    def write_to(self, mut writer: Some[Writer]):
-        writer.write("Buffer(size=")
-        writer.write(String(self.size))
-
 
 # ===-------------------------------------------------------------------===#
 # AnyBuffer
 # ===-------------------------------------------------------------------===#
 
 
-struct AnyBuffer(Copyable, Movable, Writable):
+struct AnyBuffer(Copyable, Movable):
     comptime BufVariant = Variant[Buffer[DType.float32], Buffer[DType.int64]]
     var _buf: Self.BufVariant
 
@@ -114,14 +107,6 @@ struct AnyBuffer(Copyable, Movable, Writable):
 
     def unsafe_get[dtype: DType](ref self) -> ref[self._buf] Buffer[dtype]:
         return self._buf.unsafe_get[Buffer[dtype]]()
-
-    def dtype(self) -> DType:
-        comptime for k in range(Self.BufVariant.Ts.size):
-            comptime T = Self.BufVariant.Ts[k]
-            comptime assert conforms_to(T, BufferArm)
-            if self._buf.isa[T]():
-                return T.node_dtype
-        return DType.invalid
 
     def data_ptr(ref self) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
         comptime for k in range(Self.BufVariant.Ts.size):
@@ -153,11 +138,3 @@ struct AnyBuffer(Copyable, Movable, Writable):
                 var dev_buf = device.ctx.enqueue_create_buffer[d](numel)
                 return AnyBuffer(Buffer[d](dev_buf^, numel))
         raise Error("unsupported dtype: " + String(dtype))
-
-    def write_to(self, mut writer: Some[Writer]):
-        comptime for k in range(Self.BufVariant.Ts.size):
-            comptime T = Self.BufVariant.Ts[k]
-            comptime assert conforms_to(T, Writable)
-            if self._buf.isa[T]():
-                trait_downcast[Writable](self._buf.unsafe_get[T]()).write_to(writer)
-                return

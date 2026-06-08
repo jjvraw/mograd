@@ -98,7 +98,7 @@ def one_hot(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyB
         c_ptr.bitcast[NoneType](),
         out.data_ptr(),
         node.layout().numel(),
-        inputs[0].dtype(),
+        node.src(0).dtype(),
         node.dtype(),
         device.ctx,
     )
@@ -431,7 +431,7 @@ comptime CastOp = def(
 def cast(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[CastOp]("mograd_cast")(
-        inputs[0].data_ptr(), out.data_ptr(), node.layout().numel(), inputs[0].dtype(), node.dtype(), device.ctx
+        inputs[0].data_ptr(), out.data_ptr(), node.layout().numel(), node.src(0).dtype(), node.dtype(), device.ctx
     )
     return out^
 
