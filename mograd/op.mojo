@@ -224,8 +224,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return Self(Op(OpType.NEG, self.layout(), self.dtype(), [self]))
 
     def scale(self, scalar: Scalar) -> Self:
-        var attrs: Dict[String, AttrVal] = {"scalar": AttrVal(scalar)}
-        return Self(Op(OpType.SCALE, self.layout(), self.dtype(), [self], attrs=attrs^))
+        return Self(Op(OpType.SCALE, self.layout(), self.dtype(), [self], attrs={"scalar": scalar}))
 
     def exp(self) -> Self:
         return Self(Op(OpType.EXP, self.layout(), self.dtype(), [self]))
@@ -259,9 +258,9 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     def reshape(self, shape: Layout) raises -> Self:
         return Self(Op(OpType.RESHAPE, self.layout().view(shape.shape), self.dtype(), [self]))
 
-    def one_hot(self, num_classes: Int, out_dtype: DType) -> OpRef:
-        var attrs: Dict[String, AttrVal] = {"num_classes": AttrVal(Float32(num_classes))}
-        return OpRef(Op(OpType.ONE_HOT, (self.shape(0), num_classes), out_dtype, [self], attrs=attrs^))
+    def one_hot(self, var num_classes: Int, out_dtype: DType) -> OpRef:
+        n = Float32(num_classes)
+        return OpRef(Op(OpType.ONE_HOT, (self.shape(0), num_classes), out_dtype, [self], attrs={"num_classes": n}))
 
     def cast(self, out_dtype: DType) -> OpRef:
         return OpRef(Op(OpType.CAST, self.layout(), out_dtype, [self]))
@@ -270,13 +269,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return Self(Op(OpType.TRANSPOSE, (self.shape(1), self.shape(0)), self.dtype(), [self]))
 
     def slice(self, start: Int, stop: Int, step: Int = 1) raises -> Self:
-        var attrs: Dict[String, AttrVal] = {
-            "start": AttrVal(Float32(start)),
-            "stop": AttrVal(Float32(stop)),
-            "step": AttrVal(Float32(step)),
-        }
-
-        return Self(Op(OpType.SLICE, self.layout()[start:stop:step], self.dtype(), [self], attrs=attrs^))
+        return Self(Op(OpType.SLICE, self.layout()[start:stop:step], self.dtype(), [self], {}))
 
     # ===-------------------------------------------------------------------===#
     # Contraction operations
