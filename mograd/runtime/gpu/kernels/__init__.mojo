@@ -1,5 +1,5 @@
 from mograd.buffer import AnyBuffer, BufferArm
-from layout import Coord, TileTensor, row_major
+from layout import Coord, TileTensor, row_major, coord
 from std.algorithm.functional import elementwise
 from std.algorithm.backend.gpu.reduction import reduce_kernel
 from std.utils.static_tuple import StaticTuple
@@ -497,11 +497,11 @@ def softmax[
 ) raises:
     var out = TileTensor(dst.as_any_origin(), row_major(Coord(rows, cols)))
 
-    def input_fn[width: Int, r: Int](coords: IndexList[r]) capturing -> SIMD[dtype, width]:
-        return a.load[width=width](coords[0] * cols + coords[1])
+    def input_fn[width: Int](coords: Coord) capturing -> SIMD[dtype, width]:
+        return a.load[width=width](Int(coords[0].value()) * cols + Int(coords[1].value()))
 
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
-    nn_softmax[dtype, simd_width, 2, input_fn, "gpu"](IndexList[2](rows, cols), out, axis=1, context=ctx)
+    nn_softmax[dtype, simd_width, 2, input_fn, "gpu"](Coord(rows, cols), out, axis=1, context=ctx)
     ctx.synchronize()
 
 
