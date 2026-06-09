@@ -1,0 +1,19 @@
+name: Pin Modular lockfiles
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  pin:
+    uses: bitbotbyte/modular-pixi/.github/workflows/pin-lockfiles.yml@main
+    with:
+      target_repo: ${{ github.repository }}
+      base_branch: main
+      bot_branch: bitbotbyte/pin-modular-lockfiles
+      packages: "mojo max"
+      update_command: "pixi update mojo max --no-install"
+      test_command: ""
+    secrets:
+      bot_token: ${{ secrets.BITBOTBYTE }}
