@@ -35,7 +35,7 @@ jobs:
 
       - run: pixi run test-graph
 
-  test-gpu:
+  test-gpu-m1:
     name: Tests (M1)
     runs-on: [self-hosted, runner-m1]
     if: github.event_name == 'pull_request'
@@ -43,11 +43,28 @@ jobs:
       - uses: actions/checkout@v4
       - run: pixi run test-gpu-b
 
-  examples:
+  examples-m1:
     name: Examples (M1)
     runs-on: [self-hosted, runner-m1]
     if: github.event_name == 'pull_request'
-    needs: test-gpu
+    needs: test-gpu-m1
+    steps:
+      - uses: actions/checkout@v4
+      - run: pixi run examples-b
+
+  test-gpu-4090:
+    name: Tests (4090)
+    runs-on: [self-hosted, runner-4090]
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - run: pixi run test-gpu-b
+
+  examples-4090:
+    name: Examples (4090)
+    runs-on: [self-hosted, runner-4090]
+    if: github.event_name == 'pull_request'
+    needs: test-gpu-4090
     steps:
       - uses: actions/checkout@v4
       - run: pixi run examples-b
