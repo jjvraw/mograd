@@ -137,6 +137,13 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
         )
 
     # ===-------------------------------------------------------------------===#
+    #
+    # ===-------------------------------------------------------------------===#
+
+    def is_contiguous(self) -> Bool:
+        return self.op.layout().is_contiguous()
+
+    # ===-------------------------------------------------------------------===#
     # Layout transformative operations
     # ===-------------------------------------------------------------------===#
 
@@ -148,6 +155,9 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
 
     def reshape(self, shape: Layout) raises -> Self:
         return Self(self.device, self.op.reshape(shape), self.requires_grad)
+
+    def view(self, shape: Layout) raises -> Self:
+        return Self(self.device, self.op.view(shape), self.requires_grad)
 
     def transpose(self) -> Self:
         return Self(self.device, self.op.transpose(), self.requires_grad)

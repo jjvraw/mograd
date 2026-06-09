@@ -54,7 +54,9 @@ test-ops                = { cmd = "mojo -I . tests/test_ops.mojo", }
 test-ops-b              = { cmd = "mojo -I . tests/test_ops.mojo", depends-on = ["build-gpu"]}
 test-data               = { cmd = "mojo -I . tests/test_data.mojo" }
 test-data-b             = { cmd = "mojo -I . tests/test_data.mojo", depends-on = ["build-gpu"]}
-test-gpu                = { depends-on = ["test-grad", "test-nn", "test-ops",  "test-data"] }
+test-non-contiguous     = { cmd = "mojo -I . tests/test_non_contiguous.mojo" }
+test-non-contiguous-b   = { cmd = "mojo -I . tests/test_non_contiguous.mojo", depends-on = ["build-gpu"]}
+test-gpu                = { depends-on = ["test-grad", "test-nn", "test-ops", "test-data", "test-non-contiguous"] }
 test-gpu-b              = { depends-on = ["build-gpu", "test-gpu"] }
 
 # Test Graph

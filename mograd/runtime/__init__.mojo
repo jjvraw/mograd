@@ -58,6 +58,7 @@ struct NativeRuntime(Runtime):
                 Rule(Pat(OpType.BROADCAST), broadcast),
                 Rule(Pat(OpType.UNIFORM), uniform),
                 Rule(Pat(OpType.RESHAPE), reshape),
+                Rule(Pat(OpType.VIEW), view),
                 Rule(Pat(OpType.RELU_GRAD), relu_grad),
                 Rule(Pat(OpType.SOFTMAX_GRAD), softmax_grad),
                 Rule(Pat(OpType.CROSS_ENTROPY_GRAD), cross_entropy_grad),
@@ -466,6 +467,10 @@ def uniform(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyB
 
 
 def reshape(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+    return inputs[0].view(node.layout())
+
+
+def view(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     return inputs[0].view(node.layout())
 
 

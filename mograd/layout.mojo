@@ -145,6 +145,10 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
         """Returns true if layout is contiguous in memory."""
         return self.strides == Self.row_major_strides(self.shape)
 
+    def as_contiguous(self) -> Layout:
+        """Returns a new row-major layout with the same shape, zeroing base_offset."""
+        return Layout(self.rank, self.shape, Self.row_major_strides(self.shape), 0)
+
     # ===-------------------------------------------------------------------===#
     # Permute
     # ===-------------------------------------------------------------------===#

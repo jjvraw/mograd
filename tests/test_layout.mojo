@@ -58,7 +58,7 @@ def test_permute_2d() raises:
     assert_false(l.is_contiguous())
 
 def test_permute_2d_offsets() raises:
-    var original = Layout(3, 4)
+    var original = Layout(3, 4x)
     var permuted = original
 
     permuted = permuted.permute(1, 0)

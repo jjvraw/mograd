@@ -5,7 +5,7 @@ from std.utils import Variant
 from layout import IntTuple
 
 from mograd.buffer import Buffer, AnyBuffer
-from mograd.layout import Layout
+from mograd.layout import Layout, layout
 
 
 # ===-------------------------------------------------------------------===#
@@ -57,6 +57,7 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     # ===-------------------------------------------------------------------===#
 
     comptime RESHAPE = OpType("RESHAPE")
+    comptime VIEW = OpType("VIEW")
     comptime TRANSPOSE = OpType("TRANSPOSE")
     comptime SLICE = OpType("SLICE")
     comptime BROADCAST = OpType("BROADCAST")
@@ -209,37 +210,37 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def __add__(self, rhs: OpRef) -> Self:
-        return Self(Op(OpType.ADD, self.layout(), self.dtype(), [self, rhs]))
+        return Self(Op(OpType.ADD, self.layout().as_contiguous(), self.dtype(), [self, rhs]))
 
     def __mul__(self, rhs: OpRef) -> Self:
-        return Self(Op(OpType.MUL, self.layout(), self.dtype(), [self, rhs]))
+        return Self(Op(OpType.MUL, self.layout().as_contiguous(), self.dtype(), [self, rhs]))
 
     def __truediv__(self, rhs: OpRef) -> Self:
-        return Self(Op(OpType.DIV, self.layout(), self.dtype(), [self, rhs]))
+        return Self(Op(OpType.DIV, self.layout().as_contiguous(), self.dtype(), [self, rhs]))
 
     def __neg__(self) -> Self:
-        return Self(Op(OpType.NEG, self.layout(), self.dtype(), [self]))
+        return Self(Op(OpType.NEG, self.layout().as_contiguous(), self.dtype(), [self]))
 
     def neg(self) -> Self:
-        return Self(Op(OpType.NEG, self.layout(), self.dtype(), [self]))
+        return Self(Op(OpType.NEG, self.layout().as_contiguous(), self.dtype(), [self]))
 
     def scale(self, scalar: Scalar) -> Self:
-        return Self(Op(OpType.SCALE, self.layout(), self.dtype(), [self], attrs={"scalar": scalar}))
+        return Self(Op(OpType.SCALE, self.layout().as_contiguous(), self.dtype(), [self], attrs={"scalar": scalar}))
 
     def exp(self) -> Self:
-        return Self(Op(OpType.EXP, self.layout(), self.dtype(), [self]))
+        return Self(Op(OpType.EXP, self.layout().as_contiguous(), self.dtype(), [self]))
 
     def log(self) -> Self:
-        return Self(Op(OpType.LOG, self.layout(), self.dtype(), [self]))
+        return Self(Op(OpType.LOG, self.layout().as_contiguous(), self.dtype(), [self]))
 
     def relu(self) -> Self:
-        return Self(Op(OpType.RELU, self.layout(), self.dtype(), [self]))
+        return Self(Op(OpType.RELU, self.layout().as_contiguous(), self.dtype(), [self]))
 
     def softmax(self) -> Self:
-        return Self(Op(OpType.SOFTMAX, self.layout(), self.dtype(), [self]))
+        return Self(Op(OpType.SOFTMAX, self.layout().as_contiguous(), self.dtype(), [self]))
 
     def eq(self, other: OpRef) -> Self:
-        return Self(Op(OpType.EQ, self.layout(), self.dtype(), [self, other]))
+        return Self(Op(OpType.EQ, self.layout().as_contiguous(), self.dtype(), [self, other]))
 
     # ===-------------------------------------------------------------------===#
     # Reduction operations
@@ -258,12 +259,15 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     def reshape(self, shape: Layout) raises -> Self:
         return Self(Op(OpType.RESHAPE, self.layout().view(shape.shape), self.dtype(), [self]))
 
+    def view(self, shape: Layout) raises -> Self:
+        return Self(Op(OpType.VIEW, self.layout().view(shape.shape), self.dtype(), [self]))
+
     def one_hot(self, var num_classes: Int, out_dtype: DType) -> OpRef:
         n = Float32(num_classes)
         return OpRef(Op(OpType.ONE_HOT, (self.shape(0), num_classes), out_dtype, [self], attrs={"num_classes": n}))
 
     def cast(self, out_dtype: DType) -> OpRef:
-        return OpRef(Op(OpType.CAST, self.layout(), out_dtype, [self]))
+        return OpRef(Op(OpType.CAST, self.layout().as_contiguous(), out_dtype, [self]))
 
     def transpose(self) -> Self:
         return Self(Op(OpType.TRANSPOSE, (self.shape(1), self.shape(0)), self.dtype(), [self]))
