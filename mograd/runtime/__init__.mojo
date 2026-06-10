@@ -214,7 +214,7 @@ def one_hot(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyB
         ld.numel(),
         node.src(0).dtype(),
         node.dtype(),
-        ld.rank,
+        ld.rank(),
         ld.inner_sizes_buffer(device.ctx).unsafe_ptr(),
         ld.strides_buffer(device.ctx).unsafe_ptr(),
         la.strides_buffer(device.ctx).unsafe_ptr(),
@@ -235,7 +235,7 @@ def neg(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffe
         inputs[0].data_ptr(),
         out.data_ptr(),
         node.layout().numel(),
-        layout.rank,
+        layout.rank(),
         layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
         layout.strides_buffer(device.ctx).unsafe_ptr(),
         node.dtype(),
@@ -251,7 +251,7 @@ def log(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffe
         inputs[0].data_ptr(),
         out.data_ptr(),
         node.layout().numel(),
-        layout.rank,
+        layout.rank(),
         layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
         layout.strides_buffer(device.ctx).unsafe_ptr(),
         node.dtype(),
@@ -267,7 +267,7 @@ def exp(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffe
         inputs[0].data_ptr(),
         out.data_ptr(),
         node.layout().numel(),
-        layout.rank,
+        layout.rank(),
         layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
         layout.strides_buffer(device.ctx).unsafe_ptr(),
         node.dtype(),
@@ -283,7 +283,7 @@ def relu(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
         inputs[0].data_ptr(),
         out.data_ptr(),
         node.layout().numel(),
-        layout.rank,
+        layout.rank(),
         layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
         layout.strides_buffer(device.ctx).unsafe_ptr(),
         node.dtype(),
@@ -299,7 +299,7 @@ def cast(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
         inputs[0].data_ptr(),
         out.data_ptr(),
         node.layout().numel(),
-        layout.rank,
+        layout.rank(),
         layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
         layout.strides_buffer(device.ctx).unsafe_ptr(),
         node.src(0).dtype(),
@@ -335,7 +335,7 @@ def add(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffe
             inputs[1].data_ptr(),
             out.data_ptr(),
             node.layout().numel(),
-            la.rank,
+            la.rank(),
             la.inner_sizes_buffer(device.ctx).unsafe_ptr(),
             la.strides_buffer(device.ctx).unsafe_ptr(),
             lb.strides_buffer(device.ctx).unsafe_ptr(),
@@ -354,7 +354,7 @@ def mul(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffe
         inputs[1].data_ptr(),
         out.data_ptr(),
         node.layout().numel(),
-        la.rank,
+        la.rank(),
         la.inner_sizes_buffer(device.ctx).unsafe_ptr(),
         la.strides_buffer(device.ctx).unsafe_ptr(),
         lb.strides_buffer(device.ctx).unsafe_ptr(),
@@ -373,7 +373,7 @@ def div(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffe
         inputs[1].data_ptr(),
         out.data_ptr(),
         node.layout().numel(),
-        la.rank,
+        la.rank(),
         la.inner_sizes_buffer(device.ctx).unsafe_ptr(),
         la.strides_buffer(device.ctx).unsafe_ptr(),
         lb.strides_buffer(device.ctx).unsafe_ptr(),
@@ -392,7 +392,7 @@ def eq(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer
         inputs[1].data_ptr(),
         out.data_ptr(),
         node.layout().numel(),
-        la.rank,
+        la.rank(),
         la.inner_sizes_buffer(device.ctx).unsafe_ptr(),
         la.strides_buffer(device.ctx).unsafe_ptr(),
         lb.strides_buffer(device.ctx).unsafe_ptr(),
@@ -411,7 +411,7 @@ def relu_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> An
         inputs[1].data_ptr(),
         out.data_ptr(),
         node.layout().numel(),
-        la.rank,
+        la.rank(),
         la.inner_sizes_buffer(device.ctx).unsafe_ptr(),
         la.strides_buffer(device.ctx).unsafe_ptr(),
         lb.strides_buffer(device.ctx).unsafe_ptr(),
@@ -431,7 +431,7 @@ def scale(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuf
         s.bitcast[NoneType](),
         out.data_ptr(),
         node.layout().numel(),
-        la.rank,
+        la.rank(),
         la.inner_sizes_buffer(device.ctx).unsafe_ptr(),
         la.strides_buffer(device.ctx).unsafe_ptr(),
         node.dtype(),
@@ -448,7 +448,7 @@ def slice_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> A
         inputs[0].data_ptr(),
         out_view.data_ptr(),
         slice_layout.numel(),
-        slice_layout.rank,
+        slice_layout.rank(),
         slice_layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
         slice_layout.strides_buffer(device.ctx).unsafe_ptr(),
         node.dtype(),
@@ -469,7 +469,7 @@ def sum(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffe
         inputs[0].data_ptr(),
         out.data_ptr(),
         layout.numel(),
-        layout.rank,
+        layout.rank(),
         layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
         layout.strides_buffer(device.ctx).unsafe_ptr(),
         node.dtype(),
@@ -500,10 +500,10 @@ def argmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBu
 
 def softmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var layout = node.layout()
-    var rank = len(layout)
+    var rank = layout.rank()
     var params = alloc[Float32](2)
-    params[0] = Float32(layout.shape[0].value() if rank > 1 else 1)
-    params[1] = Float32(layout.shape[rank - 1].value())
+    params[0] = Float32(layout.shape(0) if rank > 1 else 1)
+    params[1] = Float32(layout.shape(rank - 1))
     var out = AnyBuffer.empty(node.dtype(), device, layout.numel())
     device.handle[].get_function[BinaryOp]("mograd_softmax")(
         inputs[0].data_ptr(),
@@ -533,8 +533,8 @@ comptime BinaryOp = def(
 
 def transpose(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var p = alloc[Float32](2)
-    p[0] = Float32(node.src(0).layout().shape[0].value())
-    p[1] = Float32(node.src(0).layout().shape[1].value())
+    p[0] = Float32(node.src(0).layout().shape(0))
+    p[1] = Float32(node.src(0).layout().shape(1))
     var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[BinaryOp]("mograd_transpose")(
         inputs[0].data_ptr(),
@@ -565,8 +565,8 @@ comptime TernaryOp = def(
 
 def cross_entropy(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var p = alloc[Float32](2)
-    p[0] = Float32(node.src(0).layout().shape[0].value())
-    p[1] = Float32(node.src(0).layout().shape[1].value())
+    p[0] = Float32(node.src(0).layout().shape(0))
+    p[1] = Float32(node.src(0).layout().shape(1))
     var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[TernaryOp]("mograd_cross_entropy")(
         inputs[0].data_ptr(),
@@ -583,9 +583,9 @@ def cross_entropy(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -
 
 def matmul(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var p = alloc[Float32](3)
-    p[0] = Float32(node.src(0).layout().shape[0].value())
-    p[1] = Float32(node.src(0).layout().shape[1].value())
-    p[2] = Float32(node.src(1).layout().shape[1].value())
+    p[0] = Float32(node.src(0).layout().shape(0))
+    p[1] = Float32(node.src(0).layout().shape(1))
+    p[2] = Float32(node.src(1).layout().shape(1))
     var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[TernaryOp]("mograd_matmul")(
         inputs[0].data_ptr(),
@@ -624,9 +624,9 @@ def slice(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuf
 
 def matmul_t(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var p = alloc[Float32](3)
-    p[0] = Float32(node.src(0).layout().shape[0].value())
-    p[1] = Float32(node.src(0).layout().shape[1].value())
-    p[2] = Float32(node.src(1).layout().shape[0].value())
+    p[0] = Float32(node.src(0).layout().shape(0))
+    p[1] = Float32(node.src(0).layout().shape(1))
+    p[2] = Float32(node.src(1).layout().shape(0))
     var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[TernaryOp]("mograd_matmul_t")(
         inputs[0].data_ptr(),
@@ -672,9 +672,9 @@ def view(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
 
 def softmax_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var layout = node.layout()
-    var rank = len(layout)
-    var N = 1 if rank == 1 else layout.shape[0].value()
-    var size = layout.shape[rank - 1].value()
+    var rank = layout.rank()
+    var N = 1 if rank == 1 else layout.shape(0)
+    var size = layout.shape(rank - 1)
     var p = alloc[Float32](2)
     p[0] = Float32(N)
     p[1] = Float32(size)
@@ -706,8 +706,8 @@ comptime QuaternaryOp = def(
 
 def cross_entropy_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var p = alloc[Float32](2)
-    p[0] = Float32(node.src(0).layout().shape[0].value())
-    p[1] = Float32(node.src(0).layout().shape[1].value())
+    p[0] = Float32(node.src(0).layout().shape(0))
+    p[1] = Float32(node.src(0).layout().shape(1))
     var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[QuaternaryOp]("mograd_cross_entropy_grad")(
         inputs[0].data_ptr(),

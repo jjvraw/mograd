@@ -12,15 +12,15 @@ comptime MAX_RANK = 2
 
 
 @fieldwise_init
-struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
+struct Layout(Copyable, ImplicitlyCopyable, Movable, Writable):
     """Fully dynamic Layout containing rank, shape, strides and base offset.
 
     Defaults to row-major contiguous layout.
     """
 
-    var rank: Int
-    var shape: IntTuple
-    var strides: IntTuple
+    var _rank: Int
+    var _shape: IntTuple
+    var _strides: IntTuple
     var base_offset: Int
 
     # ===-------------------------------------------------------------------===#
@@ -29,10 +29,9 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
 
     def __init__(out self, *shape: Int):
         """Initializes a row-major contigious layout of shape provided."""
-        self.rank = len(shape)
-        assert self.rank <= MAX_RANK, t"Support max rank of {String(MAX_RANK)}."
-        self.shape = IntTuple(*shape)
-        self.strides = Self.row_major_strides(self.shape)
+        self._rank = len(shape)
+        self._shape = IntTuple(*shape)
+        self._strides = Self.row_major_strides(self._shape)
         self.base_offset = 0
 
     # ===-------------------------------------------------------------------===#
@@ -59,9 +58,6 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
     @implicit
     def __init__(out self, t: Tuple[Int, Int, Int, Int, Int]):
         self = Self(t[0], t[1], t[2], t[3], t[4])
-
-    def __len__(self) -> Int:
-        return self.rank
 
     # ===-------------------------------------------------------------------===#
     # Helpers
@@ -96,20 +92,20 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
         """Normalises a dimension index against `rank`."""
         return self._handle_bounds(
             dim,
-            self.rank,
-            t"Dimension {String(dim)} is out of bounds for rank {String(self.rank)}",
+            self.rank(),
+            t"Dimension {String(dim)} is out of bounds for rank {String(self.rank())}",
         )
 
     def normalise_axes(self, axes: IntTuple) raises -> IntTuple:
         """Normalises a tuple of dimension indices `rank`."""
-        if len(axes) != self.rank:
+        if len(axes) != self.rank():
             raise Error(
-                t"Invalid permutation: expected {String(self.rank)} axes, got {String(len(axes))}: {String(axes)}."
+                t"Invalid permutation: expected {String(self.rank())} axes, got {String(len(axes))}: {String(axes)}."
             )
 
         var out = IntTuple()
 
-        for i in range(self.rank):
+        for i in range(self.rank()):
             out.append(IntTuple(self.normalise_dim(axes.value(i))))
 
         return out
@@ -126,29 +122,42 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
     # Getters
     # ===-------------------------------------------------------------------===#
 
+    @always_inline
+    def rank(self) -> Int:
+        """Returns the rank of the layout."""
+        return self._rank
+
+    @always_inline
     def numel(self) -> Int:
         """Returns the total number of elements in layout."""
-        return product(self.shape)
+        return product(self.shape())
 
+    @always_inline
     def stride(self) -> IntTuple:
         """Returns the strides of the layout."""
-        return self.strides
+        return self._strides
 
+    @always_inline
     def stride(self, idx: Int) raises -> Int:
         """Returns the specified stride of the layout."""
-        # Should never have nested IntArrays, safe to call value().
-        return self.strides[self.normalise_dim(idx)].value()
+        return self._strides.value(self.normalise_dim(idx))
 
-    def __call__(self, idx: Int) -> Int:
-        return self.shape[idx].value()
+    @always_inline
+    def shape(self, idx: Int) -> Int:
+        return self._shape.value(idx)
 
+    @always_inline
+    def shape(self) -> IntTuple:
+        return self._shape
+
+    @always_inline
     def is_contiguous(self) -> Bool:
         """Returns true if layout is contiguous in memory."""
-        return self.strides == Self.row_major_strides(self.shape)
+        return self.stride() == Self.row_major_strides(self.shape())
 
     def as_contiguous(self) -> Layout:
         """Returns a new row-major layout with the same shape, zeroing base_offset."""
-        return Layout(self.rank, self.shape, Self.row_major_strides(self.shape), 0)
+        return Layout(self.rank(), self.shape(), Self.row_major_strides(self.shape()), 0)
 
     def inner_sizes(self) -> IntTuple:
         """Suffix products of shape, used to decompose a flat index into coordinates.
@@ -157,27 +166,27 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
         """
         var result = IntTuple()
         var acc = 1
-        for i in range(self.rank - 1, -1, -1):
+        for i in range(self.rank() - 1, -1, -1):
             result.append(IntTuple(acc))
-            acc *= self.shape.value(i)
+            acc *= self.shape(i)
         return reverse(result)
 
     def strides_buffer(self, ctx: DeviceContext) raises -> DeviceBuffer[DType.int64]:
         """Uploads strides to a device buffer."""
-        var host = List[Int64](capacity=self.rank)
-        for i in range(self.rank):
-            host.append(Int64(self.strides.value(i)))
-        var buf = ctx.enqueue_create_buffer[DType.int64](self.rank)
+        var host = List[Int64](capacity=self.rank())
+        for i in range(self.rank()):
+            host.append(Int64(self.stride(i)))
+        var buf = ctx.enqueue_create_buffer[DType.int64](self.rank())
         buf.enqueue_copy_from(Span(host))
         return buf^
 
     def inner_sizes_buffer(self, ctx: DeviceContext) raises -> DeviceBuffer[DType.int64]:
         """Uploads inner_sizes to a device buffer."""
         var inner = self.inner_sizes()
-        var host = List[Int64](capacity=self.rank)
-        for i in range(self.rank):
+        var host = List[Int64](capacity=self.rank())
+        for i in range(self.rank()):
             host.append(Int64(inner.value(i)))
-        var buf = ctx.enqueue_create_buffer[DType.int64](self.rank)
+        var buf = ctx.enqueue_create_buffer[DType.int64](self.rank())
         buf.enqueue_copy_from(Span(host))
         return buf^
 
@@ -192,29 +201,29 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
     def permute(self, axes: IntTuple, out layout: Self) raises:
         """Returns a new layout view with its dimensions permuted."""
 
-        if len(axes) != self.rank:
+        if len(axes) != self.rank():
             raise Error(
-                t"Permutation rank must match layout rank: {String(len(axes))} axes != {String(self.rank)} rank."
+                t"Permutation rank must match layout rank: {String(len(axes))} axes != {String(self.rank())} rank."
             )
 
         var order = IntTuple()
 
-        for i in range(self.rank):
+        for i in range(self.rank()):
             order.append(IntTuple(self.normalise_dim(axes[i].value())))
 
-        if sorted(order) != Self.arange(self.rank):
-            raise Error(t"Invalid permutation {String(order)} for rank {String(self.rank)}.")
+        if sorted(order) != Self.arange(self.rank()):
+            raise Error(t"Invalid permutation {String(order)} for rank {String(self.rank())}.")
 
         var new_shape = IntTuple()
         var new_strides = IntTuple()
 
-        for i in range(self.rank):
+        for i in range(self.rank()):
             var axis = order.value(i)
 
-            new_shape.append(IntTuple(self.shape.value(axis)))
-            new_strides.append(IntTuple(self.strides.value(axis)))
+            new_shape.append(IntTuple(self.shape(axis)))
+            new_strides.append(IntTuple(self.stride(axis)))
 
-        layout = Self(self.rank, new_shape, new_strides, self.base_offset)
+        layout = Self(self.rank(), new_shape, new_strides, self.base_offset)
 
     # ===-------------------------------------------------------------------===#
     # Transpose
@@ -228,7 +237,7 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
 
         if d0 == d1:
             raise Error(t"Cannot transpose the same dimension {String(d0)}.")
-        var axes = Self.arange(self.rank)
+        var axes = Self.arange(self.rank())
 
         axes = axes.replace_entry(d0, IntTuple(d1))
         axes = axes.replace_entry(d1, IntTuple(d0))
@@ -258,7 +267,7 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
             )
 
         # Scalar / empty-shape edge case.
-        if self.rank == 0:
+        if self.rank() == 0:
             var scalar_strides = IntTuple()
             for _ in range(len(inferred_shape)):
                 scalar_strides.append(IntTuple(1))
@@ -268,12 +277,12 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
 
         var new_strides = IntTuple(num_elems=len(inferred_shape))
         var view_d = len(inferred_shape) - 1
-        var block_base_stride = self.strides.value(self.rank - 1)
+        var block_base_stride = self.stride(self.rank() - 1)
         var tensor_numel = 1  # Number of logical elements accumulated in the current old contiguous block
         var view_numel = 1  # Number of logical elements consumed from the new shape for this contiguous.
 
-        for tensor_d in range(self.rank - 1, -1, -1):
-            tensor_numel *= self.shape.value(tensor_d)
+        for tensor_d in range(self.rank() - 1, -1, -1):
+            tensor_numel *= self.shape(tensor_d)
 
             # A stride-compatible boundary is at tensor_d == 0, or when the previous old
             # dimension cannot collapse into the current block:
@@ -284,8 +293,8 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
             var end_of_block = tensor_d == 0
 
             if not end_of_block:
-                if self.shape.value(tensor_d - 1) != 1:
-                    if self.strides.value(tensor_d - 1) != tensor_numel * block_base_stride:
+                if self.shape(tensor_d - 1) != 1:
+                    if self.stride(tensor_d - 1) != tensor_numel * block_base_stride:
                         end_of_block = True
 
             if end_of_block:
@@ -305,18 +314,19 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
 
                 if view_numel != tensor_numel:
                     raise Error(
-                        t"Cannot view shape {String(self.shape)} with strides "
-                        t"{String(self.strides)} as shape {String(shape)}."
+                        t"Cannot view shape {String(self.shape())} with strides "
+                        t"{String(self.stride())} as shape {String(shape)}."
                     )
 
                 if tensor_d > 0:
-                    block_base_stride = self.strides.value(tensor_d - 1)
+                    block_base_stride = self.stride(tensor_d - 1)
                     tensor_numel = 1
                     view_numel = 1
 
         if view_d != -1:
             raise Error(
-                t"Cannot view shape {String(self.shape)} with strides {String(self.strides)} as shape {String(shape)}."
+                t"Cannot view shape {String(self.shape())} with strides {String(self.stride())} as shape"
+                t" {String(shape)}."
             )
 
         layout = Self(len(inferred_shape), inferred_shape, new_strides, self.base_offset)
@@ -376,15 +386,15 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
     def __getitem__(self, *slices: StridedSlice, out layout: Self) raises:
         """Returns a strided slice view."""
 
-        if len(slices) > self.rank:
-            raise Error(t"Invalid slice: expected {String(self.rank)} slices, got {String(len(slices))}.")
+        if len(slices) > self.rank():
+            raise Error(t"Invalid slice: expected {String(self.rank())} slices, got {String(len(slices))}.")
 
         var new_shape = IntTuple()
         var new_strides = IntTuple()
         var new_base_offset = self.base_offset
 
-        for dim in range(self.rank):
-            var dim_size = self.shape.value(dim)
+        for dim in range(self.rank()):
+            var dim_size = self.shape(dim)
 
             var start: Int
             var stop: Int
@@ -413,8 +423,8 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
                 else:
                     size = (start - stop + neg_step - 1) // neg_step
 
-            new_base_offset += start * self.strides.value(dim)
+            new_base_offset += start * self.stride(dim)
             new_shape.append(IntTuple(size))
-            new_strides.append(IntTuple(self.strides.value(dim) * step))
+            new_strides.append(IntTuple(self.stride(dim) * step))
 
-        layout = Self(self.rank, new_shape, new_strides, new_base_offset)
+        layout = Self(self.rank(), new_shape, new_strides, new_base_offset)

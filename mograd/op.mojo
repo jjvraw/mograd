@@ -186,7 +186,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return self._ptr[].layout
 
     def shape(ref self, i: Int) -> Int:
-        return self._ptr[].layout.shape[i].value()
+        return self._ptr[].layout.shape(i)
 
     def dtype(ref self) -> ref[self._ptr[].dtype] DType:
         return self._ptr[].dtype
@@ -258,10 +258,10 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def reshape(self, shape: Layout) raises -> Self:
-        return Self(Op(OpType.RESHAPE, self.layout().view(shape.shape), self.dtype(), [self]))
+        return Self(Op(OpType.RESHAPE, self.layout().view(shape.shape()), self.dtype(), [self]))
 
     def view(self, shape: Layout) raises -> Self:
-        return Self(Op(OpType.VIEW, self.layout().view(shape.shape), self.dtype(), [self]))
+        return Self(Op(OpType.VIEW, self.layout().view(shape.shape()), self.dtype(), [self]))
 
     def one_hot(self, var num_classes: Int, out_dtype: DType) -> OpRef:
         n = Float32(num_classes)

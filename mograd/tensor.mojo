@@ -163,7 +163,7 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
         return Self(self.device, self.op.transpose(), self.requires_grad)
 
     def __getitem__(self, s: Slice) raises -> Self:
-        var dim = self.op.layout().shape.value(0)
+        var dim = self.op.layout().shape(0)
         var start, stop, step = s.indices(dim)
         return Self(self.device, self.op.slice(start, stop, step), self.requires_grad)
 
