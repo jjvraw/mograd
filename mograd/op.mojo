@@ -60,6 +60,7 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime VIEW = OpType("VIEW")
     comptime TRANSPOSE = OpType("TRANSPOSE")
     comptime SLICE = OpType("SLICE")
+    comptime SLICE_GRAD = OpType("SLICE_GRAD")
     comptime BROADCAST = OpType("BROADCAST")
     comptime ONE_HOT = OpType("ONE_HOT")
     comptime CAST = OpType("CAST")

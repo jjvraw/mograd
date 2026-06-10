@@ -1,5 +1,3 @@
-from mograd.buffer import AnyBuffer, BufferArm
-from mograd.runtime.gpu.kernels.elementwise import add, add_strided
 from layout import Coord, TileTensor, row_major, coord
 from std.algorithm.functional import elementwise
 from std.algorithm.backend.gpu.reduction import reduce_kernel
@@ -14,13 +12,258 @@ from std.sys.info import simd_width_of
 from std.utils import IndexList
 from linalg.matmul import matmul as linalg_matmul
 from nn.argmaxmin_gpu import argmax_gpu
-from nn.rand_normal import random_normal
 from nn.rand_uniform import random_uniform
 from nn.softmax import softmax as nn_softmax
 from std.gpu.primitives.warp import max as warp_max, sum as warp_sum
 
+from mograd.buffer import AnyBuffer, BufferArm
+from mograd.runtime.gpu.kernels.init import *
+from mograd.runtime.gpu.kernels.elementwise import *
+from mograd.runtime.gpu.kernels.reduce import *
+
 # ===-------------------------------------------------------------------===#
-# Elementwise
+# Init
+# ===-------------------------------------------------------------------===#
+
+
+@export
+def mograd_randn(
+    params: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    n: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) raises:
+    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+        comptime T = AnyBuffer.BufVariant.Ts[k]
+        comptime assert conforms_to(T, BufferArm)
+        comptime d = T.node_dtype
+        if dtype == d:
+            var p = params.bitcast[Float32]()
+            randn[d](dst.bitcast[Scalar[d]](), n, p[0], p[1], p[2], ctx)
+            return
+    raise Error("unsupported dtype")
+
+
+@export
+def mograd_uniform(
+    params: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    n: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) raises:
+    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+        comptime T = AnyBuffer.BufVariant.Ts[k]
+        comptime assert conforms_to(T, BufferArm)
+        comptime d = T.node_dtype
+        comptime if d.is_floating_point():
+            if dtype == d:
+                uniform[d](params.bitcast[Float32](), dst.bitcast[Scalar[d]](), n, ctx)
+                return
+    raise Error("unsupported dtype")
+
+
+@export
+def mograd_full(
+    fill_val: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    n: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) raises:
+    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+        comptime T = AnyBuffer.BufVariant.Ts[k]
+        comptime assert conforms_to(T, BufferArm)
+        comptime d = T.node_dtype
+        if dtype == d:
+            var val = Scalar[d](fill_val.bitcast[Float32]()[0])
+            full[d](val, dst.bitcast[Scalar[d]](), n, ctx)
+            return
+    raise Error("unsupported dtype")
+
+
+@export
+def mograd_one_hot(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    n: Int,
+    in_dtype: DType,
+    out_dtype: DType,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    sd: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    ctx: DeviceContext,
+) raises:
+    comptime for ki in range(AnyBuffer.BufVariant.Ts.size):
+        comptime Ti = AnyBuffer.BufVariant.Ts[ki]
+        comptime assert conforms_to(Ti, BufferArm)
+        comptime src_d = Ti.node_dtype
+        if in_dtype == src_d:
+            comptime for ko in range(AnyBuffer.BufVariant.Ts.size):
+                comptime To = AnyBuffer.BufVariant.Ts[ko]
+                comptime assert conforms_to(To, BufferArm)
+                comptime dst_d = To.node_dtype
+                comptime if dst_d.is_integral():
+                    if out_dtype == dst_d:
+                        one_hot[src_d, dst_d](
+                            a.bitcast[Scalar[src_d]](),
+                            dst.bitcast[Scalar[dst_d]](),
+                            n,
+                            rank,
+                            inner,
+                            sd,
+                            sa,
+                            ctx,
+                        )
+                        return
+    raise Error("unsupported dtype combination")
+
+
+# ===-------------------------------------------------------------------===#
+# Unary Elementwise
+# ===-------------------------------------------------------------------===#
+
+
+@export
+def mograd_neg(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    numel: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    dtype: DType,
+    ctx: DeviceContext,
+) raises:
+    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+        comptime T = AnyBuffer.BufVariant.Ts[k]
+        comptime assert conforms_to(T, BufferArm)
+        comptime d = T.node_dtype
+        if dtype == d:
+            neg[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rank, inner, sa, numel, ctx)
+            return
+    raise Error("unsupported dtype")
+
+
+@export
+def mograd_log(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    numel: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    dtype: DType,
+    ctx: DeviceContext,
+) raises:
+    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+        comptime T = AnyBuffer.BufVariant.Ts[k]
+        comptime assert conforms_to(T, BufferArm)
+        comptime d = T.node_dtype
+        comptime if d.is_floating_point():
+            if dtype == d:
+                log[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rank, inner, sa, numel, ctx)
+                return
+    raise Error("unsupported dtype")
+
+
+@export
+def mograd_exp(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    numel: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    dtype: DType,
+    ctx: DeviceContext,
+) raises:
+    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+        comptime T = AnyBuffer.BufVariant.Ts[k]
+        comptime assert conforms_to(T, BufferArm)
+        comptime d = T.node_dtype
+        comptime if d.is_floating_point():
+            if dtype == d:
+                exp[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rank, inner, sa, numel, ctx)
+                return
+    raise Error("unsupported dtype")
+
+
+@export
+def mograd_relu(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    numel: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    dtype: DType,
+    ctx: DeviceContext,
+) raises:
+    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+        comptime T = AnyBuffer.BufVariant.Ts[k]
+        comptime assert conforms_to(T, BufferArm)
+        comptime d = T.node_dtype
+        if dtype == d:
+            relu[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rank, inner, sa, numel, ctx)
+            return
+    raise Error("unsupported dtype")
+
+
+@export
+def mograd_cast(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    numel: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    in_dtype: DType,
+    out_dtype: DType,
+    ctx: DeviceContext,
+) raises:
+    comptime for ki in range(AnyBuffer.BufVariant.Ts.size):
+        comptime Ti = AnyBuffer.BufVariant.Ts[ki]
+        comptime assert conforms_to(Ti, BufferArm)
+        comptime src_d = Ti.node_dtype
+        if in_dtype == src_d:
+            comptime for ko in range(AnyBuffer.BufVariant.Ts.size):
+                comptime To = AnyBuffer.BufVariant.Ts[ko]
+                comptime assert conforms_to(To, BufferArm)
+                comptime dst_d = To.node_dtype
+                if out_dtype == dst_d:
+                    cast[src_d, dst_d](
+                        a.bitcast[Scalar[src_d]](), dst.bitcast[Scalar[dst_d]](), rank, inner, sa, numel, ctx
+                    )
+                    return
+    raise Error("unsupported dtype combination")
+
+
+@export
+def mograd_slice_grad(
+    upstream: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    numel: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    dtype: DType,
+    ctx: DeviceContext,
+) raises:
+    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+        comptime T = AnyBuffer.BufVariant.Ts[k]
+        comptime assert conforms_to(T, BufferArm)
+        comptime d = T.node_dtype
+        if dtype == d:
+            slice_grad[d](upstream.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rank, inner, sa, numel, ctx)
+            return
+    raise Error("unsupported dtype")
+
+
+# ===-------------------------------------------------------------------===#
+# Binary Elementwise
 # ===-------------------------------------------------------------------===#
 
 
@@ -77,228 +320,15 @@ def mograd_add_strided(
 
 
 @export
-def mograd_one_hot(
+def mograd_mul(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     b: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     n: Int,
-    in_dtype: DType,
-    out_dtype: DType,
-    ctx: DeviceContext,
-) raises:
-    comptime for ki in range(AnyBuffer.BufVariant.Ts.size):
-        comptime Ti = AnyBuffer.BufVariant.Ts[ki]
-        comptime assert conforms_to(Ti, BufferArm)
-        comptime src_d = Ti.node_dtype
-        if in_dtype == src_d:
-            comptime for ko in range(AnyBuffer.BufVariant.Ts.size):
-                comptime To = AnyBuffer.BufVariant.Ts[ko]
-                comptime assert conforms_to(To, BufferArm)
-                comptime dst_d = To.node_dtype
-                comptime if dst_d.is_integral():
-                    if out_dtype == dst_d:
-                        var C = Int(b.bitcast[Float32]()[0])
-                        one_hot[src_d, dst_d](a.bitcast[Scalar[src_d]](), dst.bitcast[Scalar[dst_d]](), n, C, ctx)
-                        return
-    raise Error("unsupported dtype combination")
-
-
-def one_hot[
-    in_dtype: DType, out_dtype: DType
-](
-    a: UnsafePointer[Scalar[in_dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[out_dtype], MutAnyOrigin],
-    n: Int,
-    C: Int,
-    ctx: DeviceContext,
-) raises where out_dtype.is_integral():
-    # TODO: Vectorise
-    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-        var idx = Int(coord[0].value())
-        var class_idx = Int(a.load(idx // C))
-        dst.store(idx, Scalar[out_dtype](1) if class_idx == (idx % C) else Scalar[out_dtype](0))
-
-    elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
-
-
-@export
-def mograd_full(
-    fill_val: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        if dtype == d:
-            var val = Scalar[d](fill_val.bitcast[Float32]()[0])
-            full[d](val, dst.bitcast[Scalar[d]](), n, ctx)
-            return
-    raise Error("unsupported dtype")
-
-
-def full[
-    dtype: DType
-](val: Scalar[dtype], dst: UnsafePointer[Scalar[dtype], MutAnyOrigin], n: Int, ctx: DeviceContext,) raises:
-    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-        dst.store[simd_width](Int(coord[0].value()), val)
-
-    comptime width = simd_width_of[dtype, target=get_gpu_target()]()
-    elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
-
-
-@export
-def mograd_log(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        comptime if d.is_floating_point():
-            if dtype == d:
-                log[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), n, ctx)
-                return
-    raise Error("unsupported dtype")
-
-
-def log[
-    dtype: DType
-](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    n: Int,
-    ctx: DeviceContext,
-) raises where dtype.is_floating_point():
-    from std.math import log as math_log
-
-    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-        var idx = Int(coord[0].value())
-        dst.store[simd_width](idx, math_log(a.load[simd_width](idx)))
-
-    comptime width = simd_width_of[dtype, target=get_gpu_target()]()
-    elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
-
-
-@export
-def mograd_relu(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        if dtype == d:
-            relu[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), n, ctx)
-            return
-    raise Error("unsupported dtype")
-
-
-def relu[
-    dtype: DType
-](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    n: Int,
-    ctx: DeviceContext,
-) raises:
-    # TODO: Vectorise
-    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-        var idx = Int(coord[0].value())
-        var x = a.load(idx)
-        dst.store(idx, x if x > Scalar[dtype](0) else Scalar[dtype](0))
-
-    elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
-
-
-@export
-def mograd_exp(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        comptime if d.is_floating_point():
-            if dtype == d:
-                exp[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), n, ctx)
-                return
-    raise Error("unsupported dtype")
-
-
-def exp[
-    dtype: DType
-](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    n: Int,
-    ctx: DeviceContext,
-) raises where dtype.is_floating_point():
-    from std.math import exp as math_exp
-
-    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-        var idx = Int(coord[0].value())
-        dst.store[simd_width](idx, math_exp(a.load[simd_width](idx)))
-
-    comptime width = simd_width_of[dtype, target=get_gpu_target()]()
-    elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
-
-
-@export
-def mograd_neg(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        if dtype == d:
-            neg[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), n, ctx)
-            return
-    raise Error("unsupported dtype")
-
-
-def neg[
-    dtype: DType
-](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    n: Int,
-    ctx: DeviceContext,
-) raises:
-    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-        var idx = Int(coord[0].value())
-        dst.store[simd_width](idx, -a.load[simd_width](idx))
-
-    comptime width = simd_width_of[dtype, target=get_gpu_target()]()
-    elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
-
-
-@export
-def mograd_scale(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    scalar: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    sb: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
 ) raises:
@@ -307,100 +337,19 @@ def mograd_scale(
         comptime assert conforms_to(T, BufferArm)
         comptime d = AnyBuffer.BufVariant.Ts[k].node_dtype
         if dtype == d:
-            scale[d](a.bitcast[Scalar[d]](), scalar.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), n, ctx)
+            mul[d](
+                a.bitcast[Scalar[d]](),
+                b.bitcast[Scalar[d]](),
+                dst.bitcast[Scalar[d]](),
+                rank,
+                inner,
+                sa,
+                sb,
+                n,
+                ctx,
+            )
             return
     raise Error("unsupported dtype")
-
-
-def scale[
-    dtype: DType
-](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    n: Int,
-    ctx: DeviceContext,
-) raises:
-    var scalar_val = b.load(0)
-
-    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-        var idx = Int(coord[0].value())
-        dst.store[simd_width](idx, a.load[simd_width](idx) * scalar_val)
-
-    comptime width = simd_width_of[dtype, target=get_gpu_target()]()
-    elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
-
-
-@export
-def mograd_eq(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    b: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        if dtype == d:
-            eq[d](a.bitcast[Scalar[d]](), b.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), n, ctx)
-            return
-    raise Error("unsupported dtype")
-
-
-def eq[
-    dtype: DType
-](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    n: Int,
-    ctx: DeviceContext,
-) raises:
-    # TODO: Vectorise
-    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-        var idx = Int(coord[0].value())
-        dst.store(idx, Scalar[dtype](1) if a.load(idx) == b.load(idx) else Scalar[dtype](0))
-
-    elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
-
-
-@export
-def mograd_mul(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    b: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        if dtype == d:
-            mul[d](a.bitcast[Scalar[d]](), b.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), n, ctx)
-            return
-    raise Error("unsupported dtype")
-
-
-def mul[
-    dtype: DType
-](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    n: Int,
-    ctx: DeviceContext,
-) raises:
-    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-        var idx = Int(coord[0].value())
-        dst.store[simd_width](idx, a.load[simd_width](idx) * b.load[simd_width](idx))
-
-    comptime width = simd_width_of[dtype, target=get_gpu_target()]()
-    elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
 
 
 @export
@@ -409,41 +358,143 @@ def mograd_div(
     b: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     n: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    sb: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
 ) raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
+        comptime d = AnyBuffer.BufVariant.Ts[k].node_dtype
         if dtype == d:
-            div[d](a.bitcast[Scalar[d]](), b.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), n, ctx)
+            div[d](
+                a.bitcast[Scalar[d]](),
+                b.bitcast[Scalar[d]](),
+                dst.bitcast[Scalar[d]](),
+                rank,
+                inner,
+                sa,
+                sb,
+                n,
+                ctx,
+            )
             return
     raise Error("unsupported dtype")
-
-
-def div[
-    dtype: DType
-](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    n: Int,
-    ctx: DeviceContext,
-) raises:
-    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-        var idx = Int(coord[0].value())
-        dst.store[simd_width](idx, a.load[simd_width](idx) / b.load[simd_width](idx))
-
-    comptime width = simd_width_of[dtype, target=get_gpu_target()]()
-    elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
 
 
 @export
-def mograd_randn(
-    params: UnsafePointer[NoneType, MutAnyOrigin],
+def mograd_eq(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    b: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     n: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    sb: UnsafePointer[Int64, MutAnyOrigin],
+    dtype: DType,
+    ctx: DeviceContext,
+) raises:
+    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+        comptime T = AnyBuffer.BufVariant.Ts[k]
+        comptime assert conforms_to(T, BufferArm)
+        comptime d = AnyBuffer.BufVariant.Ts[k].node_dtype
+        if dtype == d:
+            eq[d](
+                a.bitcast[Scalar[d]](),
+                b.bitcast[Scalar[d]](),
+                dst.bitcast[Scalar[d]](),
+                rank,
+                inner,
+                sa,
+                sb,
+                n,
+                ctx,
+            )
+            return
+    raise Error("unsupported dtype")
+
+
+@export
+def mograd_relu_grad(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    b: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    n: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    sb: UnsafePointer[Int64, MutAnyOrigin],
+    dtype: DType,
+    ctx: DeviceContext,
+) raises:
+    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+        comptime T = AnyBuffer.BufVariant.Ts[k]
+        comptime assert conforms_to(T, BufferArm)
+        comptime d = AnyBuffer.BufVariant.Ts[k].node_dtype
+        if dtype == d:
+            relu_grad[d](
+                a.bitcast[Scalar[d]](),
+                b.bitcast[Scalar[d]](),
+                dst.bitcast[Scalar[d]](),
+                rank,
+                inner,
+                sa,
+                sb,
+                n,
+                ctx,
+            )
+            return
+    raise Error("unsupported dtype")
+
+
+@export
+def mograd_scale(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    b: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    n: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    dtype: DType,
+    ctx: DeviceContext,
+) raises:
+    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+        comptime T = AnyBuffer.BufVariant.Ts[k]
+        comptime assert conforms_to(T, BufferArm)
+        comptime d = AnyBuffer.BufVariant.Ts[k].node_dtype
+        if dtype == d:
+            scale[d](
+                a.bitcast[Scalar[d]](),
+                b.bitcast[Scalar[d]](),
+                dst.bitcast[Scalar[d]](),
+                rank,
+                inner,
+                sa,
+                n,
+                ctx,
+            )
+            return
+    raise Error("unsupported dtype")
+
+
+# ===-------------------------------------------------------------------===#
+# Reduce
+# ===-------------------------------------------------------------------===#
+
+
+@export
+def mograd_sum(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    n: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
 ) raises:
@@ -452,36 +503,9 @@ def mograd_randn(
         comptime assert conforms_to(T, BufferArm)
         comptime d = T.node_dtype
         if dtype == d:
-            var p = params.bitcast[Float32]()
-            randn[d](dst.bitcast[Scalar[d]](), n, p[0], p[1], p[2], ctx)
+            sum[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rank, inner, sa, n, ctx)
             return
     raise Error("unsupported dtype")
-
-
-def randn[
-    dtype: DType
-](
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    n: Int,
-    mean: Float32,
-    std: Float32,
-    seed: Float32,
-    ctx: DeviceContext,
-) raises:
-    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](1)
-    seed_buf.enqueue_fill(UInt64(Int(seed)))
-
-    def store[width: Int, rank: Int](idx: IndexList[rank], val: SIMD[dtype, width]) capturing:
-        dst.store(idx[0], val)
-
-    random_normal[output_fn=store, target="gpu"](
-        IndexList[1](n),
-        mean,
-        std,
-        seed_buf.unsafe_ptr(),
-        ctx,
-    )
-    ctx.synchronize()
 
 
 @export
@@ -523,54 +547,6 @@ def softmax[
 
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     nn_softmax[dtype, simd_width, 2, input_fn, "gpu"](Coord(rows, cols), out, axis=1, context=ctx)
-    ctx.synchronize()
-
-
-@export
-def mograd_sum(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        if dtype == d:
-            sum[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), n, ctx)
-            return
-    raise Error("unsupported dtype")
-
-
-def sum[
-    dtype: DType
-](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    n: Int,
-    ctx: DeviceContext,
-) raises:
-    @always_inline
-    def input_fn[_d: DType, w: Int, r: Int](coords: IndexList[r]) capturing -> SIMD[_d, w]:
-        return a.load[width=w](coords[0])._refine[_d]()
-
-    @always_inline
-    def output_fn[_d: DType, w: SIMDSize, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
-        dst.store[width=w](coords[0], val[0]._refine[dtype]())
-
-    @always_inline
-    def reduce_fn[ty: DType, w: SIMDSize, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
-        return v1 + v2
-
-    comptime kernel = reduce_kernel[1, 0, 1, CE_BLOCK, input_fn, output_fn, reduce_fn, dtype, 1]
-    ctx.enqueue_function[kernel](
-        IndexList[1](n),
-        StaticTuple[Scalar[dtype], 1](0),
-        grid_dim=(1,),
-        block_dim=(CE_BLOCK,),
-    )
     ctx.synchronize()
 
 
@@ -855,48 +831,6 @@ def mograd_cross_entropy(
     raise Error("unsupported dtype")
 
 
-@export
-def mograd_cast(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    src_dtype: DType,
-    dst_dtype: DType,
-    ctx: DeviceContext,
-) raises:
-    comptime for ki in range(AnyBuffer.BufVariant.Ts.size):
-        comptime Ti = AnyBuffer.BufVariant.Ts[ki]
-        comptime assert conforms_to(Ti, BufferArm)
-        comptime src_d = Ti.node_dtype
-        if src_dtype == src_d:
-            comptime for ko in range(AnyBuffer.BufVariant.Ts.size):
-                comptime To = AnyBuffer.BufVariant.Ts[ko]
-                comptime assert conforms_to(To, BufferArm)
-                comptime dst_d = To.node_dtype
-                if dst_dtype == dst_d:
-                    cast[src_d, dst_d](a.bitcast[Scalar[src_d]](), dst.bitcast[Scalar[dst_d]](), n, ctx)
-                    return
-    raise Error("unsupported dtype combination")
-
-
-def cast[
-    src_dtype: DType, dst_dtype: DType
-](
-    a: UnsafePointer[Scalar[src_dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dst_dtype], MutAnyOrigin],
-    n: Int,
-    ctx: DeviceContext,
-) raises:
-    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-        var idx = Int(coord[0].value())
-        dst.store[simd_width](idx, a.load[simd_width](idx).cast[dst_dtype]())
-
-    comptime width = min(
-        simd_width_of[src_dtype, target=get_gpu_target()](), simd_width_of[dst_dtype, target=get_gpu_target()]()
-    )
-    elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
-
-
 # ===-------------------------------------------------------------------===#
 # Broadcast
 # ===-------------------------------------------------------------------===#
@@ -935,91 +869,6 @@ def broadcast[
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var idx = Int(coord[0].value())
         dst.store(idx, a.load(idx % inp_size))
-
-    elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
-
-
-# ===-------------------------------------------------------------------===#
-# Uniform
-# ===-------------------------------------------------------------------===#
-
-
-@export
-def mograd_uniform(
-    params: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        comptime if d.is_floating_point():
-            if dtype == d:
-                uniform[d](params.bitcast[Float32](), dst.bitcast[Scalar[d]](), n, ctx)
-                return
-    raise Error("unsupported dtype")
-
-
-def uniform[
-    dtype: DType
-](
-    params: UnsafePointer[Float32, MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    n: Int,
-    ctx: DeviceContext,
-) raises where dtype.is_floating_point():
-    var low = Scalar[dtype](params[0])
-    var high = Scalar[dtype](params[1])
-    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](1)
-    seed_buf.enqueue_fill(UInt64(Int(params[2])))
-
-    def store[width: Int, rank: Int](idx: IndexList[rank], val: SIMD[dtype, width]) capturing:
-        dst.store(idx[0], val)
-
-    random_uniform[output_fn=store, target="gpu"](IndexList[1](n), low, high, seed_buf.unsafe_ptr(), ctx)
-    ctx.synchronize()
-
-
-# ===-------------------------------------------------------------------===#
-# ReLU Grad
-# ===-------------------------------------------------------------------===#
-
-
-@export
-def mograd_relu_grad(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    b: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        if dtype == d:
-            relu_grad[d](a.bitcast[Scalar[d]](), b.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), n, ctx)
-            return
-    raise Error("unsupported dtype")
-
-
-def relu_grad[
-    dtype: DType
-](
-    x: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    upstream: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    n: Int,
-    ctx: DeviceContext,
-) raises:
-    # TODO: Vectorise
-    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-        var idx = Int(coord[0].value())
-        dst.store(idx, upstream.load(idx) if x.load(idx) > Scalar[dtype](0) else Scalar[dtype](0))
 
     elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
 

@@ -36,6 +36,7 @@ struct Grad[dtype: DType] where dtype.is_floating_point():
                 Rule(Pat(OpType.SUM), sum_grad),
                 Rule(Pat(OpType.RESHAPE), reshape_grad),
                 Rule(Pat(OpType.VIEW), view_grad),
+                Rule(Pat(OpType.SLICE), slice_grad),
                 Rule(Pat(OpType.MATMUL), matmul_grad),
                 Rule(Pat(OpType.CROSS_ENTROPY), cross_entropy_grad),
                 Rule(Pat(OpType.SCALE), scale_grad),
@@ -122,6 +123,10 @@ def reshape_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
 
 def view_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     return [OpRef(Op(OpType.VIEW, node.src(0).layout(), node.dtype(), [upstream]))]
+
+
+def slice_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    return [OpRef(Op(OpType.SLICE_GRAD, node.src(0).layout().as_contiguous(), node.dtype(), [upstream, node]))]
 
 
 def scale_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:

@@ -51,6 +51,80 @@ def test_sub_strided() raises:
     var c = a[0:3:2] - b
     assert_allclose(c, [Float32(9), 19, 49, 59])
 
+def test_log_strided() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2.718282, 0, 0, 7.389056, 1, 0, 0], (4, 2))
+    var sa = a[0:4:2]
+    assert_true(not sa.is_contiguous())
+    var c = sa.log()
+    assert_allclose(c, [Float32(0), 1, 2, 0], tol=1e-5)
+
+
+def test_exp_strided() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(0), 1, 0, 0, 2, 0, 0, 0], (4, 2))
+    var sa = a[0:4:2]
+    assert_true(not sa.is_contiguous())
+    var c = sa.exp()
+    assert_allclose(c, [Float32(1), 2.718282, 7.389056, 1], tol=1e-5)
+
+
+def test_relu_strided() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(-1), 2, 0, 0, -3, 4, 0, 0], (4, 2))
+    var sa = a[0:4:2]
+    assert_true(not sa.is_contiguous())
+    var c = sa.relu()
+    assert_allclose(c, [Float32(0), 2, 0, 4])
+
+
+def test_neg_strided() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8], (4, 2))
+    var sa = a[0:4:2]
+    assert_true(not sa.is_contiguous())
+    var c = -sa
+    assert_allclose(c, [Float32(-1), -2, -5, -6])
+
+
+def test_eq_strided() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 0, 2, 0, 1, 0, 3, 0], (4, 2))
+    var b = Tensor.full(device, (2, 2), Float32(1))
+    var sa = a[0:4:2]
+    assert_true(not sa.is_contiguous())
+    var c = sa == b
+    assert_allclose(c, [Float32(1), 0, 1, 0])
+
+
+def test_cast_strided() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8], (4, 2))
+    var sa = a[0:4:2]
+    assert_true(not sa.is_contiguous())
+    var c = sa.cast[DType.float16]()
+    assert_allclose(c, [Float16(1), 2, 5, 6])
+
+
+def test_scale_strided() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8], (4, 2))
+    var sa = a[0:4:2]
+    assert_true(not sa.is_contiguous())
+    var c = sa * Float32(3)
+    assert_allclose(c, [Float32(3), 6, 15, 18])
+
+
+def test_grad_relu_strided() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(-1), 2, 0, 0, -3, 4, 0, 0], (4, 2), requires_grad=True)
+    var sa = a[0:4:2]
+    assert_true(not sa.is_contiguous())
+    var c = sa.relu().sum()
+    var grads = c.gradient([a])
+    assert_allclose(grads[0], [Float32(0), 1, 0, 0, 0, 1, 0, 0])
+
+
 def test_grad_add_strided() raises:
     var device = Device()
     var a_data: List[Float32] = [1, 2, 3, 4, 5, 6, 7, 8]
@@ -59,6 +133,35 @@ def test_grad_add_strided() raises:
     var c = (a[0:4:2] + b).sum()
     var grads = c.gradient([a])
     assert_allclose(grads[0], [Float32(1), 1, 0, 0, 1, 1, 0, 0])
+
+
+def test_mul_strided() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], (6, 2))
+    var b = Tensor.full(device, (3, 2), Float32(2))
+    var sa = a[0:6:2]
+    assert_true(not sa.is_contiguous())
+    var c = sa * b
+    assert_allclose(c, [Float32(2), 4, 10, 12, 18, 20])
+
+
+def test_div_strided() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(2), 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24], (6, 2))
+    var b = Tensor.full(device, (3, 2), Float32(2))
+    var sa = a[0:6:2]
+    assert_true(not sa.is_contiguous())
+    var c = sa / b
+    assert_allclose(c, [Float32(1), 2, 5, 6, 9, 10])
+
+
+def test_one_hot_strided_labels() raises:
+    var device = Device()
+    var labels = Tensor(device, [Int64(0), 99, 2, 99, 1, 99], (6,))
+    var sliced = labels[0:6:2]
+    assert_true(not sliced.is_contiguous())
+    var oh = sliced.one_hot(3)
+    assert_allclose(oh, [Int64(1), 0, 0, 0, 0, 1, 0, 1, 0])
 
 
 def main() raises:

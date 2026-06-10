@@ -14,7 +14,7 @@ from mograd import Device
 trait BufferArm(Copyable, Movable):
     comptime node_dtype: DType
 
-    def raw_ptr(ref self) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
+    def raw_ptr(ref self, with_offset: Bool = True) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
         ...
 
 
@@ -48,11 +48,12 @@ struct Buffer[dtype: DType](BufferArm, Copyable):
     def buf(ref self) -> ref[self._ptr[]] DeviceBuffer[Self.dtype]:
         return self._ptr[]
 
-    def data_ptr(ref self) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
-        return self.buf().unsafe_ptr() + self.base_offset
+    def data_ptr(ref self, with_offset: Bool = True) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+        offset = self.base_offset if with_offset else 0
+        return self.buf().unsafe_ptr() + offset
 
-    def raw_ptr(ref self) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
-        return self.data_ptr().bitcast[NoneType]()
+    def raw_ptr(ref self, with_offset: Bool = True) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
+        return self.data_ptr(with_offset).bitcast[NoneType]()
 
     @staticmethod
     def empty(device: Device, numel: Int) raises -> Self:
@@ -86,7 +87,7 @@ struct Buffer[dtype: DType](BufferArm, Copyable):
 
 
 struct AnyBuffer(Copyable, Movable):
-    comptime BufVariant = Variant[Buffer[DType.float32], Buffer[DType.int64]]
+    comptime BufVariant = Variant[Buffer[DType.float16], Buffer[DType.float32], Buffer[DType.int64]]
     var _buf: Self.BufVariant
 
     @implicit
@@ -99,12 +100,12 @@ struct AnyBuffer(Copyable, Movable):
     def unsafe_get[dtype: DType](ref self) -> ref[self._buf] Buffer[dtype]:
         return self._buf.unsafe_get[Buffer[dtype]]()
 
-    def data_ptr(ref self) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
+    def data_ptr(ref self, with_offset: Bool = True) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
         comptime for k in range(Self.BufVariant.Ts.size):
             comptime T = Self.BufVariant.Ts[k]
             comptime assert conforms_to(T, BufferArm)
             if self._buf.isa[T]():
-                return trait_downcast[BufferArm](self._buf.unsafe_get[T]()).raw_ptr()
+                return trait_downcast[BufferArm](self._buf.unsafe_get[T]()).raw_ptr(with_offset)
         raise Error("Unsupported dtype")
 
     def view(ref self, layout: Layout) raises -> AnyBuffer:
@@ -127,4 +128,14 @@ struct AnyBuffer(Copyable, Movable):
             if dtype == d:
                 var dev_buf = device.ctx.enqueue_create_buffer[d](numel)
                 return AnyBuffer(Buffer[d](dev_buf^, numel))
+        raise Error("Unsupported dtype: " + String(dtype))
+
+    @staticmethod
+    def full(dtype: DType, device: Device, value: Float32, numel: Int) raises -> AnyBuffer:
+        comptime for k in range(Self.BufVariant.Ts.size):
+            comptime T = Self.BufVariant.Ts[k]
+            comptime assert conforms_to(T, BufferArm)
+            comptime d = T.node_dtype
+            if dtype == d:
+                return AnyBuffer(Buffer[d].full(device, Scalar[d](value), numel))
         raise Error("Unsupported dtype: " + String(dtype))
