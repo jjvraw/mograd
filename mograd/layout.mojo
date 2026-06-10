@@ -1,5 +1,6 @@
 from std.format.tstring import TString
 from std.builtin.builtin_slice import StridedSlice
+from std.gpu.host import DeviceBuffer, DeviceContext
 
 from layout.int_tuple import IntTuple, reverse, prefix_product, product, sorted
 
@@ -148,6 +149,37 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Sized, Writable):
     def as_contiguous(self) -> Layout:
         """Returns a new row-major layout with the same shape, zeroing base_offset."""
         return Layout(self.rank, self.shape, Self.row_major_strides(self.shape), 0)
+
+    def inner_sizes(self) -> IntTuple:
+        """Suffix products of shape, used to decompose a flat index into coordinates.
+
+        For shape (3, 4, 5) returns (20, 5, 1).
+        """
+        var result = IntTuple()
+        var acc = 1
+        for i in range(self.rank - 1, -1, -1):
+            result.append(IntTuple(acc))
+            acc *= self.shape.value(i)
+        return reverse(result)
+
+    def strides_buffer(self, ctx: DeviceContext) raises -> DeviceBuffer[DType.int64]:
+        """Uploads strides to a device buffer."""
+        var host = List[Int64](capacity=self.rank)
+        for i in range(self.rank):
+            host.append(Int64(self.strides.value(i)))
+        var buf = ctx.enqueue_create_buffer[DType.int64](self.rank)
+        buf.enqueue_copy_from(Span(host))
+        return buf^
+
+    def inner_sizes_buffer(self, ctx: DeviceContext) raises -> DeviceBuffer[DType.int64]:
+        """Uploads inner_sizes to a device buffer."""
+        var inner = self.inner_sizes()
+        var host = List[Int64](capacity=self.rank)
+        for i in range(self.rank):
+            host.append(Int64(inner.value(i)))
+        var buf = ctx.enqueue_create_buffer[DType.int64](self.rank)
+        buf.enqueue_copy_from(Span(host))
+        return buf^
 
     # ===-------------------------------------------------------------------===#
     # Permute

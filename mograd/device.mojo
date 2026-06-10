@@ -8,6 +8,10 @@ from std.os.env import getenv
 # ===-------------------------------------------------------------------===#
 
 
+def device(out device: Device) raises:
+    device = Device()
+
+
 @fieldwise_init
 struct Device(Copyable, ImplicitlyCopyable, Movable):
     var ctx: DeviceContext

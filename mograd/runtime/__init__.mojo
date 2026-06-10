@@ -1,4 +1,4 @@
-from std.gpu.host import DeviceContext
+from std.gpu.host import DeviceContext, DeviceBuffer
 from std.ffi import OwnedDLHandle
 from std.pathlib.path import Path
 from std.os.env import getenv
@@ -31,11 +31,12 @@ struct NativeRuntime(Runtime):
         var simplified = Simplifier(GPU_REWRITES()).run(root)
         return Scheduler(
             [
+                # Elementwise
+                Rule(Pat(OpType.ADD), add),
                 # Unary
                 Rule(Pat(OpType.RANDN), randn),
                 Rule(Pat(OpType.FULL), full),
                 Rule(Pat(OpType.ONE_HOT), one_hot),
-                Rule(Pat(OpType.ADD), add),
                 Rule(Pat(OpType.EQ), eq),
                 Rule(Pat(OpType.MUL), mul),
                 Rule(Pat(OpType.DIV), div),
@@ -64,6 +65,67 @@ struct NativeRuntime(Runtime):
                 Rule(Pat(OpType.CROSS_ENTROPY_GRAD), cross_entropy_grad),
             ]
         ).run(simplified, device.value())
+
+
+# ===-------------------------------------------------------------------===#
+# Elementwise
+# ===-------------------------------------------------------------------===#
+
+comptime BinaryElementWise = def(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    b: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    numel: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) thin abi("C") raises -> None
+
+comptime BinaryElementWiseStrided = def(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    b: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    numel: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    sb: UnsafePointer[Int64, MutAnyOrigin],
+    dtype: DType,
+    ctx: DeviceContext,
+) thin abi("C") raises -> None
+
+
+def add(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+    var la = node.src(0).layout()
+    var lb = node.src(1).layout()
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
+    if la.is_contiguous() and lb.is_contiguous():
+        null = alloc[Int64](1)
+        device.handle[].get_function[BinaryElementWise]("mograd_add")(
+            inputs[0].data_ptr(),
+            inputs[1].data_ptr(),
+            out.data_ptr(),
+            node.layout().numel(),
+            node.dtype(),
+            device.ctx,
+        )
+        null.free()
+    else:
+        var inner_buf = la.inner_sizes_buffer(device.ctx)
+        var sa_buf = la.strides_buffer(device.ctx)
+        var sb_buf = lb.strides_buffer(device.ctx)
+        device.handle[].get_function[BinaryElementWiseStrided]("mograd_add_strided")(
+            inputs[0].data_ptr(),
+            inputs[1].data_ptr(),
+            out.data_ptr(),
+            node.layout().numel(),
+            la.rank,
+            inner_buf.unsafe_ptr(),
+            sa_buf.unsafe_ptr(),
+            sb_buf.unsafe_ptr(),
+            node.dtype(),
+            device.ctx,
+        )
+    return out^
 
 
 # ===-------------------------------------------------------------------===#
@@ -285,13 +347,6 @@ def div(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffe
         node.dtype(),
         device.ctx,
     )
-    return out^
-
-
-def add(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    var func = device.handle[].get_function[BinaryOp]("mograd_add")
-    func(inputs[0].data_ptr(), inputs[1].data_ptr(), out.data_ptr(), node.layout().numel(), node.dtype(), device.ctx)
     return out^
 
 

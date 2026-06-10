@@ -7,7 +7,7 @@ from mograd.testing import assert_allclose, assert_close
 # TODO: Uniform, reshape, broadcast
 
 # ===-------------------------------------------------------------------===#
-# Pointwise operations
+# Elementwise operations
 # ===-------------------------------------------------------------------===#
 
 

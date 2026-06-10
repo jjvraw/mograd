@@ -1,4 +1,5 @@
 from mograd.buffer import AnyBuffer, BufferArm
+from mograd.runtime.gpu.kernels.elementwise import add, add_strided
 from layout import Coord, TileTensor, row_major, coord
 from std.algorithm.functional import elementwise
 from std.algorithm.backend.gpu.reduction import reduce_kernel
@@ -17,6 +18,10 @@ from nn.rand_normal import random_normal
 from nn.rand_uniform import random_uniform
 from nn.softmax import softmax as nn_softmax
 from std.gpu.primitives.warp import max as warp_max, sum as warp_sum
+
+# ===-------------------------------------------------------------------===#
+# Elementwise
+# ===-------------------------------------------------------------------===#
 
 
 @export
@@ -38,21 +43,37 @@ def mograd_add(
     raise Error("unsupported dtype")
 
 
-def add[
-    dtype: DType
-](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+@export
+def mograd_add_strided(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    b: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
     n: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    sb: UnsafePointer[Int64, MutAnyOrigin],
+    dtype: DType,
     ctx: DeviceContext,
 ) raises:
-    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-        var idx = Int(coord[0].value())
-        dst.store[simd_width](idx, a.load[simd_width](idx) + b.load[simd_width](idx))
-
-    comptime width = simd_width_of[dtype, target=get_gpu_target()]()
-    elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
+    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+        comptime T = AnyBuffer.BufVariant.Ts[k]
+        comptime assert conforms_to(T, BufferArm)
+        comptime d = AnyBuffer.BufVariant.Ts[k].node_dtype
+        if dtype == d:
+            add_strided[d](
+                a.bitcast[Scalar[d]](),
+                b.bitcast[Scalar[d]](),
+                dst.bitcast[Scalar[d]](),
+                rank,
+                inner,
+                sa,
+                sb,
+                n,
+                ctx,
+            )
+            return
+    raise Error("unsupported dtype")
 
 
 @export

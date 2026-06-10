@@ -29,7 +29,7 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime DISK = OpType("DISK")
 
     # ===-------------------------------------------------------------------===#
-    # Pointwise ops
+    # Elementwise ops
     # ===-------------------------------------------------------------------===#
 
     comptime ADD = OpType("ADD")
@@ -206,7 +206,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return self._ptr[].attrs.copy()
 
     # ===-------------------------------------------------------------------===#
-    # Pointwise operations
+    # Elementwise operations
     # ===-------------------------------------------------------------------===#
 
     def __add__(self, rhs: OpRef) -> Self:

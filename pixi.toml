@@ -38,12 +38,12 @@ lint = {features = ["lint"]}
 mojo = ">=1.0.0b2.dev2026050306,<2"
 
 [feature.lint.tasks]
-format-check = { cmd = "mojo format -l 120 mograd/ && git diff --exit-code" }
+format-check = { cmd = "mojo format -l 120 mograd/ benches/ && git diff --exit-code" }
 
 [tasks]
 build-gpu = { cmd = "gcc -c -fPIC -o mograd/runtime/gpu/kernels/pin.o mograd/runtime/gpu/kernels/pin.c && mojo build --emit shared-lib mograd/runtime/gpu/kernels/__init__.mojo -o $PIXI_PROJECT_ROOT/$MOGRAD_SO -Xlinker $PIXI_PROJECT_ROOT/mograd/runtime/gpu/kernels/pin.o" }
 
-format = { cmd = "mojo format -l 120 mograd/"}
+format = { cmd = "mojo format -l 120 mograd/ benches/"}
 
 # Test GPU
 test-grad               = { cmd = "mojo -I . tests/test_grad.mojo" }
@@ -74,3 +74,6 @@ examples-b              = { depends-on = ["build-gpu", "examples"] }
 # Test All
 test-all                = { depends-on = ["test-gpu", "test-graph", "examples"] }
 test-all-b              = { depends-on = ["build-gpu", "test-all"] }
+
+# Benchamrks
+bench-elementwise       = { cmd = "mojo -I . benches/elementwise.mojo" }

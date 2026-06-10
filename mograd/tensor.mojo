@@ -171,7 +171,7 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
         return Tensor[out_dtype](self.device, self.op.cast(out_dtype), self.requires_grad)
 
     # ===-------------------------------------------------------------------===#
-    # Pointwise operations
+    # Elementwise operations
     # ===-------------------------------------------------------------------===#
 
     def __add__(self, other: Self) -> Self:
