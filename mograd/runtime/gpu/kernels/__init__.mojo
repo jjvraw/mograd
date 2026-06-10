@@ -33,7 +33,7 @@ def mograd_randn(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -52,7 +52,7 @@ def mograd_uniform(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -71,7 +71,7 @@ def mograd_full(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -95,7 +95,7 @@ def mograd_one_hot(
     sd: UnsafePointer[Int64, MutAnyOrigin],
     sa: UnsafePointer[Int64, MutAnyOrigin],
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for ki in range(AnyBuffer.BufVariant.Ts.size):
         comptime Ti = AnyBuffer.BufVariant.Ts[ki]
         comptime assert conforms_to(Ti, BufferArm)
@@ -136,7 +136,7 @@ def mograd_neg(
     sa: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -157,7 +157,7 @@ def mograd_log(
     sa: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -179,7 +179,7 @@ def mograd_exp(
     sa: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -201,7 +201,7 @@ def mograd_relu(
     sa: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -223,7 +223,7 @@ def mograd_cast(
     in_dtype: DType,
     out_dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for ki in range(AnyBuffer.BufVariant.Ts.size):
         comptime Ti = AnyBuffer.BufVariant.Ts[ki]
         comptime assert conforms_to(Ti, BufferArm)
@@ -251,7 +251,7 @@ def mograd_slice_grad(
     sa: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -275,7 +275,7 @@ def mograd_add(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -298,7 +298,7 @@ def mograd_add_strided(
     sb: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -331,7 +331,7 @@ def mograd_mul(
     sb: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -364,7 +364,7 @@ def mograd_div(
     sb: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -397,7 +397,7 @@ def mograd_eq(
     sb: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -430,7 +430,7 @@ def mograd_relu_grad(
     sb: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -462,7 +462,7 @@ def mograd_scale(
     sa: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -497,7 +497,7 @@ def mograd_sum(
     sa: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -516,7 +516,7 @@ def mograd_softmax(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -539,7 +539,7 @@ def softmax[
     rows: Int,
     cols: Int,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     var out = TileTensor(dst.as_any_origin(), row_major(Coord(rows, cols)))
 
     def input_fn[width: Int](coords: Coord) capturing -> SIMD[dtype, width]:
@@ -559,7 +559,7 @@ def mograd_matmul(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -584,7 +584,7 @@ def matmul[
     K: Int,
     N: Int,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     var ta = TileTensor(a.as_any_origin(), row_major(Coord(M, K)))
     var tb = TileTensor(b.as_any_origin(), row_major(Coord(K, N)))
     var tc = TileTensor(dst.as_any_origin(), row_major(Coord(M, N)))
@@ -600,7 +600,7 @@ def mograd_matmul_t(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -625,7 +625,7 @@ def matmul_t[
     K: Int,
     N: Int,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     var ta = TileTensor(a.as_any_origin(), row_major(Coord(M, K)))
     var tb = TileTensor(b.as_any_origin(), row_major(Coord(N, K)))
     var tc = TileTensor(dst.as_any_origin(), row_major(Coord(M, N)))
@@ -655,7 +655,7 @@ def mograd_transpose(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -685,7 +685,7 @@ def mograd_argmax(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -799,7 +799,7 @@ def mograd_cross_entropy(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -844,7 +844,7 @@ def mograd_broadcast(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -864,7 +864,7 @@ def broadcast[
     dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     n: Int,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     # TODO: Vectorise
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var idx = Int(coord[0].value())
@@ -908,7 +908,7 @@ def mograd_softmax_grad(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -1003,7 +1003,7 @@ def mograd_cross_entropy_grad(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) raises:
+) abi("C") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
