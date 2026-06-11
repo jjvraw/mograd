@@ -164,6 +164,77 @@ def test_one_hot_strided_labels() raises:
     assert_allclose(oh, [Int64(1), 0, 0, 0, 0, 1, 0, 1, 0])
 
 
+def test_transpose_strided() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], (6, 2))
+    var sa = a[0:6:2]
+    assert_true(not sa.is_contiguous())
+    assert_allclose(sa.transpose(), [Float32(1), 5, 9, 2, 6, 10])
+
+
+def test_matmul_strided_lhs() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], (6, 2))
+    var sa = a[0:6:2]
+    assert_true(not sa.is_contiguous())
+    var identity = Tensor(device, [Float32(1), 0, 0, 1], (2, 2))
+    assert_allclose(sa @ identity, [Float32(1), 2, 5, 6, 9, 10])
+
+
+def test_matmul_strided_rhs() raises:
+    var device = Device()
+    var b = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], (6, 2))
+    var sb = b[0:6:2]
+    assert_true(not sb.is_contiguous())
+    var ones = Tensor.ones(device, (2, 3))
+    assert_allclose(ones @ sb, [Float32(15), 18, 15, 18])
+
+
+def test_sum_axis_strided() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], (6, 2))
+    var sa = a[0:6:2]
+    assert_true(not sa.is_contiguous())
+    assert_allclose(sa.sum(axis=0), [Float32(15), 18])
+
+
+def test_softmax_strided() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2, 100, 100, 3, 4, 100, 100], (4, 2))
+    var sa = a[0:4:2]
+    assert_true(not sa.is_contiguous())
+    var out = sa.softmax()
+    assert_allclose(out.sum(axis=1), [Float32(1), 1], tol=1e-5)
+    var row1 = out[1:2]
+    assert_true(row1.to_list()[0] < Float32(0.4))
+
+
+def test_argmax_strided() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 4, 5, 0, 2, 3, 0, 9], (4, 2))
+    var sa = a[0:4:2]
+    assert_true(not sa.is_contiguous())
+    assert_allclose(sa.argmax(), [Float32(1), 1])
+
+
+def test_cross_entropy_strided_logits() raises:
+    var device = Device()
+    var logits = Tensor(device, [Float32(0), 0, 100, 0, 0, 0, 0, 0], (4, 2))
+    var sl = logits[0:4:2]
+    assert_true(not sl.is_contiguous())
+    var labels = Tensor.full(device, (2, 2), Float32(0.5))
+    assert_close(sl.cross_entropy(labels), Float32(0.693147), tol=1e-3)
+
+
+def test_reshape_strided() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], (6, 2))
+    var sa = a[0:6:2]  # [[1,2],[5,6],[9,10]]
+    assert_true(not sa.is_contiguous())
+    var r = sa.reshape((1, 6))
+    assert_allclose(r, [Float32(1), 2, 5, 6, 9, 10])
+
+
 def main() raises:
     comptime assert has_accelerator(), "GPU required to run non-contiguous tests"
     TestSuite.discover_tests[__functions_in_module()]().run()

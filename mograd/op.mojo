@@ -246,7 +246,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return Self(Op(OpType.RELU, self.layout().as_contiguous(), self.dtype(), [self]))
 
     def softmax(self) -> Self:
-        return Self(Op(OpType.SOFTMAX, self.layout().as_contiguous(), self.dtype(), [self]))
+        return Self(Op(OpType.SOFTMAX, self.layout().as_contiguous(), self.dtype(), [self.contiguous()]))
 
     def eq(self, other: OpRef) -> Self:
         return Self(Op(OpType.EQ, self.layout().as_contiguous(), self.dtype(), [self, other]))
@@ -261,17 +261,18 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         var ax = axis.value()
         var out_layout = self.layout().reduce_output_shape(ax, keepdim)
         attrs: Attrs = {"axis": ax}
-        return Self(Op(OpType.SUM, out_layout, self.dtype(), [self], attrs=attrs^))
+        return Self(Op(OpType.SUM, out_layout, self.dtype(), [self.contiguous()], attrs=attrs^))
 
     def argmax(self) -> Self:
-        return Self(Op(OpType.ARGMAX, (self.shape(0),), self.dtype(), [self]))
+        return Self(Op(OpType.ARGMAX, (self.shape(0),), self.dtype(), [self.contiguous()]))
 
     # ===-------------------------------------------------------------------===#
     # Shape operations
     # ===-------------------------------------------------------------------===#
 
     def reshape(self, shape: Layout) raises -> Self:
-        return Self(Op(OpType.RESHAPE, self.layout().view(shape.shape()), self.dtype(), [self]))
+        var src = self.contiguous()
+        return Self(Op(OpType.RESHAPE, src.layout().view(shape.shape()), self.dtype(), [src]))
 
     def view(self, shape: Layout) raises -> Self:
         assert self.layout().is_contiguous(), "Tensor.view requires contiguous layout."
@@ -313,7 +314,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def cross_entropy(self, labels: Self) -> Self:
-        return Self(Op(OpType.CROSS_ENTROPY, (1,), self.dtype(), [self, labels]))
+        return Self(Op(OpType.CROSS_ENTROPY, (1,), self.dtype(), [self.contiguous(), labels]))
 
     # ===-------------------------------------------------------------------===#
     # Trait methods
