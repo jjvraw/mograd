@@ -10,7 +10,12 @@ from mograd.pattern_matcher import Rule, Pat
 from mograd.scheduler import Scheduler, BoundExecFn
 from mograd.simplify import Simplifier
 from mograd.runtime.gpu.rewrites import MATMUL_T, GPU_REWRITES
-from mograd.runtime.gpu.kernels.utils import FactoryKernel
+from mograd.runtime.gpu.kernels.utils import (
+    FactoryKernel,
+    UnaryElementWiseStrided,
+    unary_elem_strided,
+    binary_elem_strided,
+)
 
 # ===-------------------------------------------------------------------===#
 # Runtime
@@ -78,17 +83,6 @@ struct NativeRuntime(Runtime):
 # Signatures
 # ===-------------------------------------------------------------------===#
 
-comptime UnaryElementWiseStrided = def(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    numel: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    strides_a: UnsafePointer[Int64, MutAnyOrigin],
-    dtype: DType,
-    ctx: DeviceContext,
-) thin abi("C") raises -> None
-
 comptime OneHotOp = def(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
@@ -107,19 +101,6 @@ comptime BinaryElementWise = def(
     b: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     numel: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) thin abi("C") raises -> None
-
-comptime BinaryElementWiseStrided = def(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    b: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    numel: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    strides_a: UnsafePointer[Int64, MutAnyOrigin],
-    strides_b: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
 ) thin abi("C") raises -> None
@@ -223,67 +204,19 @@ def one_hot(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyB
 
 
 def neg(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var layout = node.src(0).layout()
-    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    device.handle[].get_function[UnaryElementWiseStrided]("mograd_neg")(
-        inputs[0].data_ptr(),
-        out.data_ptr(),
-        node.layout().numel(),
-        layout.rank(),
-        layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
-        layout.strides_buffer(device.ctx).unsafe_ptr(),
-        node.dtype(),
-        device.ctx,
-    )
-    return out^
+    return unary_elem_strided("mograd_neg", node, inputs, device)
 
 
 def log(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var layout = node.src(0).layout()
-    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    device.handle[].get_function[UnaryElementWiseStrided]("mograd_log")(
-        inputs[0].data_ptr(),
-        out.data_ptr(),
-        node.layout().numel(),
-        layout.rank(),
-        layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
-        layout.strides_buffer(device.ctx).unsafe_ptr(),
-        node.dtype(),
-        device.ctx,
-    )
-    return out^
+    return unary_elem_strided("mograd_log", node, inputs, device)
 
 
 def exp(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var layout = node.src(0).layout()
-    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    device.handle[].get_function[UnaryElementWiseStrided]("mograd_exp")(
-        inputs[0].data_ptr(),
-        out.data_ptr(),
-        node.layout().numel(),
-        layout.rank(),
-        layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
-        layout.strides_buffer(device.ctx).unsafe_ptr(),
-        node.dtype(),
-        device.ctx,
-    )
-    return out^
+    return unary_elem_strided("mograd_exp", node, inputs, device)
 
 
 def relu(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var layout = node.src(0).layout()
-    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    device.handle[].get_function[UnaryElementWiseStrided]("mograd_relu")(
-        inputs[0].data_ptr(),
-        out.data_ptr(),
-        node.layout().numel(),
-        layout.rank(),
-        layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
-        layout.strides_buffer(device.ctx).unsafe_ptr(),
-        node.dtype(),
-        device.ctx,
-    )
-    return out^
+    return unary_elem_strided("mograd_relu", node, inputs, device)
 
 
 def cast(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
@@ -323,96 +256,25 @@ def add(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffe
             device.ctx,
         )
         null.free()
-    else:
-        device.handle[].get_function[BinaryElementWiseStrided]("mograd_add_strided")(
-            inputs[0].data_ptr(),
-            inputs[1].data_ptr(),
-            out.data_ptr(),
-            node.layout().numel(),
-            la.rank(),
-            la.inner_sizes_buffer(device.ctx).unsafe_ptr(),
-            la.strides_buffer(device.ctx).unsafe_ptr(),
-            lb.strides_buffer(device.ctx).unsafe_ptr(),
-            node.dtype(),
-            device.ctx,
-        )
-    return out^
+        return out^
+
+    return binary_elem_strided("mograd_add_strided", node, inputs, device)
 
 
 def mul(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var la = node.src(0).layout()
-    var lb = node.src(1).layout()
-    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    device.handle[].get_function[BinaryElementWiseStrided]("mograd_mul")(
-        inputs[0].data_ptr(),
-        inputs[1].data_ptr(),
-        out.data_ptr(),
-        node.layout().numel(),
-        la.rank(),
-        la.inner_sizes_buffer(device.ctx).unsafe_ptr(),
-        la.strides_buffer(device.ctx).unsafe_ptr(),
-        lb.strides_buffer(device.ctx).unsafe_ptr(),
-        node.dtype(),
-        device.ctx,
-    )
-    return out^
+    return binary_elem_strided("mograd_mul", node, inputs, device)
 
 
 def div(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var la = node.src(0).layout()
-    var lb = node.src(1).layout()
-    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    device.handle[].get_function[BinaryElementWiseStrided]("mograd_div")(
-        inputs[0].data_ptr(),
-        inputs[1].data_ptr(),
-        out.data_ptr(),
-        node.layout().numel(),
-        la.rank(),
-        la.inner_sizes_buffer(device.ctx).unsafe_ptr(),
-        la.strides_buffer(device.ctx).unsafe_ptr(),
-        lb.strides_buffer(device.ctx).unsafe_ptr(),
-        node.dtype(),
-        device.ctx,
-    )
-    return out^
+    return binary_elem_strided("mograd_div", node, inputs, device)
 
 
 def eq(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var la = node.src(0).layout()
-    var lb = node.src(1).layout()
-    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    device.handle[].get_function[BinaryElementWiseStrided]("mograd_eq")(
-        inputs[0].data_ptr(),
-        inputs[1].data_ptr(),
-        out.data_ptr(),
-        node.layout().numel(),
-        la.rank(),
-        la.inner_sizes_buffer(device.ctx).unsafe_ptr(),
-        la.strides_buffer(device.ctx).unsafe_ptr(),
-        lb.strides_buffer(device.ctx).unsafe_ptr(),
-        node.dtype(),
-        device.ctx,
-    )
-    return out^
+    return binary_elem_strided("mograd_eq", node, inputs, device)
 
 
 def relu_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var la = node.src(0).layout()
-    var lb = node.src(1).layout()
-    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    device.handle[].get_function[BinaryElementWiseStrided]("mograd_relu_grad")(
-        inputs[0].data_ptr(),
-        inputs[1].data_ptr(),
-        out.data_ptr(),
-        node.layout().numel(),
-        la.rank(),
-        la.inner_sizes_buffer(device.ctx).unsafe_ptr(),
-        la.strides_buffer(device.ctx).unsafe_ptr(),
-        lb.strides_buffer(device.ctx).unsafe_ptr(),
-        node.dtype(),
-        device.ctx,
-    )
-    return out^
+    return binary_elem_strided("mograd_relu_grad", node, inputs, device)
 
 
 def scale(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:

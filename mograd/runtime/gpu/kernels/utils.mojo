@@ -3,6 +3,7 @@ from std.algorithm.functional import elementwise
 from std.gpu.host import DeviceContext
 
 from mograd.buffer import AnyBuffer, BufferArm
+from mograd.scheduler import BoundExecFn
 
 # ===-------------------------------------------------------------------===#
 # Strided offset helpers
@@ -282,3 +283,74 @@ def dispatch_binary_scalar_map[
         )
 
     dispatch_dtype[body, float_only](dtype)
+
+
+# ===-------------------------------------------------------------------===#
+# Internal dispatchers
+# ===-------------------------------------------------------------------===#
+
+comptime UnaryElementWiseStrided = def(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    numel: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    strides_a: UnsafePointer[Int64, MutAnyOrigin],
+    dtype: DType,
+    ctx: DeviceContext,
+) thin abi("C") raises -> None
+
+
+@always_inline
+def unary_elem_strided(
+    read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+) raises -> AnyBuffer:
+    var layout = node.src(0).layout()
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
+    device.handle[].get_function[UnaryElementWiseStrided](name)(
+        inputs[0].data_ptr(),
+        out.data_ptr(),
+        node.layout().numel(),
+        layout.rank(),
+        layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
+        layout.strides_buffer(device.ctx).unsafe_ptr(),
+        node.dtype(),
+        device.ctx,
+    )
+    return out^
+
+
+comptime BinaryElementWiseStrided = def(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    b: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    numel: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    strides_a: UnsafePointer[Int64, MutAnyOrigin],
+    strides_b: UnsafePointer[Int64, MutAnyOrigin],
+    dtype: DType,
+    ctx: DeviceContext,
+) thin abi("C") raises -> None
+
+
+@always_inline
+def binary_elem_strided(
+    read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+) raises -> AnyBuffer:
+    var la = node.src(0).layout()
+    var lb = node.src(1).layout()
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
+    device.handle[].get_function[BinaryElementWiseStrided](name)(
+        inputs[0].data_ptr(),
+        inputs[1].data_ptr(),
+        out.data_ptr(),
+        node.layout().numel(),
+        la.rank(),
+        la.inner_sizes_buffer(device.ctx).unsafe_ptr(),
+        la.strides_buffer(device.ctx).unsafe_ptr(),
+        lb.strides_buffer(device.ctx).unsafe_ptr(),
+        node.dtype(),
+        device.ctx,
+    )
+    return out^
