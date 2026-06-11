@@ -42,15 +42,12 @@ def mograd_randn(
     dtype: DType,
     ctx: DeviceContext,
 ) abi("C") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        if dtype == d:
-            var p = params.bitcast[Float32]()
-            randn[d](dst.bitcast[Scalar[d]](), n, p[0], p[1], p[2], ctx)
-            return
-    raise Error("unsupported dtype")
+    @always_inline
+    def body[d: DType]() capturing raises:
+        var p = params.bitcast[Float32]()
+        randn[d](dst.bitcast[Scalar[d]](), n, p[0], p[1], p[2], ctx)
+
+    dispatch_dtype[body](dtype)
 
 
 @export
@@ -61,15 +58,12 @@ def mograd_uniform(
     dtype: DType,
     ctx: DeviceContext,
 ) abi("C") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        comptime if d.is_floating_point():
-            if dtype == d:
-                uniform[d](params.bitcast[Float32](), dst.bitcast[Scalar[d]](), n, ctx)
-                return
-    raise Error("unsupported dtype")
+    @always_inline
+    def body[d: DType]() capturing raises:
+        comptime assert d.is_floating_point()
+        uniform[d](params.bitcast[Float32](), dst.bitcast[Scalar[d]](), n, ctx)
+
+    dispatch_dtype[body, float_only=True](dtype)
 
 
 @export
@@ -80,15 +74,12 @@ def mograd_full(
     dtype: DType,
     ctx: DeviceContext,
 ) abi("C") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        if dtype == d:
-            var val = Scalar[d](fill_val.bitcast[Float32]()[0])
-            full[d](val, dst.bitcast[Scalar[d]](), n, ctx)
-            return
-    raise Error("unsupported dtype")
+    @always_inline
+    def body[d: DType]() capturing raises:
+        var val = Scalar[d](fill_val.bitcast[Float32]()[0])
+        full[d](val, dst.bitcast[Scalar[d]](), n, ctx)
+
+    dispatch_dtype[body](dtype)
 
 
 @export
@@ -191,6 +182,20 @@ def mograd_relu(
 
 
 @export
+def mograd_slice_grad(
+    upstream: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    numel: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("C") raises:
+    dispatch_unary[slice_grad](upstream, dst, numel, rank, inner, sa, dtype, ctx)
+
+
+@export
 def mograd_cast(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
@@ -217,20 +222,6 @@ def mograd_cast(
                     )
                     return
     raise Error("unsupported dtype combination")
-
-
-@export
-def mograd_slice_grad(
-    upstream: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    numel: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
-    dtype: DType,
-    ctx: DeviceContext,
-) abi("C") raises:
-    dispatch_unary[slice_grad](upstream, dst, numel, rank, inner, sa, dtype, ctx)
 
 
 # ===-------------------------------------------------------------------===#
