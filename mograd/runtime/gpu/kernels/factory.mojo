@@ -93,7 +93,6 @@ def one_hot[
 ) raises where out_dtype.is_integral():
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var flat = Int(coord[0].value())
-        # inner[0] == C; read on GPU side since inner is a device pointer
         var C = Int(inner[0])
         var rem = flat
         var dst_off = 0

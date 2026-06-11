@@ -17,7 +17,7 @@ from nn.softmax import softmax as nn_softmax
 from std.gpu.primitives.warp import max as warp_max, sum as warp_sum
 
 from mograd.buffer import AnyBuffer, BufferArm
-from mograd.runtime.gpu.kernels.init import *
+from mograd.runtime.gpu.kernels.factory import *
 from mograd.runtime.gpu.kernels.elementwise import *
 from mograd.runtime.gpu.kernels.reduce import *
 from mograd.runtime.gpu.kernels.utils import (
@@ -30,7 +30,7 @@ from mograd.runtime.gpu.kernels.utils import (
 )
 
 # ===-------------------------------------------------------------------===#
-# Init
+# Factory
 # ===-------------------------------------------------------------------===#
 
 

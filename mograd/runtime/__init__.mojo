@@ -10,6 +10,7 @@ from mograd.pattern_matcher import Rule, Pat
 from mograd.scheduler import Scheduler, BoundExecFn
 from mograd.simplify import Simplifier
 from mograd.runtime.gpu.rewrites import MATMUL_T, GPU_REWRITES
+from mograd.runtime.gpu.kernels.utils import FactoryKernel
 
 # ===-------------------------------------------------------------------===#
 # Runtime
@@ -31,7 +32,7 @@ struct NativeRuntime(Runtime):
         var simplified = Simplifier(GPU_REWRITES()).run(root)
         return Scheduler(
             [
-                # Init
+                # Factory
                 Rule(Pat(OpType.RANDN), randn),
                 Rule(Pat(OpType.UNIFORM), uniform),
                 Rule(Pat(OpType.FULL), full),
@@ -76,14 +77,6 @@ struct NativeRuntime(Runtime):
 # ===-------------------------------------------------------------------===#
 # Signatures
 # ===-------------------------------------------------------------------===#
-
-comptime UnaryOp = def(
-    UnsafePointer[NoneType, MutAnyOrigin],
-    UnsafePointer[NoneType, MutAnyOrigin],
-    Int,
-    DType,
-    DeviceContext,
-) thin abi("C") raises -> None
 
 comptime UnaryElementWiseStrided = def(
     a: UnsafePointer[NoneType, MutAnyOrigin],
@@ -156,17 +149,17 @@ comptime CastOp = def(
 ) thin abi("C") raises -> None
 
 # ===-------------------------------------------------------------------===#
-# Init
+# Factory
 # ===-------------------------------------------------------------------===#
 
 
 def randn(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var params = alloc[Float32](3)
-    params[0] = node.attrs()["mean"][Float32]
-    params[1] = node.attrs()["std"][Float32]
-    params[2] = node.attrs()["seed"][Float32]
+    params[0] = node.attr("mean")
+    params[1] = node.attr("std")
+    params[2] = node.attr("seed")
     var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    device.handle[].get_function[UnaryOp]("mograd_randn")(
+    device.handle[].get_function[FactoryKernel]("mograd_randn")(
         params.bitcast[NoneType](),
         out.data_ptr(),
         node.layout().numel(),
@@ -179,11 +172,11 @@ def randn(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuf
 
 def uniform(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var params = alloc[Float32](3)
-    params[0] = node.attrs()["low"][Float32]
-    params[1] = node.attrs()["high"][Float32]
-    params[2] = node.attrs()["seed"][Float32]
+    params[0] = node.attr("low")
+    params[1] = node.attr("high")
+    params[2] = node.attr("seed")
     var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    device.handle[].get_function[UnaryOp]("mograd_uniform")(
+    device.handle[].get_function[FactoryKernel]("mograd_uniform")(
         params.bitcast[NoneType](), out.data_ptr(), node.layout().numel(), node.dtype(), device.ctx
     )
     params.free()
@@ -192,9 +185,9 @@ def uniform(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyB
 
 def full(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var v = alloc[Float32](1)
-    v[0] = node.attrs()["value"][Float32]
+    v[0] = node.attr("value")
     var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    device.handle[].get_function[UnaryOp]("mograd_full")(
+    device.handle[].get_function[FactoryKernel]("mograd_full")(
         v.bitcast[NoneType](),
         out.data_ptr(),
         node.layout().numel(),

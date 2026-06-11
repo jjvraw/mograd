@@ -136,6 +136,14 @@ def dispatch_dtype[
 # Kernel signatures
 # ===-------------------------------------------------------------------===#
 
+comptime FactoryKernel = def(
+    params: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    numel: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) thin abi("C") raises -> None
+
 comptime UnaryStridedKernel = def[dtype: DType](
     a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],

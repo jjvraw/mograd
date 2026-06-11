@@ -203,6 +203,9 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     def attrs(ref self) -> ref[self._ptr[].attrs] Dict[String, AttrVal]:
         return self._ptr[].attrs
 
+    def attr[T: DType = DType.float32](ref self, key: String) raises -> Scalar[T]:
+        return self._ptr[].attrs[key][Float32].cast[T]()
+
     def attrs_copy(self) -> Dict[String, AttrVal]:
         return self._ptr[].attrs.copy()
 
