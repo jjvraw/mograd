@@ -72,6 +72,7 @@ struct NativeRuntime(Runtime):
                 Rule(Pat(OpType.DISK), disk),
                 Rule(Pat(OpType.SLICE), slice),
                 Rule(Pat(OpType.CONTIGUOUS), contiguous),
+                Rule(Pat(OpType.EXPAND), expand),
                 Rule(Pat(OpType.RESHAPE), reshape),
                 Rule(Pat(OpType.VIEW), view),
                 Rule(Pat(OpType.SOFTMAX_GRAD), softmax_grad),
@@ -509,19 +510,11 @@ def matmul_t(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> Any
 
 
 def contiguous(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var layout = node.layout()
-    var out = AnyBuffer.empty(node.dtype(), device, layout.numel())
-    device.handle[].get_function[UnaryStrided]("mograd_contiguous")(
-        inputs[0].data_ptr(),
-        out.data_ptr(),
-        layout.numel(),
-        layout.rank(),
-        layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
-        layout.strides_buffer(device.ctx).unsafe_ptr(),
-        node.dtype(),
-        device.ctx,
-    )
-    return out^
+    return unary_strided("mograd_contiguous", node, inputs, device)
+
+
+def expand(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+    return inputs[0].view(node.layout())
 
 
 def reshape(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:

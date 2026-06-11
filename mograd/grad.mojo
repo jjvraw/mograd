@@ -121,13 +121,13 @@ def sum_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
         else:
             # keepdim=False: upstream is missing the axis dim; insert it with stride 0
             bcast_layout = up_layout.expand_axis(ax, in_layout.shape(ax))
-        return [OpRef(Op(OpType.CONTIGUOUS, bcast_layout, node.dtype(), [upstream]))]
+        return [OpRef(Op(OpType.EXPAND, bcast_layout, node.dtype(), [upstream]))]
     # Full reduce: all strides zero so every output element reads upstream[0]
     var zero_strides = IntTuple()
     for _ in range(in_layout.rank()):
         zero_strides.append(IntTuple(0))
     var bcast_layout = Layout(in_layout.rank(), in_layout.shape(), zero_strides, 0)
-    return [OpRef(Op(OpType.CONTIGUOUS, bcast_layout, node.dtype(), [upstream]))]
+    return [OpRef(Op(OpType.EXPAND, bcast_layout, node.dtype(), [upstream]))]
 
 
 def matmul_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
@@ -149,7 +149,9 @@ def view_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
 
 
 def slice_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    return [OpRef(Op(OpType.SLICE_GRAD, node.src(0).layout().as_contiguous(), node.dtype(), [upstream, node]))]
+    return [
+        OpRef(Op(OpType.SLICE_GRAD, node.src(0).layout().as_contiguous(), node.dtype(), [upstream.contiguous(), node]))
+    ]
 
 
 def scale_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
@@ -161,7 +163,7 @@ def cross_entropy_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     var logits = node.src(0)
     var labels = node.src(1)
     var grad_logits = OpRef(Op(OpType.CROSS_ENTROPY_GRAD, logits.layout(), logits.dtype(), [logits, labels, upstream]))
-    var dummy = OpRef(Op(OpType.CONTIGUOUS, labels.layout(), labels.dtype(), [upstream]))
+    var dummy = OpRef(Op(OpType.EXPAND, labels.layout(), labels.dtype(), [upstream]))
     return [grad_logits, dummy]
 
 

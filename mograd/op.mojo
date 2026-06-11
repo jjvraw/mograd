@@ -62,6 +62,7 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime SLICE = OpType("SLICE")
     comptime SLICE_GRAD = OpType("SLICE_GRAD")
     comptime CONTIGUOUS = OpType("CONTIGUOUS")
+    comptime EXPAND = OpType("EXPAND")
     comptime ONE_HOT = OpType("ONE_HOT")
     comptime CAST = OpType("CAST")
 
@@ -285,7 +286,15 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
 
     def transpose(self) -> Self:
         # TODO: use self.layout().transpose() once the transpose kernel handles non-contiguous layouts
-        return Self(Op(OpType.TRANSPOSE, (self.shape(1), self.shape(0)), self.dtype(), [self]))
+        return Self(Op(OpType.TRANSPOSE, (self.shape(1), self.shape(0)), self.dtype(), [self.contiguous()]))
+
+    def contiguous(self) -> Self:
+        if self.layout().is_contiguous():
+            return self
+        return Self(Op(OpType.CONTIGUOUS, self.layout().as_contiguous(), self.dtype(), [self]))
+
+    def expand(self, layout: Layout) -> Self:
+        return Self(Op(OpType.EXPAND, layout, self.dtype(), [self]))
 
     def slice(self, start: Int, stop: Int, step: Int = 1) raises -> Self:
         return Self(Op(OpType.SLICE, self.layout()[start:stop:step], self.dtype(), [self], {}))
@@ -295,7 +304,9 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def matmul(self, rhs: OpRef) -> Self:
-        return Self(Op(OpType.MATMUL, (self.shape(0), rhs.shape(1)), self.dtype(), [self, rhs]))
+        return Self(
+            Op(OpType.MATMUL, (self.shape(0), rhs.shape(1)), self.dtype(), [self.contiguous(), rhs.contiguous()])
+        )
 
     # ===-------------------------------------------------------------------===#
     # Loss operations

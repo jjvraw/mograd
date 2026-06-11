@@ -273,6 +273,39 @@ def test_cast_one_hot_to_float32() raises:
     assert_allclose(oh, [Float32(1), 0, 0, 0, 1, 0, 0, 0, 1])
 
 
+# TODO: enable once transpose uses layout().transpose() (lazy strided view)
+# def test_contiguous_transpose_is_not_contiguous() raises:
+#     var device = Device()
+#     var x = Tensor.ones(device, (3, 4))
+#     var t = x.transpose()
+#     assert_true(not t.is_contiguous())
+#
+# def test_contiguous_transpose_after_contiguous_is_contiguous() raises:
+#     var device = Device()
+#     var x = Tensor(device, [Float32(1), 2, 3, 4, 5, 6], (2, 3))
+#     var t = x.transpose()
+#     assert_true(not t.is_contiguous())
+#     var c = t.contiguous()
+#     assert_true(c.is_contiguous())
+#     assert_allclose(c, [Float32(1), 4, 2, 5, 3, 6])
+
+
+def test_contiguous_strided_slice_after_contiguous_is_contiguous() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4, 5, 6], (6,))
+    var s = x[::2]
+    assert_true(not s.is_contiguous())
+    var c = s.contiguous()
+    assert_true(c.is_contiguous())
+    assert_allclose(c, [Float32(1), 3, 5])
+
+
+def test_contiguous_already_contiguous_is_noop() raises:
+    var device = Device()
+    var x = Tensor.ones(device, (4, 4))
+    assert_true(x.is_contiguous())
+    var c = x.contiguous()
+    assert_true(c.is_contiguous())
 
 
 def main() raises:
