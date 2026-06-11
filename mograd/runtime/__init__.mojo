@@ -12,9 +12,9 @@ from mograd.simplify import Simplifier
 from mograd.runtime.gpu.rewrites import MATMUL_T, GPU_REWRITES
 from mograd.runtime.gpu.kernels.utils import (
     FactoryKernel,
-    UnaryElementWiseStrided,
-    unary_elem_strided,
-    binary_elem_strided,
+    UnaryStrided,
+    unary_strided,
+    binary_strided,
 )
 
 # ===-------------------------------------------------------------------===#
@@ -204,19 +204,19 @@ def one_hot(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyB
 
 
 def neg(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return unary_elem_strided("mograd_neg", node, inputs, device)
+    return unary_strided("mograd_neg", node, inputs, device)
 
 
 def log(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return unary_elem_strided("mograd_log", node, inputs, device)
+    return unary_strided("mograd_log", node, inputs, device)
 
 
 def exp(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return unary_elem_strided("mograd_exp", node, inputs, device)
+    return unary_strided("mograd_exp", node, inputs, device)
 
 
 def relu(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return unary_elem_strided("mograd_relu", node, inputs, device)
+    return unary_strided("mograd_relu", node, inputs, device)
 
 
 def cast(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
@@ -258,23 +258,23 @@ def add(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffe
         null.free()
         return out^
 
-    return binary_elem_strided("mograd_add_strided", node, inputs, device)
+    return binary_strided("mograd_add_strided", node, inputs, device)
 
 
 def mul(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return binary_elem_strided("mograd_mul", node, inputs, device)
+    return binary_strided("mograd_mul", node, inputs, device)
 
 
 def div(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return binary_elem_strided("mograd_div", node, inputs, device)
+    return binary_strided("mograd_div", node, inputs, device)
 
 
 def eq(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return binary_elem_strided("mograd_eq", node, inputs, device)
+    return binary_strided("mograd_eq", node, inputs, device)
 
 
 def relu_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return binary_elem_strided("mograd_relu_grad", node, inputs, device)
+    return binary_strided("mograd_relu_grad", node, inputs, device)
 
 
 def scale(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
@@ -300,7 +300,7 @@ def slice_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> A
     var slice_layout = node.src(1).layout()
     var out = AnyBuffer.full(node.dtype(), device, Float32(0), node.layout().numel())
     var out_view = out.view(slice_layout)
-    device.handle[].get_function[UnaryElementWiseStrided]("mograd_slice_grad")(
+    device.handle[].get_function[UnaryStrided]("mograd_slice_grad")(
         inputs[0].data_ptr(),
         out_view.data_ptr(),
         slice_layout.numel(),
@@ -321,7 +321,7 @@ def slice_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> A
 def sum(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var layout = node.src(0).layout()
     var out = AnyBuffer.empty(node.dtype(), device, 1)
-    device.handle[].get_function[UnaryElementWiseStrided]("mograd_sum")(
+    device.handle[].get_function[UnaryStrided]("mograd_sum")(
         inputs[0].data_ptr(),
         out.data_ptr(),
         layout.numel(),

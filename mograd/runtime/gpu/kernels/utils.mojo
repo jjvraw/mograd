@@ -289,7 +289,7 @@ def dispatch_binary_scalar_map[
 # Internal dispatchers
 # ===-------------------------------------------------------------------===#
 
-comptime UnaryElementWiseStrided = def(
+comptime UnaryStrided = def(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     numel: Int,
@@ -302,12 +302,12 @@ comptime UnaryElementWiseStrided = def(
 
 
 @always_inline
-def unary_elem_strided(
+def unary_strided(
     read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
 ) raises -> AnyBuffer:
     var layout = node.src(0).layout()
     var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    device.handle[].get_function[UnaryElementWiseStrided](name)(
+    device.handle[].get_function[UnaryStrided](name)(
         inputs[0].data_ptr(),
         out.data_ptr(),
         node.layout().numel(),
@@ -320,7 +320,7 @@ def unary_elem_strided(
     return out^
 
 
-comptime BinaryElementWiseStrided = def(
+comptime BinaryStrided = def(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     b: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
@@ -335,13 +335,13 @@ comptime BinaryElementWiseStrided = def(
 
 
 @always_inline
-def binary_elem_strided(
+def binary_strided(
     read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
 ) raises -> AnyBuffer:
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
     var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    device.handle[].get_function[BinaryElementWiseStrided](name)(
+    device.handle[].get_function[BinaryStrided](name)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         out.data_ptr(),
