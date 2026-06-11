@@ -154,12 +154,35 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
         return self.op.shape(idx)
 
     def reshape(self, shape: Layout) raises -> Self:
+        """Returns a new tensor with the given shape, copying the underlying data.
+
+        Args:
+            shape: The desried output layout.
+
+        Returns:
+            A new tensor with the specified shape.
+
+        Raises:
+            Error: If the number of elements in `shape` does not match the original.
+        """
         return Self(self.device, self.op.reshape(shape), self.requires_grad)
 
     def view(self, shape: Layout) raises -> Self:
+        """Returns a new tensor with the fiven shape, sharing the underlying data.
+
+        Args:
+            shape: The desired output layout.
+
+        Returns:
+            A new tensor with the specified shape.
+
+        Raises:
+            Error: If the tensor is not contiguous or if the number of elements in `shape`
+            does match the original.
+        """
         return Self(self.device, self.op.view(shape), self.requires_grad)
 
-    def transpose(self) -> Self:
+    def transpose(self) raises -> Self:
         return Self(self.device, self.op.transpose(), self.requires_grad)
 
     def __getitem__(self, s: Slice) raises -> Self:
@@ -237,10 +260,20 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
     # Reduction operations
     # ===-------------------------------------------------------------------===#
 
-    def sum(self) -> Self:
-        return Self(self.device, self.op.sum(), self.requires_grad)
+    def sum(self, axis: Optional[Int] = None, keepdim: Bool = False) raises -> Self:
+        """Reduces the tensor by summing elements along a specified axis.
 
-    def mean(self) -> Self:
+        Args:
+            axis: The axis to sum over. If `None`, sums elements and returns a scalar tensor.
+            keepdim: If `True`, the reduced axis is retained as a dimension of size 1,
+                     preserving the tensor's rank.
+
+        Returns:
+            A tensor containing the sum. If `axis` is `None`, a scalar tensor.
+        """
+        return Self(self.device, self.op.sum(axis, keepdim), self.requires_grad)
+
+    def mean(self) raises -> Self:
         return self.sum() * (1.0 / Scalar[Self.dtype](self.op.layout().numel()))
 
     def argmax(self) -> Self:
@@ -327,10 +360,18 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
     def to_list(self) raises -> List[Scalar[Self.dtype]]:
         var result = List[Scalar[Self.dtype]]()
         var buf = self.value()
+        var layout = self.op.layout()
+        var inner = layout.inner_sizes()
         with buf.buf().map_to_host() as host:
-            var ptr = host.unsafe_ptr() + buf.base_offset
-            for i in range(self.op.layout().numel()):
-                result.append(ptr[i])
+            var base = host.unsafe_ptr() + buf.base_offset
+            for i in range(layout.numel()):
+                var off = 0
+                var rem = i
+                for d in range(layout.rank()):
+                    var idx = rem // inner.value(d)
+                    rem %= inner.value(d)
+                    off += idx * layout._strides.value(d)
+                result.append(base[off])
         return result^
 
     # ===-------------------------------------------------------------------===#

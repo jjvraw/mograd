@@ -3,7 +3,6 @@ from std.algorithm.functional import elementwise
 from std.gpu.host import DeviceContext
 
 from mograd.buffer import AnyBuffer, BufferArm
-from mograd.scheduler import BoundExecFn
 
 # ===-------------------------------------------------------------------===#
 # Strided offset helpers
@@ -310,7 +309,7 @@ def unary_strided(
     device.handle[].get_function[UnaryStrided](name)(
         inputs[0].data_ptr(),
         out.data_ptr(),
-        node.layout().numel(),
+        layout.numel(),
         layout.rank(),
         layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
         layout.strides_buffer(device.ctx).unsafe_ptr(),
@@ -318,6 +317,17 @@ def unary_strided(
         device.ctx,
     )
     return out^
+
+
+comptime SumAxisKernel = def(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    outer: Int,
+    reduce_size: Int,
+    inner: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) thin abi("C") raises -> None
 
 
 comptime BinaryStrided = def(

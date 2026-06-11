@@ -190,6 +190,60 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Writable):
         buf.enqueue_copy_from(Span(host))
         return buf^
 
+    def reduce_dims(self, axis: Int) raises -> Tuple[Int, Int, Int]:
+        """Returns (outer, reduce_size, inner) for a reduction along axis.
+
+        outer      = product of dims before axis
+        reduce_size = shape[axis]
+        inner      = product of dims after axis
+        """
+        var ax = self.normalise_dim(axis)
+        var reduce_size = self.shape(ax)
+        var inner = self.inner_sizes().value(ax)
+        var outer = self.numel() // (reduce_size * inner)
+        return (outer, reduce_size, inner)
+
+    def expand_axis(self, axis: Int, size: Int) raises -> Self:
+        """Returns a layout with a new broadcast dimension inserted at axis.
+
+        The inserted dimension has stride 0 so all elements along it map to the
+        same underlying element. Existing strides are preserved unchanged.
+        """
+        var ax = self._handle_bounds(
+            axis, self.rank() + 1, t"Axis {String(axis)} out of bounds for rank {String(self.rank())}"
+        )
+        var new_shape = IntTuple()
+        var new_strides = IntTuple()
+        for i in range(self.rank() + 1):
+            if i == ax:
+                new_shape.append(IntTuple(size))
+                new_strides.append(IntTuple(0))
+            else:
+                var src = i if i < ax else i - 1
+                new_shape.append(IntTuple(self.shape(src)))
+                new_strides.append(IntTuple(self._strides.value(src)))
+        return Self(self.rank() + 1, new_shape, new_strides, self.base_offset)
+
+    def reduce_output_shape(self, axis: Int, keepdim: Bool) raises -> Self:
+        """Returns the output layout after reducing along axis.
+
+        With keepdim=False the axis dimension is removed; with keepdim=True it
+        is replaced by 1. A rank-0 result (1-D tensor, keepdim=False) is
+        represented as shape (1,) to match the scalar convention used elsewhere.
+        """
+        var ax = self.normalise_dim(axis)
+        var new_shape = IntTuple()
+        for i in range(self.rank()):
+            if i == ax:
+                if keepdim:
+                    new_shape.append(IntTuple(1))
+            else:
+                new_shape.append(IntTuple(self.shape(i)))
+        if len(new_shape) == 0:
+            new_shape.append(IntTuple(1))
+        var new_rank = len(new_shape)
+        return Self(new_rank, new_shape, Self.row_major_strides(new_shape), 0)
+
     # ===-------------------------------------------------------------------===#
     # Permute
     # ===-------------------------------------------------------------------===#

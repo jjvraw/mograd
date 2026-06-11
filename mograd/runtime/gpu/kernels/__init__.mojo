@@ -356,6 +356,37 @@ def mograd_sum(
 
 
 @export
+def mograd_sum_axis(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    outer: Int,
+    reduce_size: Int,
+    inner: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("C") raises:
+    @always_inline
+    def body[d: DType]() capturing raises:
+        sum_axis[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), outer, reduce_size, inner, ctx)
+
+    dispatch_dtype[body](dtype)
+
+
+@export
+def mograd_contiguous(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    numel: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("C") raises:
+    dispatch_unary_map[identity_op](a, dst, numel, rank, inner, sa, dtype, ctx)
+
+
+@export
 def mograd_softmax(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     shape_ptr: UnsafePointer[NoneType, MutAnyOrigin],
@@ -676,48 +707,6 @@ def mograd_cross_entropy(
                 ctx.synchronize()
                 return
     raise Error("unsupported dtype")
-
-
-# ===-------------------------------------------------------------------===#
-# Broadcast
-# ===-------------------------------------------------------------------===#
-
-
-@export
-def mograd_broadcast(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    b: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) abi("C") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        if dtype == d:
-            var inp_size = Int(b.bitcast[Float32]()[0])
-            broadcast[d](a.bitcast[Scalar[d]](), inp_size, dst.bitcast[Scalar[d]](), n, ctx)
-            return
-    raise Error("unsupported dtype")
-
-
-def broadcast[
-    dtype: DType
-](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    inp_size: Int,
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    n: Int,
-    ctx: DeviceContext,
-) abi("C") raises:
-    # TODO: Vectorise
-    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-        var idx = Int(coord[0].value())
-        dst.store(idx, a.load(idx % inp_size))
-
-    elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
 
 
 # ===-------------------------------------------------------------------===#

@@ -1,5 +1,4 @@
 from std.math import log as math_log, exp as math_exp
-from std.os import abort
 from std.algorithm.functional import elementwise
 
 from mograd.runtime.gpu.kernels.utils import strided_offset, unary_strided_map
@@ -7,6 +6,12 @@ from mograd.runtime.gpu.kernels.utils import strided_offset, unary_strided_map
 # ===-------------------------------------------------------------------===#
 # Scalar ops (used with dispatch_unary_map / dispatch_binary_map)
 # ===-------------------------------------------------------------------===#
+
+
+# TODO: Remove once all ops respect layout strides (broadcast can then stay a zero-copy view)
+@always_inline
+def identity_op[d: DType](x: Scalar[d]) -> Scalar[d]:
+    return x
 
 
 @always_inline

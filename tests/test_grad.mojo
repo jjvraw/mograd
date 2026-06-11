@@ -53,6 +53,64 @@ def test_sum_grad() raises:
     assert_allclose(grads[0], [Float32(1), 1, 1, 1])
 
 
+def test_sum_axis0_grad() raises:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
+        return x.sum(axis=0).sum()
+
+    var device = Device()
+    var data: List[Float32] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    var num = numerical_grad[fwd](device, data, (2, 3))
+    var x = Tensor(device, data, (2, 3), requires_grad=True)
+    var loss = x.sum(axis=0).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], Tensor.ones(device, (2, 3)))
+
+
+def test_sum_axis1_grad() raises:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
+        return x.sum(axis=1).sum()
+
+    var device = Device()
+    var data: List[Float32] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    var num = numerical_grad[fwd](device, data, (2, 3))
+    var x = Tensor(device, data, (2, 3), requires_grad=True)
+    var loss = x.sum(axis=1).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], Tensor.ones(device, (2, 3)))
+
+
+def test_sum_axis_keepdim_grad() raises:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
+        return x.sum(axis=1, keepdim=True).sum()
+
+    var device = Device()
+    var data: List[Float32] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    var num = numerical_grad[fwd](device, data, (2, 3))
+    var x = Tensor(device, data, (2, 3), requires_grad=True)
+    var loss = x.sum(axis=1, keepdim=True).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], Tensor.ones(device, (2, 3)))
+
+
+def test_sum_axis_3d_grad() raises:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
+        return x.sum(axis=1).sum()
+
+    var device = Device()
+    var data = List[Float32]()
+    for i in range(24):
+        data.append(Float32(i + 1))
+    var num = numerical_grad[fwd](device, data, (2, 3, 4))
+    var x = Tensor(device, data, (2, 3, 4), requires_grad=True)
+    var loss = x.sum(axis=1).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], Tensor.ones(device, (2, 3, 4)))
+
+
 def test_relu_grad() raises:
     def fwd(x: Tensor[]) raises -> Tensor[]:
         return x.relu().sum()

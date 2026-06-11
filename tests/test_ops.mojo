@@ -134,6 +134,45 @@ def test_sum() raises:
     var x = Tensor(device, [Float32(1), 2, 3, 4], (4,))
     assert_close(x.sum(), Float32(10.0))
 
+def test_sum_axis0() raises:
+    var device = Device()
+    var x = Tensor.full(device, (3, 4), Float32(1))
+    var out = x.sum(axis=0)
+    assert_true(out.shape(0) == 4)
+    assert_allclose(out, [Float32(3), 3, 3, 3])
+
+
+def test_sum_axis1() raises:
+    var device = Device()
+    var x = Tensor.full(device, (3, 4), Float32(1))
+    var out = x.sum(axis=1)
+    assert_true(out.shape(0) == 3)
+    assert_allclose(out, [Float32(4), 4, 4])
+
+
+def test_sum_axis_keepdim() raises:
+    var device = Device()
+    var x = Tensor.full(device, (3, 4), Float32(1))
+    var out = x.sum(axis=1, keepdim=True)
+    assert_true(out.shape(0) == 3 and out.shape(1) == 1)
+    assert_allclose(out, [Float32(4), 4, 4])
+
+
+def test_sum_axis_3d() raises:
+    var device = Device()
+    var x = Tensor.full(device, (2, 3, 4), Float32(1))
+    var out = x.sum(axis=1)
+    assert_true(out.shape(0) == 2 and out.shape(1) == 4)
+    assert_allclose(out, [Float32(3), 3, 3, 3, 3, 3, 3, 3])
+
+
+def test_sum_axis_negative() raises:
+    var device = Device()
+    var x = Tensor.full(device, (3, 4), Float32(2))
+    var out_neg = x.sum(axis=-1)
+    var out_pos = x.sum(axis=1)
+    assert_allclose(out_neg, out_pos)
+
 
 def test_sum_large() raises:
     var device = Device()
@@ -232,6 +271,8 @@ def test_cast_one_hot_to_float32() raises:
     var labels = Tensor[DType.int64](device, [Int64(0), 1, 2], (3,))
     var oh = labels.one_hot(3).cast[DType.float32]()
     assert_allclose(oh, [Float32(1), 0, 0, 0, 1, 0, 0, 0, 1])
+
+
 
 
 def main() raises:

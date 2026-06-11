@@ -1,3 +1,6 @@
+from layout.int_tuple import IntTuple
+
+from mograd.layout import Layout
 from mograd.op import Op, OpRef, OpType
 from mograd.pattern_matcher import PatternMatcher, Rule, Pat, GraphUtils
 
@@ -104,7 +107,27 @@ def div_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
 
 
 def sum_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    return [OpRef(Op(OpType.BROADCAST, node.src(0).layout().as_contiguous(), node.dtype(), [upstream]))]
+    var in_layout = node.src(0).layout().as_contiguous()
+    if "axis" in node.attrs():
+        var ax = node.attr_int("axis")
+        var up_layout = upstream.layout()
+        var bcast_layout: Layout
+        if up_layout.rank() == in_layout.rank():
+            # keepdim=True: upstream has size-1 at axis; expand it with stride 0
+            var new_strides = IntTuple()
+            for i in range(in_layout.rank()):
+                new_strides.append(IntTuple(0 if i == ax else up_layout._strides.value(i)))
+            bcast_layout = Layout(in_layout.rank(), in_layout.shape(), new_strides, 0)
+        else:
+            # keepdim=False: upstream is missing the axis dim; insert it with stride 0
+            bcast_layout = up_layout.expand_axis(ax, in_layout.shape(ax))
+        return [OpRef(Op(OpType.CONTIGUOUS, bcast_layout, node.dtype(), [upstream]))]
+    # Full reduce: all strides zero so every output element reads upstream[0]
+    var zero_strides = IntTuple()
+    for _ in range(in_layout.rank()):
+        zero_strides.append(IntTuple(0))
+    var bcast_layout = Layout(in_layout.rank(), in_layout.shape(), zero_strides, 0)
+    return [OpRef(Op(OpType.CONTIGUOUS, bcast_layout, node.dtype(), [upstream]))]
 
 
 def matmul_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
@@ -118,7 +141,7 @@ def transpose_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
 
 
 def reshape_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    return [OpRef(Op(OpType.RESHAPE, node.src(0).layout(), node.dtype(), [upstream]))]
+    return [OpRef(Op(OpType.RESHAPE, upstream.layout().view(node.src(0).layout().shape()), node.dtype(), [upstream]))]
 
 
 def view_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
@@ -138,7 +161,7 @@ def cross_entropy_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     var logits = node.src(0)
     var labels = node.src(1)
     var grad_logits = OpRef(Op(OpType.CROSS_ENTROPY_GRAD, logits.layout(), logits.dtype(), [logits, labels, upstream]))
-    var dummy = OpRef(Op(OpType.BROADCAST, labels.layout(), labels.dtype(), [upstream]))
+    var dummy = OpRef(Op(OpType.CONTIGUOUS, labels.layout(), labels.dtype(), [upstream]))
     return [grad_logits, dummy]
 
 

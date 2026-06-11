@@ -13,6 +13,7 @@ from mograd.runtime.gpu.rewrites import MATMUL_T, GPU_REWRITES
 from mograd.runtime.gpu.kernels.utils import (
     FactoryKernel,
     UnaryStrided,
+    SumAxisKernel,
     unary_strided,
     binary_strided,
 )
@@ -70,7 +71,7 @@ struct NativeRuntime(Runtime):
                 Rule(Pat(OpType.TRANSPOSE), transpose),
                 Rule(Pat(OpType.DISK), disk),
                 Rule(Pat(OpType.SLICE), slice),
-                Rule(Pat(OpType.BROADCAST), broadcast),
+                Rule(Pat(OpType.CONTIGUOUS), contiguous),
                 Rule(Pat(OpType.RESHAPE), reshape),
                 Rule(Pat(OpType.VIEW), view),
                 Rule(Pat(OpType.SOFTMAX_GRAD), softmax_grad),
@@ -320,18 +321,21 @@ def slice_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> A
 
 def sum(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var layout = node.src(0).layout()
-    var out = AnyBuffer.empty(node.dtype(), device, 1)
-    device.handle[].get_function[UnaryStrided]("mograd_sum")(
-        inputs[0].data_ptr(),
-        out.data_ptr(),
-        layout.numel(),
-        layout.rank(),
-        layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
-        layout.strides_buffer(device.ctx).unsafe_ptr(),
-        node.dtype(),
-        device.ctx,
-    )
-    return out^
+    if "axis" in node.attrs():
+        var axis = node.attr_int("axis")
+        var outer, reduce_size, inner = layout.reduce_dims(axis)
+        var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
+        device.handle[].get_function[SumAxisKernel]("mograd_sum_axis")(
+            inputs[0].data_ptr(),
+            out.data_ptr(),
+            outer,
+            reduce_size,
+            inner,
+            node.dtype(),
+            device.ctx,
+        )
+        return out^
+    return unary_strided("mograd_sum", node, inputs, device)
 
 
 # _-_-_-_-_-
@@ -504,14 +508,19 @@ def matmul_t(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> Any
 # ===-------------------------------------------------------------------===#
 
 
-def broadcast(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var p = alloc[Float32](1)
-    p[0] = Float32(node.src(0).layout().numel())
-    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    device.handle[].get_function[BinaryOp]("mograd_broadcast")(
-        inputs[0].data_ptr(), p.bitcast[NoneType](), out.data_ptr(), node.layout().numel(), node.dtype(), device.ctx
+def contiguous(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+    var layout = node.layout()
+    var out = AnyBuffer.empty(node.dtype(), device, layout.numel())
+    device.handle[].get_function[UnaryStrided]("mograd_contiguous")(
+        inputs[0].data_ptr(),
+        out.data_ptr(),
+        layout.numel(),
+        layout.rank(),
+        layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
+        layout.strides_buffer(device.ctx).unsafe_ptr(),
+        node.dtype(),
+        device.ctx,
     )
-    p.free()
     return out^
 
 

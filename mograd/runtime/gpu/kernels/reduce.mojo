@@ -36,3 +36,44 @@ def sum[
         block_dim=(CE_BLOCK,),
     )
     ctx.synchronize()
+
+
+# ===-------------------------------------------------------------------===#
+# Sum axis
+# ===-------------------------------------------------------------------===#
+
+
+def sum_axis[
+    dtype: DType
+](
+    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    outer: Int,
+    reduce_size: Int,
+    inner: Int,
+    ctx: DeviceContext,
+) raises:
+    @always_inline
+    def input_fn[_d: DType, w: Int, r: Int](coords: IndexList[r]) capturing -> SIMD[_d, w]:
+        # coords: [outer_idx, reduce_idx, inner_idx]
+        var flat = coords[0] * reduce_size * inner + coords[1] * inner + coords[2]
+        return a.load(flat)._refine[_d]()
+
+    @always_inline
+    def output_fn[_d: DType, w: SIMDSize, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
+        # coords: [outer_idx, 0, inner_idx]
+        var flat = coords[0] * inner + coords[2]
+        dst.store[width=w](flat, val[0]._refine[dtype]())
+
+    @always_inline
+    def reduce_fn[ty: DType, w: SIMDSize, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
+        return v1 + v2
+
+    comptime kernel = reduce_kernel[3, 1, 1, CE_BLOCK, input_fn, output_fn, reduce_fn, dtype, 1]
+    ctx.enqueue_function[kernel](
+        IndexList[3](outer, reduce_size, inner),
+        StaticTuple[Scalar[dtype], 1](0),
+        grid_dim=(outer * inner,),
+        block_dim=(CE_BLOCK,),
+    )
+    ctx.synchronize()

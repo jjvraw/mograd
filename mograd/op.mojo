@@ -5,7 +5,7 @@ from std.utils import Variant
 from layout import IntTuple
 
 from mograd.buffer import Buffer, AnyBuffer
-from mograd.layout import Layout, layout
+from mograd.layout import Layout
 
 
 # ===-------------------------------------------------------------------===#
@@ -61,7 +61,7 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime TRANSPOSE = OpType("TRANSPOSE")
     comptime SLICE = OpType("SLICE")
     comptime SLICE_GRAD = OpType("SLICE_GRAD")
-    comptime BROADCAST = OpType("BROADCAST")
+    comptime CONTIGUOUS = OpType("CONTIGUOUS")
     comptime ONE_HOT = OpType("ONE_HOT")
     comptime CAST = OpType("CAST")
 
@@ -97,7 +97,8 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
 # ===-------------------------------------------------------------------===#
 
 
-comptime AttrVal = Variant[Float32, String]
+comptime Attrs = Dict[String, AttrVal]
+comptime AttrVal = Variant[Int, Float32, Bool, String]
 
 
 struct Op(Copyable, Movable, Writable):
@@ -106,7 +107,7 @@ struct Op(Copyable, Movable, Writable):
     var dtype: DType
     var srcs: List[OpRef]
     var buf: Optional[AnyBuffer]
-    var attrs: Dict[String, AttrVal]
+    var attrs: Attrs
 
     def __init__(
         out self,
@@ -143,7 +144,7 @@ struct Op(Copyable, Movable, Writable):
         shape: Layout,
         dtype: DType,
         var srcs: List[OpRef],
-        var attrs: Dict[String, AttrVal],
+        var attrs: Attrs,
     ):
         self.op_type = op_type
         self.layout = shape
@@ -200,13 +201,16 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     def src(ref self, i: Int) -> ref[self._ptr[].srcs[i]] OpRef:
         return self._ptr[].srcs[i]
 
-    def attrs(ref self) -> ref[self._ptr[].attrs] Dict[String, AttrVal]:
+    def attrs(ref self) -> ref[self._ptr[].attrs] Attrs:
         return self._ptr[].attrs
 
     def attr[T: DType = DType.float32](ref self, key: String) raises -> Scalar[T]:
         return self._ptr[].attrs[key][Float32].cast[T]()
 
-    def attrs_copy(self) -> Dict[String, AttrVal]:
+    def attr_int(ref self, key: String) raises -> Int:
+        return self._ptr[].attrs[key][Int]
+
+    def attrs_copy(self) -> Attrs:
         return self._ptr[].attrs.copy()
 
     # ===-------------------------------------------------------------------===#
@@ -250,8 +254,13 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     # Reduction operations
     # ===-------------------------------------------------------------------===#
 
-    def sum(self) -> Self:
-        return Self(Op(OpType.SUM, (1,), self.dtype(), [self]))
+    def sum(self, axis: Optional[Int] = None, keepdim: Bool = False) raises -> Self:
+        if not axis:
+            return Self(Op(OpType.SUM, (1,), self.dtype(), [self]))
+        var ax = axis.value()
+        var out_layout = self.layout().reduce_output_shape(ax, keepdim)
+        attrs: Attrs = {"axis": ax}
+        return Self(Op(OpType.SUM, out_layout, self.dtype(), [self], attrs=attrs^))
 
     def argmax(self) -> Self:
         return Self(Op(OpType.ARGMAX, (self.shape(0),), self.dtype(), [self]))
@@ -264,6 +273,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return Self(Op(OpType.RESHAPE, self.layout().view(shape.shape()), self.dtype(), [self]))
 
     def view(self, shape: Layout) raises -> Self:
+        assert self.layout().is_contiguous(), "Tensor.view requires contiguous layout."
         return Self(Op(OpType.VIEW, self.layout().view(shape.shape()), self.dtype(), [self]))
 
     def one_hot(self, var num_classes: Int, out_dtype: DType) -> OpRef:
@@ -274,6 +284,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return OpRef(Op(OpType.CAST, self.layout().as_contiguous(), out_dtype, [self]))
 
     def transpose(self) -> Self:
+        # TODO: use self.layout().transpose() once the transpose kernel handles non-contiguous layouts
         return Self(Op(OpType.TRANSPOSE, (self.shape(1), self.shape(0)), self.dtype(), [self]))
 
     def slice(self, start: Int, stop: Int, step: Int = 1) raises -> Self:
