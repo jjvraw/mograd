@@ -52,6 +52,7 @@ struct NativeRuntime(Runtime):
                 Rule(Pat(OpType.SLICE_GRAD), slice_grad),
                 # Reduce
                 Rule(Pat(OpType.SUM), sum),
+                # TODO:
                 # Linalg
                 # Loss/Activation
                 # Shape
@@ -458,7 +459,7 @@ def slice_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> A
 
 
 # ===-------------------------------------------------------------------===#
-# Binary Elementwise
+# Binary Reduce
 # ===-------------------------------------------------------------------===#
 
 
@@ -478,6 +479,8 @@ def sum(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffe
     return out^
 
 
+# _-_-_-_-_-
+# TODO: All the below
 # _-_-_-_-_-
 
 

@@ -20,6 +20,14 @@ from mograd.buffer import AnyBuffer, BufferArm
 from mograd.runtime.gpu.kernels.init import *
 from mograd.runtime.gpu.kernels.elementwise import *
 from mograd.runtime.gpu.kernels.reduce import *
+from mograd.runtime.gpu.kernels.utils import (
+    dispatch_binary_contiguous,
+    dispatch_binary_map,
+    dispatch_binary_scalar_map,
+    dispatch_dtype,
+    dispatch_unary,
+    dispatch_unary_map,
+)
 
 # ===-------------------------------------------------------------------===#
 # Init
@@ -137,14 +145,7 @@ def mograd_neg(
     dtype: DType,
     ctx: DeviceContext,
 ) abi("C") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        if dtype == d:
-            neg[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rank, inner, sa, numel, ctx)
-            return
-    raise Error("unsupported dtype")
+    dispatch_unary_map[neg_op](a, dst, numel, rank, inner, sa, dtype, ctx)
 
 
 @export
@@ -158,15 +159,7 @@ def mograd_log(
     dtype: DType,
     ctx: DeviceContext,
 ) abi("C") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        comptime if d.is_floating_point():
-            if dtype == d:
-                log[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rank, inner, sa, numel, ctx)
-                return
-    raise Error("unsupported dtype")
+    dispatch_unary_map[log_op, float_only=True](a, dst, numel, rank, inner, sa, dtype, ctx)
 
 
 @export
@@ -180,15 +173,7 @@ def mograd_exp(
     dtype: DType,
     ctx: DeviceContext,
 ) abi("C") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        comptime if d.is_floating_point():
-            if dtype == d:
-                exp[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rank, inner, sa, numel, ctx)
-                return
-    raise Error("unsupported dtype")
+    dispatch_unary_map[exp_op, float_only=True](a, dst, numel, rank, inner, sa, dtype, ctx)
 
 
 @export
@@ -202,14 +187,7 @@ def mograd_relu(
     dtype: DType,
     ctx: DeviceContext,
 ) abi("C") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        if dtype == d:
-            relu[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rank, inner, sa, numel, ctx)
-            return
-    raise Error("unsupported dtype")
+    dispatch_unary_map[relu_op](a, dst, numel, rank, inner, sa, dtype, ctx)
 
 
 @export
@@ -252,14 +230,7 @@ def mograd_slice_grad(
     dtype: DType,
     ctx: DeviceContext,
 ) abi("C") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        if dtype == d:
-            slice_grad[d](upstream.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rank, inner, sa, numel, ctx)
-            return
-    raise Error("unsupported dtype")
+    dispatch_unary[slice_grad](upstream, dst, numel, rank, inner, sa, dtype, ctx)
 
 
 # ===-------------------------------------------------------------------===#
@@ -276,14 +247,7 @@ def mograd_add(
     dtype: DType,
     ctx: DeviceContext,
 ) abi("C") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = AnyBuffer.BufVariant.Ts[k].node_dtype
-        if dtype == d:
-            add[d](a.bitcast[Scalar[d]](), b.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), n, ctx)
-            return
-    raise Error("unsupported dtype")
+    dispatch_binary_contiguous[add](a, b, dst, n, dtype, ctx)
 
 
 @export
@@ -299,24 +263,7 @@ def mograd_add_strided(
     dtype: DType,
     ctx: DeviceContext,
 ) abi("C") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = AnyBuffer.BufVariant.Ts[k].node_dtype
-        if dtype == d:
-            add_strided[d](
-                a.bitcast[Scalar[d]](),
-                b.bitcast[Scalar[d]](),
-                dst.bitcast[Scalar[d]](),
-                rank,
-                inner,
-                sa,
-                sb,
-                n,
-                ctx,
-            )
-            return
-    raise Error("unsupported dtype")
+    dispatch_binary_map[add_op](a, b, dst, n, rank, inner, sa, sb, dtype, ctx)
 
 
 @export
@@ -332,24 +279,7 @@ def mograd_mul(
     dtype: DType,
     ctx: DeviceContext,
 ) abi("C") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = AnyBuffer.BufVariant.Ts[k].node_dtype
-        if dtype == d:
-            mul[d](
-                a.bitcast[Scalar[d]](),
-                b.bitcast[Scalar[d]](),
-                dst.bitcast[Scalar[d]](),
-                rank,
-                inner,
-                sa,
-                sb,
-                n,
-                ctx,
-            )
-            return
-    raise Error("unsupported dtype")
+    dispatch_binary_map[mul_op](a, b, dst, n, rank, inner, sa, sb, dtype, ctx)
 
 
 @export
@@ -365,24 +295,7 @@ def mograd_div(
     dtype: DType,
     ctx: DeviceContext,
 ) abi("C") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = AnyBuffer.BufVariant.Ts[k].node_dtype
-        if dtype == d:
-            div[d](
-                a.bitcast[Scalar[d]](),
-                b.bitcast[Scalar[d]](),
-                dst.bitcast[Scalar[d]](),
-                rank,
-                inner,
-                sa,
-                sb,
-                n,
-                ctx,
-            )
-            return
-    raise Error("unsupported dtype")
+    dispatch_binary_map[div_op](a, b, dst, n, rank, inner, sa, sb, dtype, ctx)
 
 
 @export
@@ -398,24 +311,7 @@ def mograd_eq(
     dtype: DType,
     ctx: DeviceContext,
 ) abi("C") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = AnyBuffer.BufVariant.Ts[k].node_dtype
-        if dtype == d:
-            eq[d](
-                a.bitcast[Scalar[d]](),
-                b.bitcast[Scalar[d]](),
-                dst.bitcast[Scalar[d]](),
-                rank,
-                inner,
-                sa,
-                sb,
-                n,
-                ctx,
-            )
-            return
-    raise Error("unsupported dtype")
+    dispatch_binary_map[eq_op](a, b, dst, n, rank, inner, sa, sb, dtype, ctx)
 
 
 @export
@@ -431,24 +327,7 @@ def mograd_relu_grad(
     dtype: DType,
     ctx: DeviceContext,
 ) abi("C") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = AnyBuffer.BufVariant.Ts[k].node_dtype
-        if dtype == d:
-            relu_grad[d](
-                a.bitcast[Scalar[d]](),
-                b.bitcast[Scalar[d]](),
-                dst.bitcast[Scalar[d]](),
-                rank,
-                inner,
-                sa,
-                sb,
-                n,
-                ctx,
-            )
-            return
-    raise Error("unsupported dtype")
+    dispatch_binary_map[relu_grad_op](a, b, dst, n, rank, inner, sa, sb, dtype, ctx)
 
 
 @export
@@ -463,23 +342,7 @@ def mograd_scale(
     dtype: DType,
     ctx: DeviceContext,
 ) abi("C") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = AnyBuffer.BufVariant.Ts[k].node_dtype
-        if dtype == d:
-            scale[d](
-                a.bitcast[Scalar[d]](),
-                b.bitcast[Scalar[d]](),
-                dst.bitcast[Scalar[d]](),
-                rank,
-                inner,
-                sa,
-                n,
-                ctx,
-            )
-            return
-    raise Error("unsupported dtype")
+    dispatch_binary_scalar_map[mul_op](a, b, dst, n, rank, inner, sa, dtype, ctx)
 
 
 # ===-------------------------------------------------------------------===#
@@ -498,14 +361,7 @@ def mograd_sum(
     dtype: DType,
     ctx: DeviceContext,
 ) abi("C") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        if dtype == d:
-            sum[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rank, inner, sa, n, ctx)
-            return
-    raise Error("unsupported dtype")
+    dispatch_unary[sum](a, dst, n, rank, inner, sa, dtype, ctx)
 
 
 @export

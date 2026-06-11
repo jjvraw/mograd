@@ -4,6 +4,7 @@ from std.testing import TestSuite, assert_true
 from mograd import Tensor, Device
 from mograd.data import mnist
 
+# TODO: Ensure prior data is removed.
 
 def test_mnist_shapes() raises:
     var device = Device()

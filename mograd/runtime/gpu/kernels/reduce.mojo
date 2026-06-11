@@ -1,3 +1,5 @@
+from mograd.runtime.gpu.kernels.utils import strided_offset
+
 # ===-------------------------------------------------------------------===#
 # Sum
 # ===-------------------------------------------------------------------===#
@@ -16,14 +18,7 @@ def sum[
 ) raises:
     @always_inline
     def input_fn[_d: DType, w: Int, r: Int](coords: IndexList[r]) capturing -> SIMD[_d, w]:
-        var flat = coords[0]
-        var rem = flat
-        var a_off = 0
-        for i in range(rank):
-            var idx = rem // Int(inner[i])
-            rem %= Int(inner[i])
-            a_off += idx * Int(sa[i])
-        return a.load(a_off)._refine[_d]()
+        return a.load(strided_offset(coords[0], rank, inner, sa))._refine[_d]()
 
     @always_inline
     def output_fn[_d: DType, w: SIMDSize, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
