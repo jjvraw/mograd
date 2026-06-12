@@ -11,11 +11,13 @@ from mograd.pattern_matcher import Rule, PatternMatcher, GraphUtils, Pat
 
 comptime BoundExecFn = def(node: OpRef, inputs: List[AnyBuffer], device: Device) thin raises -> AnyBuffer
 
+comptime SchedulerRules = List[Rule[BoundExecFn]]
+
 
 struct Scheduler:
-    var rules: List[Rule[BoundExecFn]]
+    var rules: SchedulerRules
 
-    def __init__(out self, var rules: List[Rule[BoundExecFn]]):
+    def __init__(out self, var rules: SchedulerRules):
         self.rules = rules^
 
     def run(self, root: OpRef, device: Device) raises -> AnyBuffer:
@@ -36,7 +38,7 @@ struct Scheduler:
                 var rule = pm.match(node)
                 if not rule:
                     raise Error("no exec rule for op: " + node.op_type()._name)
-                var result = rule.value()(node, inputs, device)
+                var result = rule.value().func(node, inputs, device)
                 node.op().buf = Optional[AnyBuffer](result.copy())
                 bufs[node] = result^
 

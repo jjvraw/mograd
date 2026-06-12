@@ -4,10 +4,10 @@ from std.pathlib.path import Path
 from std.os.env import getenv
 
 from mograd import Device
-from mograd.op import OpRef, OpType
+from mograd.op import Op, OpRef, OpType
 from mograd.buffer import AnyBuffer, Buffer, BufferArm
 from mograd.pattern_matcher import Rule, Pat
-from mograd.scheduler import Scheduler, BoundExecFn
+from mograd.scheduler import Scheduler, BoundExecFn, SchedulerRules
 from mograd.simplify import Simplifier
 from mograd.runtime.gpu.rewrites import MATMUL_T, GPU_REWRITES
 from mograd.runtime.gpu.kernels.utils import (
@@ -28,60 +28,78 @@ from mograd.runtime.gpu.kernels.utils import (
 
 trait Runtime:
     @staticmethod
-    def run(root: OpRef, device: Optional[Device]) raises -> AnyBuffer:
+    def run(
+        root: OpRef, device: Optional[Device], var extern_rules: Optional[SchedulerRules] = None
+    ) raises -> AnyBuffer:
         ...
 
 
 # TODO: Move to GPURuntime, have seperate CPURuntime. Hence why we have a trait.
 struct NativeRuntime(Runtime):
     @staticmethod
-    def run(root: OpRef, device: Optional[Device]) raises -> AnyBuffer:
+    def run(
+        root: OpRef, device: Optional[Device], var extern_rules: Optional[SchedulerRules] = None
+    ) raises -> AnyBuffer:
         if not device:
             raise Error("NativeRuntime requires a Device")
-        var simplified = Simplifier(GPU_REWRITES()).run(root)
-        return Scheduler(
-            [
-                # Factory
-                Rule(Pat(OpType.RANDN), randn),
-                Rule(Pat(OpType.UNIFORM), uniform),
-                Rule(Pat(OpType.FULL), full),
-                Rule(Pat(OpType.ONE_HOT), one_hot),
-                # Unary Elementwise
-                Rule(Pat(OpType.NEG), neg),
-                Rule(Pat(OpType.LOG), log),
-                Rule(Pat(OpType.EXP), exp),
-                Rule(Pat(OpType.RELU), relu),
-                Rule(Pat(OpType.CAST), cast),
-                # Binary Elementwise
-                Rule(Pat(OpType.ADD), add),
-                Rule(Pat(OpType.MUL), mul),
-                Rule(Pat(OpType.DIV), div),
-                Rule(Pat(OpType.EQ), eq),
-                Rule(Pat(OpType.RELU_GRAD), relu_grad),
-                Rule(Pat(OpType.SCALE), scale),
-                Rule(Pat(OpType.SLICE_GRAD), slice_grad),
-                # Reduce
-                Rule(Pat(OpType.SUM), sum),
-                # TODO:
-                # Linalg
-                # Loss/Activation
-                # Shape
-                Rule(Pat(OpType.SOFTMAX), softmax),
-                Rule(Pat(OpType.ARGMAX), argmax),
-                Rule(Pat(OpType.CROSS_ENTROPY), cross_entropy),
-                Rule(Pat(OpType.MATMUL), matmul),
-                Rule(Pat(MATMUL_T), matmul_t),
-                Rule(Pat(OpType.TRANSPOSE), transpose),
-                Rule(Pat(OpType.DISK), disk),
-                Rule(Pat(OpType.SLICE), slice),
-                Rule(Pat(OpType.CONTIGUOUS), contiguous),
-                Rule(Pat(OpType.EXPAND), expand),
-                Rule(Pat(OpType.RESHAPE), reshape),
-                Rule(Pat(OpType.VIEW), view),
-                Rule(Pat(OpType.SOFTMAX_GRAD), softmax_grad),
-                Rule(Pat(OpType.CROSS_ENTROPY_GRAD), cross_entropy_grad),
-            ]
-        ).run(simplified, device.value())
+
+        var extra_sched = SchedulerRules()
+        var compound = SchedulerRules()
+
+        if extern_rules:
+            for j in range(len(extern_rules.value())):
+                var rule = extern_rules.value()[j].copy()
+                if rule.pat.is_compound():
+                    compound.append(rule.copy())
+                else:
+                    extra_sched.append(rule.copy())
+
+        var simplified = Simplifier(GPU_REWRITES()).run(root, compound^, extra_sched)
+
+        var scheduler_rules: List[Rule[BoundExecFn]] = [
+            # Factory
+            Rule(Pat(OpType.RANDN), randn),
+            Rule(Pat(OpType.UNIFORM), uniform),
+            Rule(Pat(OpType.FULL), full),
+            Rule(Pat(OpType.DISK), disk),
+            # Unary Elementwise
+            Rule(Pat(OpType.NEG), neg),
+            Rule(Pat(OpType.LOG), log),
+            Rule(Pat(OpType.EXP), exp),
+            Rule(Pat(OpType.RELU), relu),
+            Rule(Pat(OpType.CAST), cast),
+            # Binary Elementwise
+            Rule(Pat(OpType.ADD), add),
+            Rule(Pat(OpType.MUL), mul),
+            Rule(Pat(OpType.DIV), div),
+            Rule(Pat(OpType.EQ), eq),
+            Rule(Pat(OpType.RELU_GRAD), relu_grad),
+            Rule(Pat(OpType.SCALE), scale),
+            Rule(Pat(OpType.SLICE_GRAD), slice_grad),
+            # Reduce
+            Rule(Pat(OpType.SUM), sum),
+            Rule(Pat(OpType.SOFTMAX), softmax),
+            Rule(Pat(OpType.ARGMAX), argmax),
+            # Linalg
+            Rule(Pat(OpType.MATMUL), matmul),
+            Rule(Pat(MATMUL_T), matmul_t),
+            # Indexing & Encoding
+            Rule(Pat(OpType.ONE_HOT), one_hot),
+            # Layout
+            Rule(Pat(OpType.CONTIGUOUS), contiguous),
+            Rule(Pat(OpType.RESHAPE), reshape),
+            Rule(Pat(OpType.EXPAND), expand),
+            Rule(Pat(OpType.VIEW), view),
+            Rule(Pat(OpType.SLICE), slice),
+            # TODO:
+            Rule(Pat(OpType.CROSS_ENTROPY), cross_entropy),
+            Rule(Pat(OpType.TRANSPOSE), transpose),
+            Rule(Pat(OpType.SOFTMAX_GRAD), softmax_grad),
+            Rule(Pat(OpType.CROSS_ENTROPY_GRAD), cross_entropy_grad),
+        ]
+
+        extra_sched += scheduler_rules^
+        return Scheduler(extra_sched^).run(simplified, device.value())
 
 
 # ===-------------------------------------------------------------------===#

@@ -57,7 +57,7 @@ struct Grad[dtype: DType] where dtype.is_floating_point():
             var up = upstream.value()
             var rule = pm.match(node)
             if rule:
-                var src_grads = rule.value()(node, up)
+                var src_grads = rule.value().func(node, up)
                 for j in range(len(node.srcs())):
                     grad.accum(node.srcs()[j], src_grads[j])
 

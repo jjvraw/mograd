@@ -56,6 +56,15 @@ struct Pat(Copyable, ImplicitlyCopyable, Movable):
                 return False
         return True
 
+    def is_compound(self) -> Bool:
+        """True if this pattern constrains the structure of source nodes (fusion pattern)."""
+        for i in range(len(self.srcs)):
+            if not self.srcs[i]._any_op:
+                return True
+            if self.srcs[i].is_compound():
+                return True
+        return False
+
 
 struct PatternMatcher[F: TrivialRegisterPassable]:
     var rule_table: Dict[OpType, List[Rule[Self.F]]]
@@ -66,18 +75,28 @@ struct PatternMatcher[F: TrivialRegisterPassable]:
             var key = rules[i].pat.op_type
             self.rule_table.setdefault(key, List[Rule[Self.F]]()).append(rules[i].copy())
 
-    def match(self, node: OpRef) -> Optional[Self.F]:
+    def match(self, node: OpRef) -> Optional[Rule[Self.F]]:
         var matches = self.rule_table.get(node.op_type())
         if matches:
             for rule in matches.value():
                 if rule.pat.matches(node):
-                    return rule.func
+                    return rule.copy()
         return None
 
 
 # ===-------------------------------------------------------------------===#
 # GraphUtils
 # ===-------------------------------------------------------------------===#
+
+
+def extract_wildcard_srcs(pat: Pat, node: OpRef) -> List[OpRef]:
+    """Collect OpRefs matched by Pat() wildcards, depth-first."""
+    if pat._any_op:
+        return [node]
+    var result = List[OpRef]()
+    for i in range(len(pat.srcs)):
+        result += extract_wildcard_srcs(pat.srcs[i], node.src(i))
+    return result^
 
 
 struct GraphUtils:

@@ -60,7 +60,8 @@ test-gpu-b              = { depends-on = ["build-gpu", "test-gpu"] }
 test-gpu-rewrites       = { cmd = "mojo -I . tests/test_gpu_rewrites.mojo" }
 test-pattern-matcher    = { cmd = "mojo -I . tests/test_pattern_matcher.mojo" }
 test-layout             = { cmd = "mojo -I . tests/test_layout.mojo" }
-test-graph              = { depends-on = ["test-pattern-matcher", "test-gpu-rewrites", "test-layout"] }
+test-custom-rules       = { cmd = "mojo -I . tests/test_custom_rules.mojo" }
+test-graph              = { depends-on = ["test-pattern-matcher", "test-gpu-rewrites", "test-layout", "test-custom-rules"] }
 
 # Examples
 mnist                   = { cmd = "mojo -I . examples/mnist/train.mojo" }

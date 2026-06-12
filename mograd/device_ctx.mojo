@@ -26,7 +26,7 @@ struct Device(Copyable, ImplicitlyCopyable, Movable):
 
         var p = getenv("MOGRAD_SO")
         if not p:
-            raise Error("MOGRAD_SO not set — run `pixi run build-gpu` first")
+            raise Error("MOGRAD_SO not set: run `pixi run build-gpu` first")
 
         self.handle = ArcPointer(OwnedDLHandle(p))
 

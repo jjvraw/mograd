@@ -8,6 +8,7 @@ from mograd.op import AttrVal, Op, OpRef, OpType
 from mograd.layout import Layout
 from mograd.buffer import Buffer
 from mograd.runtime import NativeRuntime
+from mograd.scheduler import SchedulerRules
 from mograd.grad import Grad
 
 # ===-------------------------------------------------------------------===#
@@ -142,20 +143,20 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
     # Materialisation / Device I/O
     # ===-------------------------------------------------------------------===#
 
-    def value(self) raises -> Buffer[Self.dtype]:
+    def value(self, rules: Optional[SchedulerRules] = None) raises -> Buffer[Self.dtype]:
         var result = NativeRuntime.run(self.op, self.device)
         return result.unsafe_get[Self.dtype]().copy()
 
-    def item(self) raises -> Scalar[Self.dtype]:
-        var buf = self.value()
+    def item(self, rules: Optional[SchedulerRules] = None) raises -> Scalar[Self.dtype]:
+        var buf = self.value(rules)
         var result: Scalar[Self.dtype]
         with buf.buf().map_to_host() as host:
             result = (host.unsafe_ptr() + buf.base_offset)[0]
         return result
 
-    def to_list(self) raises -> List[Scalar[Self.dtype]]:
+    def to_list(self, rules: Optional[SchedulerRules] = None) raises -> List[Scalar[Self.dtype]]:
         var result = List[Scalar[Self.dtype]]()
-        var buf = self.value()
+        var buf = self.value(rules)
         var layout = self.op.layout()
         var inner = layout.inner_sizes()
         with buf.buf().map_to_host() as host:
