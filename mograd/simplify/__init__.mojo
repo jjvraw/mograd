@@ -32,8 +32,7 @@ struct Simplifier:
             # Fusion rules first, user compound patterns take priority over GPU rewrites
             var fmatch = fusion_pm.match(node_s)
             if fmatch:
-                var rule = fmatch.value().copy()
-                var leaves = extract_wildcard_srcs(rule.pat, node_s)
+                var leaves = extract_wildcard_srcs(fmatch.value().pat, node_s)
                 for j in range(len(extern_rules)):
                     if extern_rules[j].pat.matches(node_s):
                         var stype = OpType("__fuse_" + String(j))

@@ -48,11 +48,10 @@ struct NativeRuntime(Runtime):
 
         if extern_rules:
             for j in range(len(extern_rules.value())):
-                var rule = extern_rules.value()[j].copy()
-                if rule.pat.is_compound():
-                    compound.append(rule.copy())
+                if extern_rules.value()[j].pat.is_compound():
+                    compound.append(extern_rules.value()[j].copy())
                 else:
-                    extra_sched.append(rule.copy())
+                    extra_sched.append(extern_rules.value()[j].copy())
 
         var simplified = Simplifier(GPU_REWRITES()).run(root, compound^, extra_sched)
 
