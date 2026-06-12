@@ -291,7 +291,7 @@ def unary_strided(
     read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
 ) raises -> AnyBuffer:
     var layout = node.src(0).layout()
-    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
+    var out = AnyBuffer.create(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[UnaryStrided](name)(
         inputs[0].data_ptr(),
         out.data_ptr(),
@@ -323,7 +323,7 @@ def axis_reduce_strided(
     var layout = node.src(0).layout()
     var axis = node.attr_int("axis")
     var outer, reduce_size, inner = layout.reduce_dims(axis)
-    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
+    var out = AnyBuffer.create(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[SumAxisKernel](name)(
         inputs[0].data_ptr(), out.data_ptr(), outer, reduce_size, inner, node.dtype(), device.ctx
     )
@@ -351,7 +351,7 @@ def argmax_axis_strided(read node: OpRef, read inputs: List[AnyBuffer], read dev
     var layout = node.src(0).layout()
     var axis = node.attr_int("axis")
     var outer, reduce_size, inner = layout.reduce_dims(axis)
-    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
+    var out = AnyBuffer.create(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[ArgmaxAxisKernel]("mograd_argmax_axis")(
         inputs[0].data_ptr(),
         out.data_ptr(),
@@ -391,7 +391,7 @@ def matmul_strided(
 ) raises -> AnyBuffer:
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
-    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
+    var out = AnyBuffer.create(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[MatmulStrided](name)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
@@ -429,7 +429,7 @@ def binary_strided(
 ) raises -> AnyBuffer:
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
-    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
+    var out = AnyBuffer.create(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[BinaryStrided](name)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),

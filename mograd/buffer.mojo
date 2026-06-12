@@ -120,22 +120,15 @@ struct AnyBuffer(Copyable, Movable):
         raise Error("Unsupported dtype")
 
     @staticmethod
-    def empty(dtype: DType, device: Device, numel: Int) raises -> AnyBuffer:
+    def create(dtype: DType, device: Device, numel: Int, fill: Optional[Float64] = None) raises -> AnyBuffer:
         comptime for k in range(Self.BufVariant.Ts.size):
             comptime T = Self.BufVariant.Ts[k]
             comptime assert conforms_to(T, BufferArm)
             comptime d = T.node_dtype
             if dtype == d:
-                var dev_buf = device.ctx.enqueue_create_buffer[d](numel)
-                return AnyBuffer(Buffer[d](dev_buf^, numel))
-        raise Error("Unsupported dtype: " + String(dtype))
-
-    @staticmethod
-    def full(dtype: DType, device: Device, value: Float32, numel: Int) raises -> AnyBuffer:
-        comptime for k in range(Self.BufVariant.Ts.size):
-            comptime T = Self.BufVariant.Ts[k]
-            comptime assert conforms_to(T, BufferArm)
-            comptime d = T.node_dtype
-            if dtype == d:
-                return AnyBuffer(Buffer[d].full(device, Scalar[d](value), numel))
+                if fill:
+                    return AnyBuffer(Buffer[d].full(device, Scalar[d](fill.value()), numel))
+                else:
+                    var dev_buf = device.ctx.enqueue_create_buffer[d](numel)
+                    return AnyBuffer(Buffer[d](dev_buf^, numel))
         raise Error("Unsupported dtype: " + String(dtype))
