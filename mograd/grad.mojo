@@ -168,4 +168,4 @@ def cross_entropy_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
 
 
 def softmax_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    return [OpRef(Op(OpType.SOFTMAX_GRAD, node.layout(), node.dtype(), [node, upstream]))]
+    return [OpRef(Op(OpType.SOFTMAX_GRAD, node.layout(), node.dtype(), [node, upstream.contiguous()]))]
