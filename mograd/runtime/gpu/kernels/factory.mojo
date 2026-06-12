@@ -21,7 +21,7 @@ def randn[
     var seed_buf = ctx.enqueue_create_buffer[DType.uint64](1)
     seed_buf.enqueue_fill(UInt64(Int(seed)))
 
-    def store[width: Int, rank: Int](idx: IndexList[rank], val: SIMD[dtype, width]) capturing:
+    def store[width: SIMDSize, rank: Int](idx: IndexList[rank], val: SIMD[dtype, width]) capturing:
         dst.store(idx[0], val)
 
     random_normal[output_fn=store, target="gpu"](
@@ -52,7 +52,7 @@ def uniform[
     var seed_buf = ctx.enqueue_create_buffer[DType.uint64](1)
     seed_buf.enqueue_fill(UInt64(Int(params[2])))
 
-    def store[width: Int, rank: Int](idx: IndexList[rank], val: SIMD[dtype, width]) capturing:
+    def store[width: SIMDSize, rank: Int](idx: IndexList[rank], val: SIMD[dtype, width]) capturing:
         dst.store(idx[0], val)
 
     random_uniform[output_fn=store, target="gpu"](IndexList[1](n), low, high, seed_buf.unsafe_ptr(), ctx)

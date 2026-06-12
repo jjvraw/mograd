@@ -96,7 +96,7 @@ comptime OneHotOp = def(
     sd: UnsafePointer[Int64, MutAnyOrigin],
     sa: UnsafePointer[Int64, MutAnyOrigin],
     ctx: DeviceContext,
-) thin abi("C") raises -> None
+) thin abi("Mojo") raises -> None
 
 comptime BinaryElementWise = def(
     a: UnsafePointer[NoneType, MutAnyOrigin],
@@ -105,7 +105,7 @@ comptime BinaryElementWise = def(
     numel: Int,
     dtype: DType,
     ctx: DeviceContext,
-) thin abi("C") raises -> None
+) thin abi("Mojo") raises -> None
 
 comptime BinaryScalarElementWiseStrided = def(
     a: UnsafePointer[NoneType, MutAnyOrigin],
@@ -117,7 +117,7 @@ comptime BinaryScalarElementWiseStrided = def(
     strides_a: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) thin abi("C") raises -> None
+) thin abi("Mojo") raises -> None
 
 comptime CastOp = def(
     a: UnsafePointer[NoneType, MutAnyOrigin],
@@ -129,7 +129,7 @@ comptime CastOp = def(
     in_dtype: DType,
     out_dtype: DType,
     ctx: DeviceContext,
-) thin abi("C") raises -> None
+) thin abi("Mojo") raises -> None
 
 # ===-------------------------------------------------------------------===#
 # Factory
@@ -391,7 +391,7 @@ comptime BinaryOp = def(
     Int,
     DType,
     DeviceContext,
-) thin abi("C") raises -> None
+) thin abi("Mojo") raises -> None
 
 
 def transpose(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
@@ -423,7 +423,7 @@ comptime TernaryOp = def(
     Int,
     DType,
     DeviceContext,
-) thin abi("C") raises -> None
+) thin abi("Mojo") raises -> None
 
 
 def cross_entropy(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
@@ -561,7 +561,7 @@ comptime QuaternaryOp = def(
     Int,
     DType,
     DeviceContext,
-) thin abi("C") raises -> None
+) thin abi("Mojo") raises -> None
 
 
 def cross_entropy_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:

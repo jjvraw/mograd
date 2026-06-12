@@ -41,7 +41,7 @@ def mograd_randn(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     @always_inline
     def body[d: DType]() capturing raises:
         var p = params.bitcast[Float32]()
@@ -57,7 +57,7 @@ def mograd_uniform(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     @always_inline
     def body[d: DType]() capturing raises:
         comptime assert d.is_floating_point()
@@ -73,7 +73,7 @@ def mograd_full(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     @always_inline
     def body[d: DType]() capturing raises:
         var val = Scalar[d](fill_val.bitcast[Float32]()[0])
@@ -94,7 +94,7 @@ def mograd_one_hot(
     sd: UnsafePointer[Int64, MutAnyOrigin],
     sa: UnsafePointer[Int64, MutAnyOrigin],
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     comptime for ki in range(AnyBuffer.BufVariant.Ts.size):
         comptime Ti = AnyBuffer.BufVariant.Ts[ki]
         comptime assert conforms_to(Ti, BufferArm)
@@ -135,7 +135,7 @@ def mograd_neg(
     sa: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     dispatch_unary_map[neg_op](a, dst, numel, rank, inner, sa, dtype, ctx)
 
 
@@ -149,7 +149,7 @@ def mograd_log(
     sa: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     dispatch_unary_map[log_op, float_only=True](a, dst, numel, rank, inner, sa, dtype, ctx)
 
 
@@ -163,7 +163,7 @@ def mograd_exp(
     sa: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     dispatch_unary_map[exp_op, float_only=True](a, dst, numel, rank, inner, sa, dtype, ctx)
 
 
@@ -177,7 +177,7 @@ def mograd_relu(
     sa: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     dispatch_unary_map[relu_op](a, dst, numel, rank, inner, sa, dtype, ctx)
 
 
@@ -191,7 +191,7 @@ def mograd_slice_grad(
     sa: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     dispatch_unary[slice_grad](upstream, dst, numel, rank, inner, sa, dtype, ctx)
 
 
@@ -206,7 +206,7 @@ def mograd_cast(
     in_dtype: DType,
     out_dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     comptime for ki in range(AnyBuffer.BufVariant.Ts.size):
         comptime Ti = AnyBuffer.BufVariant.Ts[ki]
         comptime assert conforms_to(Ti, BufferArm)
@@ -237,7 +237,7 @@ def mograd_add(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     dispatch_binary_contiguous[add](a, b, dst, n, dtype, ctx)
 
 
@@ -253,7 +253,7 @@ def mograd_add_strided(
     sb: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     dispatch_binary_map[add_op](a, b, dst, n, rank, inner, sa, sb, dtype, ctx)
 
 
@@ -269,7 +269,7 @@ def mograd_mul(
     sb: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     dispatch_binary_map[mul_op](a, b, dst, n, rank, inner, sa, sb, dtype, ctx)
 
 
@@ -285,7 +285,7 @@ def mograd_div(
     sb: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     dispatch_binary_map[div_op](a, b, dst, n, rank, inner, sa, sb, dtype, ctx)
 
 
@@ -301,7 +301,7 @@ def mograd_eq(
     sb: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     dispatch_binary_map[eq_op](a, b, dst, n, rank, inner, sa, sb, dtype, ctx)
 
 
@@ -317,7 +317,7 @@ def mograd_relu_grad(
     sb: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     dispatch_binary_map[relu_grad_op](a, b, dst, n, rank, inner, sa, sb, dtype, ctx)
 
 
@@ -332,7 +332,7 @@ def mograd_scale(
     sa: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     dispatch_binary_scalar_map[mul_op](a, b, dst, n, rank, inner, sa, dtype, ctx)
 
 
@@ -351,7 +351,7 @@ def mograd_sum(
     sa: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     dispatch_unary[sum](a, dst, n, rank, inner, sa, dtype, ctx)
 
 
@@ -364,7 +364,7 @@ def mograd_sum_axis(
     inner: Int,
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     @always_inline
     def body[d: DType]() capturing raises:
         sum_axis[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), outer, reduce_size, inner, ctx)
@@ -382,7 +382,7 @@ def mograd_contiguous(
     sa: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     dispatch_unary_map[identity_op](a, dst, numel, rank, inner, sa, dtype, ctx)
 
 
@@ -394,7 +394,7 @@ def mograd_softmax(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -417,8 +417,8 @@ def softmax[
     rows: Int,
     cols: Int,
     ctx: DeviceContext,
-) abi("C") raises:
-    var out = TileTensor(dst.as_any_origin(), row_major(Coord(rows, cols)))
+) abi("Mojo") raises:
+    var out = TileTensor(dst.as_unsafe_any_origin(), row_major(Coord(rows, cols)))
 
     def input_fn[width: Int](coords: Coord) capturing -> SIMD[dtype, width]:
         return a.load[width=width](Int(coords[0].value()) * cols + Int(coords[1].value()))
@@ -437,7 +437,7 @@ def mograd_matmul(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -462,10 +462,10 @@ def matmul[
     K: Int,
     N: Int,
     ctx: DeviceContext,
-) abi("C") raises:
-    var ta = TileTensor(a.as_any_origin(), row_major(Coord(M, K)))
-    var tb = TileTensor(b.as_any_origin(), row_major(Coord(K, N)))
-    var tc = TileTensor(dst.as_any_origin(), row_major(Coord(M, N)))
+) abi("Mojo") raises:
+    var ta = TileTensor(a.as_unsafe_any_origin(), row_major(Coord(M, K)))
+    var tb = TileTensor(b.as_unsafe_any_origin(), row_major(Coord(K, N)))
+    var tc = TileTensor(dst.as_unsafe_any_origin(), row_major(Coord(M, N)))
     linalg_matmul[target="gpu"](tc, ta, tb, ctx)
 
 
@@ -478,7 +478,7 @@ def mograd_matmul_t(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -503,10 +503,10 @@ def matmul_t[
     K: Int,
     N: Int,
     ctx: DeviceContext,
-) abi("C") raises:
-    var ta = TileTensor(a.as_any_origin(), row_major(Coord(M, K)))
-    var tb = TileTensor(b.as_any_origin(), row_major(Coord(N, K)))
-    var tc = TileTensor(dst.as_any_origin(), row_major(Coord(M, N)))
+) abi("Mojo") raises:
+    var ta = TileTensor(a.as_unsafe_any_origin(), row_major(Coord(M, K)))
+    var tb = TileTensor(b.as_unsafe_any_origin(), row_major(Coord(N, K)))
+    var tc = TileTensor(dst.as_unsafe_any_origin(), row_major(Coord(M, N)))
     linalg_matmul[target="gpu", transpose_b=True](tc, ta, tb, ctx)
 
 
@@ -533,7 +533,7 @@ def mograd_transpose(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -563,7 +563,7 @@ def mograd_argmax(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -572,8 +572,8 @@ def mograd_argmax(
             var p = shape_ptr.bitcast[Float32]()
             var N = Int(p[0])
             var C = Int(p[1])
-            var inp = TileTensor(a.bitcast[Scalar[d]]().as_any_origin(), row_major(Coord(N, C)))
-            var out = TileTensor(dst.bitcast[Scalar[d]]().as_any_origin(), row_major(Coord(N, 1)))
+            var inp = TileTensor(a.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(N, C)))
+            var out = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(N, 1)))
             argmax_gpu[d, d](ctx, inp, out)
             return
     raise Error("unsupported dtype")
@@ -677,7 +677,7 @@ def mograd_cross_entropy(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -744,7 +744,7 @@ def mograd_softmax_grad(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
@@ -839,7 +839,7 @@ def mograd_cross_entropy_grad(
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
-) abi("C") raises:
+) abi("Mojo") raises:
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)

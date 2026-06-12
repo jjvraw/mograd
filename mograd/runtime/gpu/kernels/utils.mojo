@@ -142,7 +142,7 @@ comptime FactoryKernel = def(
     numel: Int,
     dtype: DType,
     ctx: DeviceContext,
-) thin abi("C") raises -> None
+) thin abi("Mojo") raises -> None
 
 comptime UnaryStridedKernel = def[dtype: DType](
     a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -297,7 +297,7 @@ comptime UnaryStrided = def(
     strides_a: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) thin abi("C") raises -> None
+) thin abi("Mojo") raises -> None
 
 
 @always_inline
@@ -327,7 +327,7 @@ comptime SumAxisKernel = def(
     inner: Int,
     dtype: DType,
     ctx: DeviceContext,
-) thin abi("C") raises -> None
+) thin abi("Mojo") raises -> None
 
 
 comptime BinaryStrided = def(
@@ -341,7 +341,7 @@ comptime BinaryStrided = def(
     strides_b: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
-) thin abi("C") raises -> None
+) thin abi("Mojo") raises -> None
 
 
 @always_inline
