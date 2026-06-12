@@ -4,8 +4,6 @@ from std.gpu.host import DeviceBuffer, DeviceContext
 
 from layout.int_tuple import IntTuple, reverse, prefix_product, product, sorted
 
-comptime MAX_RANK = 2
-
 # ===-------------------------------------------------------------------===#
 # Layout
 # ===-------------------------------------------------------------------===#

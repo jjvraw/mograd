@@ -1,3 +1,6 @@
+from layout import Coord
+from std.algorithm.functional import elementwise
+from std.gpu.host import DeviceContext
 from mograd.runtime.gpu.kernels.utils import strided_offset
 
 # ===-------------------------------------------------------------------===#
@@ -76,4 +79,70 @@ def sum_axis[
         grid_dim=(outer * inner,),
         block_dim=(CE_BLOCK,),
     )
+    ctx.synchronize()
+
+
+# ===-------------------------------------------------------------------===#
+# Argmax
+# ===-------------------------------------------------------------------===#
+
+
+def argmax[
+    dtype: DType
+](
+    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    n: Int,
+    ctx: DeviceContext,
+) raises:
+    def kernel[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+        var best_val = Scalar[dtype].MIN
+        var best_idx = Scalar[dtype](0)
+        for i in range(n):
+            var v = a.load(strided_offset(i, rank, inner, sa))
+            if v > best_val:
+                best_val = v
+                best_idx = Scalar[dtype](i)
+        dst.store(0, best_idx)
+
+    elementwise[simd_width=1, target="gpu"](kernel, Coord(1), ctx)
+    ctx.synchronize()
+
+
+# ===-------------------------------------------------------------------===#
+# Argmax axis (stride-aware)
+# ===-------------------------------------------------------------------===#
+
+
+def argmax_axis[
+    dtype: DType
+](
+    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    outer: Int,
+    reduce_size: Int,
+    inner: Int,
+    rank: Int,
+    inner_sizes: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    ctx: DeviceContext,
+) raises:
+    def kernel[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+        var flat_out = Int(coord[0].value())
+        var o = flat_out // inner
+        var i = flat_out % inner
+        var best_val = Scalar[dtype].MIN
+        var best_idx = Scalar[dtype](0)
+        for r in range(reduce_size):
+            var flat = o * reduce_size * inner + r * inner + i
+            var v = a.load(strided_offset(flat, rank, inner_sizes, sa))
+            if v > best_val:
+                best_val = v
+                best_idx = Scalar[dtype](r)
+        dst.store(flat_out, best_idx)
+
+    elementwise[simd_width=1, target="gpu"](kernel, Coord(outer * inner), ctx)
     ctx.synchronize()

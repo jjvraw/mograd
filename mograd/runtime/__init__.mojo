@@ -16,6 +16,8 @@ from mograd.runtime.gpu.kernels.utils import (
     SumAxisKernel,
     unary_strided,
     binary_strided,
+    axis_reduce_strided,
+    argmax_axis_strided,
 )
 
 # ===-------------------------------------------------------------------===#
@@ -321,44 +323,20 @@ def slice_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> A
 
 
 def sum(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var layout = node.src(0).layout()
     if "axis" in node.attrs():
-        var axis = node.attr_int("axis")
-        var outer, reduce_size, inner = layout.reduce_dims(axis)
-        var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-        device.handle[].get_function[SumAxisKernel]("mograd_sum_axis")(
-            inputs[0].data_ptr(),
-            out.data_ptr(),
-            outer,
-            reduce_size,
-            inner,
-            node.dtype(),
-            device.ctx,
-        )
-        return out^
+        return axis_reduce_strided("mograd_sum_axis", node, inputs, device)
     return unary_strided("mograd_sum", node, inputs, device)
+
+
+def argmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+    if "axis" in node.attrs():
+        return argmax_axis_strided(node, inputs, device)
+    return unary_strided("mograd_argmax", node, inputs, device)
 
 
 # _-_-_-_-_-
 # TODO: All the below
 # _-_-_-_-_-
-
-
-def argmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var p = alloc[Float32](2)
-    p[0] = Float32(node.src(0).shape(0))
-    p[1] = Float32(node.src(0).shape(1))
-    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    device.handle[].get_function[BinaryOp]("mograd_argmax")(
-        inputs[0].data_ptr(),
-        p.bitcast[NoneType](),
-        out.data_ptr(),
-        node.layout().numel(),
-        node.dtype(),
-        device.ctx,
-    )
-    p.free()
-    return out^
 
 
 def softmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:

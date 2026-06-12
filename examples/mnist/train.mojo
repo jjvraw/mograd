@@ -1,3 +1,5 @@
+from std.testing import assert_true
+
 from mograd import Tensor, Device
 from mograd.data import mnist
 import mograd.nn as nn
@@ -10,7 +12,7 @@ def accuracy(mut model: MLP, x: Tensor[DType.float32], y: Tensor[DType.float32],
     for step in range(n // batch_size):
         var xb = x[step * batch_size : (step + 1) * batch_size]
         var yb = y[step * batch_size : (step + 1) * batch_size]
-        avg_acc += (model(xb).argmax() == yb).mean().item()
+        avg_acc += (model(xb).argmax(axis=-1) == yb).mean().item()
     return avg_acc / Float32(n // batch_size)
 
 
@@ -45,4 +47,4 @@ def main() raises:
     var acc = accuracy(model, data.x_test, data.y_test, batch_size)
     print("\n" + "=" * 10)
     print("\nfinal val_acc:", acc)
-    assert acc > 0.9
+    assert_true(acc > 0.9)

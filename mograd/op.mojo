@@ -263,8 +263,13 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         attrs: Attrs = {"axis": ax}
         return Self(Op(OpType.SUM, out_layout, self.dtype(), [self.contiguous()], attrs=attrs^))
 
-    def argmax(self) -> Self:
-        return Self(Op(OpType.ARGMAX, (self.shape(0),), self.dtype(), [self.contiguous()]))
+    def argmax(self, axis: Optional[Int] = None, keepdim: Bool = False) raises -> Self:
+        if not axis:
+            return Self(Op(OpType.ARGMAX, (1,), self.dtype(), [self]))
+        var ax = axis.value()
+        var out_layout = self.layout().reduce_output_shape(ax, keepdim)
+        attrs: Attrs = {"axis": ax}
+        return Self(Op(OpType.ARGMAX, out_layout, self.dtype(), [self], attrs=attrs^))
 
     # ===-------------------------------------------------------------------===#
     # Shape operations

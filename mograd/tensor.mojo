@@ -273,14 +273,32 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
 
         Returns:
             A tensor containing the sum. If `axis` is `None`, a scalar tensor.
+
+        Raises:
+            If axis is out of bounds for the tensor's rank.
         """
         return Self(self.device, self.op.sum(axis, keepdim), self.requires_grad)
 
     def mean(self) raises -> Self:
         return self.sum() * (1.0 / Scalar[Self.dtype](self.op.layout().numel()))
 
-    def argmax(self) -> Self:
-        return Self(self.device, self.op.argmax(), self.requires_grad)
+    def argmax(self, axis: Optional[Int] = None, keepdim: Bool = False) raises -> Self:
+        """Returns the indices of the maximum values of a tensor across a dimension.
+
+        Args:
+            axis: The axis to reduce over. If `None`, returns the index of the maximum
+                  element across all elements in row-major order.
+            keepdim: If `True`, the reduced axis is retained as a dimension of size 1,
+                     preserving the tensor's rank.
+
+        Returns:
+            A tensor containing the indices of the maximum values. If `axis` is `None`,
+            a scalar tensor.
+
+        Raises:
+            If axis is out of bounds for the tensor's rank.
+        """
+        return Self(self.device, self.op.argmax(axis, keepdim), self.requires_grad)
 
     def one_hot[
         out_dtype: DType = DType.int64

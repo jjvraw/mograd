@@ -329,6 +329,58 @@ comptime SumAxisKernel = def(
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
 
+comptime ArgmaxAxisKernel = def(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    outer: Int,
+    reduce_size: Int,
+    inner: Int,
+    rank: Int,
+    inner_sizes: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    outer_stride: Int,
+    reduce_stride: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) thin abi("Mojo") raises -> None
+
+
+@always_inline
+def axis_reduce_strided(
+    read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+) raises -> AnyBuffer:
+    var layout = node.src(0).layout()
+    var axis = node.attr_int("axis")
+    var outer, reduce_size, inner = layout.reduce_dims(axis)
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
+    device.handle[].get_function[SumAxisKernel](name)(
+        inputs[0].data_ptr(), out.data_ptr(), outer, reduce_size, inner, node.dtype(), device.ctx
+    )
+    return out^
+
+
+@always_inline
+def argmax_axis_strided(read node: OpRef, read inputs: List[AnyBuffer], read device: Device) raises -> AnyBuffer:
+    var layout = node.src(0).layout()
+    var axis = node.attr_int("axis")
+    var outer, reduce_size, inner = layout.reduce_dims(axis)
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
+    device.handle[].get_function[ArgmaxAxisKernel]("mograd_argmax_axis")(
+        inputs[0].data_ptr(),
+        out.data_ptr(),
+        outer,
+        reduce_size,
+        inner,
+        layout.rank(),
+        layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
+        layout.strides_buffer(device.ctx).unsafe_ptr(),
+        layout.stride(0),
+        layout.stride(axis),
+        node.dtype(),
+        device.ctx,
+    )
+    return out^
+
 
 comptime BinaryStrided = def(
     a: UnsafePointer[NoneType, MutAnyOrigin],

@@ -214,7 +214,33 @@ def test_argmax_strided() raises:
     var a = Tensor(device, [Float32(1), 4, 5, 0, 2, 3, 0, 9], (4, 2))
     var sa = a[0:4:2]
     assert_true(not sa.is_contiguous())
-    assert_allclose(sa.argmax(), [Float32(1), 1])
+    assert_allclose(sa.argmax(axis=1), [Float32(1), 1])
+
+
+def test_argmax_global_strided() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 4, 5, 0, 2, 3, 0, 9], (4, 2))
+    var sa = a[0:4:2]
+    assert_true(not sa.is_contiguous())
+    assert_allclose(sa.argmax(), [Float32(1)])
+
+
+def test_argmax_axis0_strided() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 4, 5, 0, 2, 3, 0, 9], (4, 2))
+    var sa = a[0:4:2]
+    assert_true(not sa.is_contiguous())
+    assert_allclose(sa.argmax(axis=0), [Float32(1), 0])
+
+
+def test_argmax_keepdim_strided() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 4, 5, 0, 2, 3, 0, 9], (4, 2))
+    var sa = a[0:4:2]
+    assert_true(not sa.is_contiguous())
+    var out = sa.argmax(axis=1, keepdim=True)
+    assert_true(out.shape(0) == 2 and out.shape(1) == 1)
+    assert_allclose(out, [Float32(1), 1])
 
 
 def test_cross_entropy_strided_logits() raises:

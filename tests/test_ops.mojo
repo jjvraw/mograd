@@ -4,7 +4,7 @@ from std.testing import TestSuite, assert_almost_equal, assert_true
 from mograd import Tensor, Device
 from mograd.testing import assert_allclose, assert_close
 
-# TODO: Uniform, reshape, broadcast
+# TODO: Uniform, reshape
 
 # ===-------------------------------------------------------------------===#
 # Elementwise operations
@@ -101,6 +101,69 @@ def test_argmax() raises:
     var device = Device()
     var x = Tensor(device, [Float32(0.1), 0.9, 0.2, 0.3], (1, 4))
     assert_allclose(x.argmax(), [Float32(1)])
+
+
+def test_argmax_axis1() raises:
+    var device = Device()
+    var x = Tensor(device, [
+        Float32(1), 3, 2, 0,
+        Float32(4), 0, 1, 2,
+        Float32(0), 2, 3, 1,
+    ], (3, 4))
+    var out = x.argmax(axis=1)
+    assert_true(out.shape(0) == 3)
+    assert_allclose(out, [Float32(1), 0, 2])
+
+
+def test_argmax_axis0() raises:
+    var device = Device()
+    var x = Tensor(device, [
+        Float32(1), 3, 2, 0,
+        Float32(4), 0, 1, 2,
+        Float32(0), 2, 3, 1,
+    ], (3, 4))
+    var out = x.argmax(axis=0)
+    assert_true(out.shape(0) == 4)
+    assert_allclose(out, [Float32(1), 0, 2, 1])
+
+
+def test_argmax_keepdim() raises:
+    var device = Device()
+    var x = Tensor(device, [
+        Float32(1), 3, 2, 0,
+        Float32(4), 0, 1, 2,
+        Float32(0), 2, 3, 1,
+    ], (3, 4))
+    var out = x.argmax(axis=1, keepdim=True)
+    assert_true(out.shape(0) == 3 and out.shape(1) == 1)
+    assert_allclose(out, [Float32(1), 0, 2])
+
+
+def test_argmax_axis1_3d() raises:
+    var device = Device()
+    var x = Tensor(device, [
+        Float32(4), 3, 2, 1,
+        Float32(1), 4, 3, 2,
+        Float32(2), 1, 4, 3,
+        Float32(1), 2, 3, 4,
+        Float32(4), 1, 2, 3,
+        Float32(3), 4, 1, 2,
+    ], (2, 3, 4))
+    var out = x.argmax(axis=1)
+    assert_true(out.shape(0) == 2 and out.shape(1) == 4)
+    assert_allclose(out, [Float32(0), 1, 2, 2, 1, 2, 0, 0])
+
+
+def test_argmax_negative_axis() raises:
+    var device = Device()
+    var x = Tensor(device, [
+        Float32(1), 3, 2, 0,
+        Float32(4), 0, 1, 2,
+        Float32(0), 2, 3, 1,
+    ], (3, 4))
+    var out_neg = x.argmax(axis=-1)
+    var out_pos = x.argmax(axis=1)
+    assert_allclose(out_neg, out_pos)
 
 
 def test_log_exp_inverse() raises:

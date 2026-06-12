@@ -692,25 +692,52 @@ def mograd_transpose(
 @export
 def mograd_argmax(
     a: UnsafePointer[NoneType, MutAnyOrigin],
-    shape_ptr: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     n: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        if dtype == d:
-            var p = shape_ptr.bitcast[Float32]()
-            var N = Int(p[0])
-            var C = Int(p[1])
-            var inp = TileTensor(a.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(N, C)))
-            var out = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(N, 1)))
+    @always_inline
+    def body[d: DType]() capturing raises:
+        argmax[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rank, inner, sa, n, ctx)
+
+    dispatch_dtype[body, float_only=True](dtype)
+
+
+@export
+def mograd_argmax_axis(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    outer: Int,
+    reduce_size: Int,
+    inner: Int,
+    rank: Int,
+    inner_sizes: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    outer_stride: Int,
+    reduce_stride: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    @always_inline
+    def body[d: DType]() capturing raises:
+        if inner == 1 and rank == 2 and reduce_stride == 1 and outer_stride == reduce_size:
+            # Contiguous 2D fast path: argmax_gpu assumes row-major layout
+            var a_imm: UnsafePointer[Scalar[d], ImmutAnyOrigin] = a.bitcast[Scalar[d]]()
+            var inp = TileTensor(a_imm, row_major(Coord(outer, reduce_size)))
+            var out = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(outer, 1)))
             argmax_gpu[d, d](ctx, inp, out)
-            return
-    raise Error("unsupported dtype")
+        else:
+            # General stride-aware fallback via strided_offset
+            # TODO: use nn.argmaxmin when generalised to mid-axis (modular/.../nn/argmaxmin.mojo:59)
+            argmax_axis[d](
+                a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), outer, reduce_size, inner, rank, inner_sizes, sa, ctx
+            )
+
+    dispatch_dtype[body, float_only=True](dtype)
 
 
 comptime CE_BLOCK = 256
