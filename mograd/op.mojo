@@ -190,6 +190,9 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     def shape(ref self, i: Int) -> Int:
         return self._ptr[].layout.shape(i)
 
+    def numel(ref self) -> Int:
+        return self._ptr[].layout.numel()
+
     def dtype(ref self) -> ref[self._ptr[].dtype] DType:
         return self._ptr[].dtype
 

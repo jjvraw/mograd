@@ -291,7 +291,7 @@ def unary_strided(
     read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
 ) raises -> AnyBuffer:
     var layout = node.src(0).layout()
-    var out = AnyBuffer.create(node.dtype(), device, node.layout().numel())
+    var out = AnyBuffer.create(node.dtype(), device, node.numel())
     device.handle[].get_function[UnaryStrided](name)(
         inputs[0].data_ptr(),
         out.data_ptr(),
@@ -323,7 +323,7 @@ def axis_reduce_strided(
     var layout = node.src(0).layout()
     var axis = node.attr_int("axis")
     var outer, reduce_size, inner = layout.reduce_dims(axis)
-    var out = AnyBuffer.create(node.dtype(), device, node.layout().numel())
+    var out = AnyBuffer.create(node.dtype(), device, node.numel())
     device.handle[].get_function[SumAxisKernel](name)(
         inputs[0].data_ptr(), out.data_ptr(), outer, reduce_size, inner, node.dtype(), device.ctx
     )
@@ -351,7 +351,7 @@ def argmax_axis_strided(read node: OpRef, read inputs: List[AnyBuffer], read dev
     var layout = node.src(0).layout()
     var axis = node.attr_int("axis")
     var outer, reduce_size, inner = layout.reduce_dims(axis)
-    var out = AnyBuffer.create(node.dtype(), device, node.layout().numel())
+    var out = AnyBuffer.create(node.dtype(), device, node.numel())
     device.handle[].get_function[ArgmaxAxisKernel]("mograd_argmax_axis")(
         inputs[0].data_ptr(),
         out.data_ptr(),
@@ -391,14 +391,14 @@ def matmul_strided(
 ) raises -> AnyBuffer:
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
-    var out = AnyBuffer.create(node.dtype(), device, node.layout().numel())
+    var out = AnyBuffer.create(node.dtype(), device, node.numel())
     device.handle[].get_function[MatmulStrided](name)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         out.data_ptr(),
         la.shape(0),
         la.shape(1),
-        node.layout().shape(1),
+        node.shape(1),
         la.stride(0),
         la.stride(1),
         lb.stride(0),
@@ -429,12 +429,12 @@ def binary_strided(
 ) raises -> AnyBuffer:
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
-    var out = AnyBuffer.create(node.dtype(), device, node.layout().numel())
+    var out = AnyBuffer.create(node.dtype(), device, node.numel())
     device.handle[].get_function[BinaryStrided](name)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         out.data_ptr(),
-        node.layout().numel(),
+        node.numel(),
         la.rank(),
         la.inner_sizes_buffer(device.ctx).unsafe_ptr(),
         la.strides_buffer(device.ctx).unsafe_ptr(),
