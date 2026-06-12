@@ -1,6 +1,8 @@
 from std.memory import ArcPointer
 from std.gpu.host import DeviceContext
 
+from layout import IntTuple
+
 from mograd import Device
 from mograd.op import AttrVal, Op, OpRef, OpType
 from mograd.layout import Layout
@@ -137,24 +139,65 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
         )
 
     # ===-------------------------------------------------------------------===#
-    #
+    # Materialisation / Device I/O
+    # ===-------------------------------------------------------------------===#
+
+    def value(self) raises -> Buffer[Self.dtype]:
+        var result = NativeRuntime.run(self.op, self.device)
+        return result.unsafe_get[Self.dtype]().copy()
+
+    def item(self) raises -> Scalar[Self.dtype]:
+        var buf = self.value()
+        var result: Scalar[Self.dtype]
+        with buf.buf().map_to_host() as host:
+            result = (host.unsafe_ptr() + buf.base_offset)[0]
+        return result
+
+    def to_list(self) raises -> List[Scalar[Self.dtype]]:
+        var result = List[Scalar[Self.dtype]]()
+        var buf = self.value()
+        var layout = self.op.layout()
+        var inner = layout.inner_sizes()
+        with buf.buf().map_to_host() as host:
+            var base = host.unsafe_ptr() + buf.base_offset
+            for i in range(layout.numel()):
+                var off = 0
+                var rem = i
+                for d in range(layout.rank()):
+                    var idx = rem // inner.value(d)
+                    rem %= inner.value(d)
+                    off += idx * layout._strides.value(d)
+                result.append(base[off])
+        return result^
+
+    # ===-------------------------------------------------------------------===#
+    # Layout
     # ===-------------------------------------------------------------------===#
 
     def is_contiguous(self) -> Bool:
         return self.op.layout().is_contiguous()
-
-    def contiguous(self) -> Self:
-        return Self(self.device, self.op.contiguous(), self.requires_grad)
-
-    # ===-------------------------------------------------------------------===#
-    # Layout transformative operations
-    # ===-------------------------------------------------------------------===#
 
     def shape(self) -> Layout:
         return self.op.layout().copy()
 
     def shape(self, idx: Int) -> Int:
         return self.op.shape(idx)
+
+    def numel(self) -> Int:
+        return self.op.layout().numel()
+
+    def stride(self, axis: Int) raises -> Int:
+        return self.op.layout().stride(axis)
+
+    def stride(self) -> IntTuple:
+        return self.op.layout().stride()
+
+    # ===-------------------------------------------------------------------===#
+    # Layout transformative operations
+    # ===-------------------------------------------------------------------===#
+
+    def contiguous(self) -> Self:
+        return Self(self.device, self.op.contiguous(), self.requires_grad)
 
     def reshape(self, shape: Layout) raises -> Self:
         """Returns a new tensor with the given shape, copying the underlying data.
@@ -300,6 +343,10 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
         """
         return Self(self.device, self.op.argmax(axis, keepdim), self.requires_grad)
 
+    # ===-------------------------------------------------------------------===#
+    # Indexing & Encoding
+    # ===-------------------------------------------------------------------===#
+
     def one_hot[
         out_dtype: DType = DType.int64
     ](self, num_classes: Int) -> Tensor[out_dtype] where out_dtype.is_integral():
@@ -361,38 +408,6 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
                 if not self.device:
                     raise Error("gradient requires a device context")
                 result.append(Tensor[Self.dtype].empty(self.device.value(), targets[i].op.layout()))
-        return result^
-
-    # ===-------------------------------------------------------------------===#
-    # Device I/O
-    # ===-------------------------------------------------------------------===#
-
-    def value(self) raises -> Buffer[Self.dtype]:
-        var result = NativeRuntime.run(self.op, self.device)
-        return result.unsafe_get[Self.dtype]().copy()
-
-    def item(self) raises -> Scalar[Self.dtype]:
-        var buf = self.value()
-        var result: Scalar[Self.dtype]
-        with buf.buf().map_to_host() as host:
-            result = (host.unsafe_ptr() + buf.base_offset)[0]
-        return result
-
-    def to_list(self) raises -> List[Scalar[Self.dtype]]:
-        var result = List[Scalar[Self.dtype]]()
-        var buf = self.value()
-        var layout = self.op.layout()
-        var inner = layout.inner_sizes()
-        with buf.buf().map_to_host() as host:
-            var base = host.unsafe_ptr() + buf.base_offset
-            for i in range(layout.numel()):
-                var off = 0
-                var rem = i
-                for d in range(layout.rank()):
-                    var idx = rem // inner.value(d)
-                    rem %= inner.value(d)
-                    off += idx * layout._strides.value(d)
-                result.append(base[off])
         return result^
 
     # ===-------------------------------------------------------------------===#
