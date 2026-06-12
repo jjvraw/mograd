@@ -45,7 +45,7 @@ def strided_offsets(
 
 
 # ===-------------------------------------------------------------------===#
-# Generic strided maps
+# Generic strided GPU kernels
 # ===-------------------------------------------------------------------===#
 
 
@@ -133,30 +133,12 @@ def dispatch_dtype[
 
 
 # ===-------------------------------------------------------------------===#
-# Kernel signatures
+# SO-internal dispatch helpers
+# Used inside the GPU shared library by exported functions.
 # ===-------------------------------------------------------------------===#
-
-comptime FactoryKernel = def(
-    params: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    numel: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) thin abi("Mojo") raises -> None
 
 comptime UnaryStridedKernel = def[dtype: DType](
     a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
-    n: Int,
-    ctx: DeviceContext,
-) raises thin -> None
-
-comptime BinaryScalarStridedKernel = def[dtype: DType](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     rank: Int,
     inner: UnsafePointer[Int64, MutAnyOrigin],
@@ -172,11 +154,6 @@ comptime BinaryContigKernel = def[dtype: DType](
     n: Int,
     ctx: DeviceContext,
 ) raises thin -> None
-
-
-# ===-------------------------------------------------------------------===#
-# Export-facing dispatchers
-# ===-------------------------------------------------------------------===#
 
 
 def dispatch_unary[
@@ -285,8 +262,17 @@ def dispatch_binary_scalar_map[
 
 
 # ===-------------------------------------------------------------------===#
-# Internal dispatchers
+# CPU-side runtime helpers
+# Load SO functions by name and dispatch from the graph scheduler.
 # ===-------------------------------------------------------------------===#
+
+comptime FactoryKernel = def(
+    params: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    numel: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) thin abi("Mojo") raises -> None
 
 comptime UnaryStrided = def(
     a: UnsafePointer[NoneType, MutAnyOrigin],
@@ -329,6 +315,21 @@ comptime SumAxisKernel = def(
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
 
+
+@always_inline
+def axis_reduce_strided(
+    read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+) raises -> AnyBuffer:
+    var layout = node.src(0).layout()
+    var axis = node.attr_int("axis")
+    var outer, reduce_size, inner = layout.reduce_dims(axis)
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
+    device.handle[].get_function[SumAxisKernel](name)(
+        inputs[0].data_ptr(), out.data_ptr(), outer, reduce_size, inner, node.dtype(), device.ctx
+    )
+    return out^
+
+
 comptime ArgmaxAxisKernel = def(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
@@ -343,20 +344,6 @@ comptime ArgmaxAxisKernel = def(
     dtype: DType,
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
-
-
-@always_inline
-def axis_reduce_strided(
-    read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
-) raises -> AnyBuffer:
-    var layout = node.src(0).layout()
-    var axis = node.attr_int("axis")
-    var outer, reduce_size, inner = layout.reduce_dims(axis)
-    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    device.handle[].get_function[SumAxisKernel](name)(
-        inputs[0].data_ptr(), out.data_ptr(), outer, reduce_size, inner, node.dtype(), device.ctx
-    )
-    return out^
 
 
 @always_inline
@@ -376,6 +363,46 @@ def argmax_axis_strided(read node: OpRef, read inputs: List[AnyBuffer], read dev
         layout.strides_buffer(device.ctx).unsafe_ptr(),
         layout.stride(0),
         layout.stride(axis),
+        node.dtype(),
+        device.ctx,
+    )
+    return out^
+
+
+comptime MatmulStrided = def(
+    UnsafePointer[NoneType, MutAnyOrigin],
+    UnsafePointer[NoneType, MutAnyOrigin],
+    UnsafePointer[NoneType, MutAnyOrigin],
+    Int,
+    Int,
+    Int,
+    Int,
+    Int,
+    Int,
+    Int,
+    DType,
+    DeviceContext,
+) thin abi("Mojo") raises -> None
+
+
+@always_inline
+def matmul_strided(
+    read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+) raises -> AnyBuffer:
+    var la = node.src(0).layout()
+    var lb = node.src(1).layout()
+    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
+    device.handle[].get_function[MatmulStrided](name)(
+        inputs[0].data_ptr(),
+        inputs[1].data_ptr(),
+        out.data_ptr(),
+        la.shape(0),
+        la.shape(1),
+        node.layout().shape(1),
+        la.stride(0),
+        la.stride(1),
+        lb.stride(0),
+        lb.stride(1),
         node.dtype(),
         device.ctx,
     )

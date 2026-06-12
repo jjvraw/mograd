@@ -361,43 +361,7 @@ def mograd_scale(
 def mograd_matmul(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     b: UnsafePointer[NoneType, MutAnyOrigin],
-    a_shape: UnsafePointer[Int, MutAnyOrigin],
-    a_strides: UnsafePointer[Int, MutAnyOrigin],
-    b_shape: UnsafePointer[Int, MutAnyOrigin],
-    b_strides: UnsafePointer[Int, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) abi("Mojo") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        if dtype == d:
-            matmul[d](
-                a.bitcast[Scalar[d]](),
-                b.bitcast[Scalar[d]](),
-                dst.bitcast[Scalar[d]](),
-                a_shape[0],
-                a_shape[1],
-                b_shape[1],
-                a_strides[0],
-                a_strides[1],
-                b_strides[0],
-                b_strides[1],
-                ctx,
-            )
-            return
-    raise Error("unsupported dtype")
-
-
-def matmul[
-    dtype: DType
-](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     M: Int,
     K: Int,
     N: Int,
@@ -405,69 +369,38 @@ def matmul[
     lda1: Int,
     ldb: Int,
     ldb1: Int,
+    dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    if lda == K and lda1 == 1 and ldb == N and ldb1 == 1:
-        var ta = TileTensor(a.as_unsafe_any_origin(), row_major(Coord(M, K)))
-        var tb = TileTensor(b.as_unsafe_any_origin(), row_major(Coord(K, N)))
-        var tc = TileTensor(dst.as_unsafe_any_origin(), row_major(Coord(M, N)))
-        linalg_matmul[target="gpu"](tc, ta, tb, ctx)
-    else:
-        var a_imm: UnsafePointer[Scalar[dtype], ImmutAnyOrigin] = a
-        var b_imm: UnsafePointer[Scalar[dtype], ImmutAnyOrigin] = b
-        var ta = TileTensor(a_imm, MixedLayout(Coord(M, K), Coord(lda, lda1)))
-        var tb = TileTensor(b_imm, MixedLayout(Coord(K, N), Coord(ldb, ldb1)))
-        var tc = TileTensor(dst.as_unsafe_any_origin(), row_major(Coord(M, N)))
-        comptime BLOCK = 16
-        comptime naive = matmul_kernel_naive[
-            dtype, dtype, dtype, type_of(tc).LayoutType, type_of(ta).LayoutType, type_of(tb).LayoutType, BLOCK
-        ]
-        ctx.enqueue_function[naive](
-            tc, ta, tb, M, N, K, grid_dim=(ceildiv(M, BLOCK), ceildiv(N, BLOCK)), block_dim=(BLOCK, BLOCK)
-        )
+    @always_inline
+    def body[d: DType]() capturing raises:
+        if lda == K and lda1 == 1 and ldb == N and ldb1 == 1:
+            var ta = TileTensor(a.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(M, K)))
+            var tb = TileTensor(b.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(K, N)))
+            var tc = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(M, N)))
+            linalg_matmul[target="gpu"](tc, ta, tb, ctx)
+        else:
+            var a_imm: UnsafePointer[Scalar[d], ImmutAnyOrigin] = a.bitcast[Scalar[d]]()
+            var b_imm: UnsafePointer[Scalar[d], ImmutAnyOrigin] = b.bitcast[Scalar[d]]()
+            var ta = TileTensor(a_imm, MixedLayout(Coord(M, K), Coord(lda, lda1)))
+            var tb = TileTensor(b_imm, MixedLayout(Coord(K, N), Coord(ldb, ldb1)))
+            var tc = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(M, N)))
+            comptime BLOCK = 16
+            comptime naive = matmul_kernel_naive[
+                d, d, d, type_of(tc).LayoutType, type_of(ta).LayoutType, type_of(tb).LayoutType, BLOCK
+            ]
+            ctx.enqueue_function[naive](
+                tc, ta, tb, M, N, K, grid_dim=(ceildiv(M, BLOCK), ceildiv(N, BLOCK)), block_dim=(BLOCK, BLOCK)
+            )
+
+    dispatch_dtype[body](dtype)
 
 
 @export
 def mograd_matmul_t(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     b: UnsafePointer[NoneType, MutAnyOrigin],
-    a_shape: UnsafePointer[Int, MutAnyOrigin],
-    a_strides: UnsafePointer[Int, MutAnyOrigin],
-    b_shape: UnsafePointer[Int, MutAnyOrigin],
-    b_strides: UnsafePointer[Int, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) abi("Mojo") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        if dtype == d:
-            matmul_t[d](
-                a.bitcast[Scalar[d]](),
-                b.bitcast[Scalar[d]](),
-                dst.bitcast[Scalar[d]](),
-                a_shape[0],
-                a_shape[1],
-                b_shape[0],
-                a_strides[0],
-                a_strides[1],
-                b_strides[0],
-                b_strides[1],
-                ctx,
-            )
-            return
-    raise Error("unsupported dtype")
-
-
-def matmul_t[
-    dtype: DType
-](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     M: Int,
     K: Int,
     N: Int,
@@ -475,26 +408,31 @@ def matmul_t[
     lda1: Int,
     ldb: Int,
     ldb1: Int,
+    dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    if lda == K and lda1 == 1 and ldb == K and ldb1 == 1:
-        var ta = TileTensor(a.as_unsafe_any_origin(), row_major(Coord(M, K)))
-        var tb = TileTensor(b.as_unsafe_any_origin(), row_major(Coord(N, K)))
-        var tc = TileTensor(dst.as_unsafe_any_origin(), row_major(Coord(M, N)))
-        linalg_matmul[target="gpu", transpose_b=True](tc, ta, tb, ctx)
-    else:
-        var a_imm: UnsafePointer[Scalar[dtype], ImmutAnyOrigin] = a
-        var b_imm: UnsafePointer[Scalar[dtype], ImmutAnyOrigin] = b
-        var ta = TileTensor(a_imm, MixedLayout(Coord(M, K), Coord(lda, lda1)))
-        var tb = TileTensor(b_imm, MixedLayout(Coord(N, K), Coord(ldb, ldb1)))
-        var tc = TileTensor(dst.as_unsafe_any_origin(), row_major(Coord(M, N)))
-        comptime BLOCK = 16
-        comptime naive = matmul_kernel_naive[
-            dtype, dtype, dtype, type_of(tc).LayoutType, type_of(ta).LayoutType, type_of(tb).LayoutType, BLOCK, True
-        ]
-        ctx.enqueue_function[naive](
-            tc, ta, tb, M, N, K, grid_dim=(ceildiv(M, BLOCK), ceildiv(N, BLOCK)), block_dim=(BLOCK, BLOCK)
-        )
+    @always_inline
+    def body[d: DType]() capturing raises:
+        if lda == K and lda1 == 1 and ldb == K and ldb1 == 1:
+            var ta = TileTensor(a.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(M, K)))
+            var tb = TileTensor(b.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(N, K)))
+            var tc = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(M, N)))
+            linalg_matmul[target="gpu", transpose_b=True](tc, ta, tb, ctx)
+        else:
+            var a_imm: UnsafePointer[Scalar[d], ImmutAnyOrigin] = a.bitcast[Scalar[d]]()
+            var b_imm: UnsafePointer[Scalar[d], ImmutAnyOrigin] = b.bitcast[Scalar[d]]()
+            var ta = TileTensor(a_imm, MixedLayout(Coord(M, K), Coord(lda, lda1)))
+            var tb = TileTensor(b_imm, MixedLayout(Coord(N, K), Coord(ldb, ldb1)))
+            var tc = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(M, N)))
+            comptime BLOCK = 16
+            comptime naive = matmul_kernel_naive[
+                d, d, d, type_of(tc).LayoutType, type_of(ta).LayoutType, type_of(tb).LayoutType, BLOCK, True
+            ]
+            ctx.enqueue_function[naive](
+                tc, ta, tb, M, N, K, grid_dim=(ceildiv(M, BLOCK), ceildiv(N, BLOCK)), block_dim=(BLOCK, BLOCK)
+            )
+
+    dispatch_dtype[body](dtype)
 
 
 # ===-------------------------------------------------------------------===#

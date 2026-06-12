@@ -18,6 +18,7 @@ from mograd.runtime.gpu.kernels.utils import (
     binary_strided,
     axis_reduce_strided,
     argmax_axis_strided,
+    matmul_strided,
 )
 
 # ===-------------------------------------------------------------------===#
@@ -334,6 +335,14 @@ def argmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBu
     return unary_strided("mograd_argmax", node, inputs, device)
 
 
+def matmul(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+    return matmul_strided("mograd_matmul", node, inputs, device)
+
+
+def matmul_t(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+    return matmul_strided("mograd_matmul_t", node, inputs, device)
+
+
 # _-_-_-_-_-
 # TODO: All the below
 # _-_-_-_-_-
@@ -403,19 +412,6 @@ comptime TernaryOp = def(
     DeviceContext,
 ) thin abi("Mojo") raises -> None
 
-comptime MatmulOp = def(
-    UnsafePointer[NoneType, MutAnyOrigin],
-    UnsafePointer[NoneType, MutAnyOrigin],
-    UnsafePointer[Int, MutAnyOrigin],
-    UnsafePointer[Int, MutAnyOrigin],
-    UnsafePointer[Int, MutAnyOrigin],
-    UnsafePointer[Int, MutAnyOrigin],
-    UnsafePointer[NoneType, MutAnyOrigin],
-    Int,
-    DType,
-    DeviceContext,
-) thin abi("Mojo") raises -> None
-
 
 def cross_entropy(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var p = alloc[Float32](2)
@@ -432,33 +428,6 @@ def cross_entropy(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -
         device.ctx,
     )
     p.free()
-    return out^
-
-
-def matmul(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var la = node.src(0).layout()
-    var lb = node.src(1).layout()
-    var a_shape = la.shape_ptr()
-    var a_strides = la.stride_ptr()
-    var b_shape = lb.shape_ptr()
-    var b_strides = lb.stride_ptr()
-    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    device.handle[].get_function[MatmulOp]("mograd_matmul")(
-        inputs[0].data_ptr(),
-        inputs[1].data_ptr(),
-        a_shape,
-        a_strides,
-        b_shape,
-        b_strides,
-        out.data_ptr(),
-        node.layout().numel(),
-        node.dtype(),
-        device.ctx,
-    )
-    a_shape.free()
-    a_strides.free()
-    b_shape.free()
-    b_strides.free()
     return out^
 
 
@@ -482,33 +451,6 @@ def disk(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
 
 def slice(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     return inputs[0].view(node.layout())
-
-
-def matmul_t(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var la = node.src(0).layout()
-    var lb = node.src(1).layout()
-    var a_shape = la.shape_ptr()
-    var a_strides = la.stride_ptr()
-    var b_shape = lb.shape_ptr()
-    var b_strides = lb.stride_ptr()
-    var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    device.handle[].get_function[MatmulOp]("mograd_matmul_t")(
-        inputs[0].data_ptr(),
-        inputs[1].data_ptr(),
-        a_shape,
-        a_strides,
-        b_shape,
-        b_strides,
-        out.data_ptr(),
-        node.layout().numel(),
-        node.dtype(),
-        device.ctx,
-    )
-    a_shape.free()
-    a_strides.free()
-    b_shape.free()
-    b_strides.free()
-    return out^
 
 
 # ===-------------------------------------------------------------------===#
