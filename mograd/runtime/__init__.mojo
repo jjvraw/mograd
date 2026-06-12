@@ -335,12 +335,38 @@ def argmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBu
     return unary_strided("mograd_argmax", node, inputs, device)
 
 
+# ===-------------------------------------------------------------------===#
+# Matmul
+# ===-------------------------------------------------------------------===#
+
+
 def matmul(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     return matmul_strided("mograd_matmul", node, inputs, device)
 
 
 def matmul_t(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     return matmul_strided("mograd_matmul_t", node, inputs, device)
+
+
+# ===-------------------------------------------------------------------===#
+# Shape / metadata ops
+# ===-------------------------------------------------------------------===#
+
+
+def contiguous(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+    return unary_strided("mograd_contiguous", node, inputs, device)
+
+
+def expand(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+    return inputs[0].view(node.layout())
+
+
+def reshape(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+    return inputs[0].view(node.layout())
+
+
+def view(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+    return inputs[0].view(node.layout())
 
 
 # _-_-_-_-_-
@@ -450,27 +476,6 @@ def disk(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
 
 
 def slice(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return inputs[0].view(node.layout())
-
-
-# ===-------------------------------------------------------------------===#
-# Shape / metadata ops
-# ===-------------------------------------------------------------------===#
-
-
-def contiguous(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return unary_strided("mograd_contiguous", node, inputs, device)
-
-
-def expand(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return inputs[0].view(node.layout())
-
-
-def reshape(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return inputs[0].view(node.layout())
-
-
-def view(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     return inputs[0].view(node.layout())
 
 
