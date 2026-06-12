@@ -31,7 +31,7 @@ from mograd.runtime.gpu.kernels.utils import (
 )
 
 # ===-------------------------------------------------------------------===#
-# Factory
+# Factory Kernels
 # ===-------------------------------------------------------------------===#
 
 
@@ -122,7 +122,7 @@ def mograd_one_hot(
 
 
 # ===-------------------------------------------------------------------===#
-# Unary Elementwise
+# Unary Maps
 # ===-------------------------------------------------------------------===#
 
 
@@ -225,8 +225,22 @@ def mograd_cast(
     raise Error("unsupported dtype combination")
 
 
+@export
+def mograd_contiguous(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    numel: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    dispatch_unary_map[identity_op](a, dst, numel, rank, inner, sa, dtype, ctx)
+
+
 # ===-------------------------------------------------------------------===#
-# Binary Elementwise
+# Binary Maps
 # ===-------------------------------------------------------------------===#
 
 
@@ -340,6 +354,7 @@ def mograd_scale(
 # ===-------------------------------------------------------------------===#
 # Matmul
 # ===-------------------------------------------------------------------===#
+# TODO: Support vendors https://github.com/pytorch/pytorch/pull/184248
 
 
 @export
@@ -483,7 +498,7 @@ def matmul_t[
 
 
 # ===-------------------------------------------------------------------===#
-# Reduce
+# Sum
 # ===-------------------------------------------------------------------===#
 
 
@@ -518,18 +533,9 @@ def mograd_sum_axis(
     dispatch_dtype[body](dtype)
 
 
-@export
-def mograd_contiguous(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    numel: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
-    dtype: DType,
-    ctx: DeviceContext,
-) abi("Mojo") raises:
-    dispatch_unary_map[identity_op](a, dst, numel, rank, inner, sa, dtype, ctx)
+# ===-------------------------------------------------------------------===#
+# Softmax
+# ===-------------------------------------------------------------------===#
 
 
 @export
@@ -572,6 +578,65 @@ def softmax[
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     nn_softmax[dtype, simd_width, 2, input_fn, "gpu"](Coord(rows, cols), out, axis=1, context=ctx)
     ctx.synchronize()
+
+
+def softmax_grad_kernel[
+    dtype: DType, BLOCK_SIZE: Int
+](
+    y: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    upstream: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    N: Int,
+    size: Int,
+):
+    var row = block_idx.x
+    if row >= N:
+        return
+    var row_offset = row * size
+    var dot = Scalar[dtype](0.0)
+    for i in range(thread_idx.x, size, BLOCK_SIZE):
+        dot += y[row_offset + i] * upstream[row_offset + i]
+    dot = warp_sum(dot)
+    for i in range(thread_idx.x, size, BLOCK_SIZE):
+        dst[row_offset + i] = y[row_offset + i] * (upstream[row_offset + i] - dot)
+
+
+@export
+def mograd_softmax_grad(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    b: UnsafePointer[NoneType, MutAnyOrigin],
+    c: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    n: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+        comptime T = AnyBuffer.BufVariant.Ts[k]
+        comptime assert conforms_to(T, BufferArm)
+        comptime d = T.node_dtype
+        comptime if d.is_floating_point():
+            if dtype == d:
+                var p = c.bitcast[Float32]()
+                var N = Int(p[0])
+                var size = Int(p[1])
+                comptime BLOCK_SIZE = 32
+                ctx.enqueue_function[softmax_grad_kernel[d, BLOCK_SIZE]](
+                    a.bitcast[Scalar[d]](),
+                    b.bitcast[Scalar[d]](),
+                    dst.bitcast[Scalar[d]](),
+                    N,
+                    size,
+                    grid_dim=(N,),
+                    block_dim=(BLOCK_SIZE,),
+                )
+                return
+    raise Error("unsupported dtype")
+
+
+# ===-------------------------------------------------------------------===#
+# Transpose
+# ===-------------------------------------------------------------------===#
 
 
 def transpose_kernel[
@@ -619,6 +684,11 @@ def mograd_transpose(
     raise Error("unsupported dtype")
 
 
+# ===-------------------------------------------------------------------===#
+# Argmax
+# ===-------------------------------------------------------------------===#
+
+
 @export
 def mograd_argmax(
     a: UnsafePointer[NoneType, MutAnyOrigin],
@@ -644,6 +714,10 @@ def mograd_argmax(
 
 
 comptime CE_BLOCK = 256
+
+# ===-------------------------------------------------------------------===#
+# Cross Entropy
+# ===-------------------------------------------------------------------===#
 
 
 def cross_entropy_kernel[
@@ -771,70 +845,6 @@ def mograd_cross_entropy(
                 ctx.synchronize()
                 return
     raise Error("unsupported dtype")
-
-
-# ===-------------------------------------------------------------------===#
-# Softmax Grad
-# ===-------------------------------------------------------------------===#
-
-
-def softmax_grad_kernel[
-    dtype: DType, BLOCK_SIZE: Int
-](
-    y: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    upstream: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    N: Int,
-    size: Int,
-):
-    var row = block_idx.x
-    if row >= N:
-        return
-    var row_offset = row * size
-    var dot = Scalar[dtype](0.0)
-    for i in range(thread_idx.x, size, BLOCK_SIZE):
-        dot += y[row_offset + i] * upstream[row_offset + i]
-    dot = warp_sum(dot)
-    for i in range(thread_idx.x, size, BLOCK_SIZE):
-        dst[row_offset + i] = y[row_offset + i] * (upstream[row_offset + i] - dot)
-
-
-@export
-def mograd_softmax_grad(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    b: UnsafePointer[NoneType, MutAnyOrigin],
-    c: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) abi("Mojo") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        comptime if d.is_floating_point():
-            if dtype == d:
-                var p = c.bitcast[Float32]()
-                var N = Int(p[0])
-                var size = Int(p[1])
-                comptime BLOCK_SIZE = 32
-                ctx.enqueue_function[softmax_grad_kernel[d, BLOCK_SIZE]](
-                    a.bitcast[Scalar[d]](),
-                    b.bitcast[Scalar[d]](),
-                    dst.bitcast[Scalar[d]](),
-                    N,
-                    size,
-                    grid_dim=(N,),
-                    block_dim=(BLOCK_SIZE,),
-                )
-                return
-    raise Error("unsupported dtype")
-
-
-# ===-------------------------------------------------------------------===#
-# Cross Entropy Grad
-# ===-------------------------------------------------------------------===#
 
 
 def cross_entropy_grad_kernel[
