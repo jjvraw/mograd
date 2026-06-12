@@ -425,6 +425,19 @@ comptime TernaryOp = def(
     DeviceContext,
 ) thin abi("Mojo") raises -> None
 
+comptime MatmulOp = def(
+    UnsafePointer[NoneType, MutAnyOrigin],
+    UnsafePointer[NoneType, MutAnyOrigin],
+    UnsafePointer[Int, MutAnyOrigin],
+    UnsafePointer[Int, MutAnyOrigin],
+    UnsafePointer[Int, MutAnyOrigin],
+    UnsafePointer[Int, MutAnyOrigin],
+    UnsafePointer[NoneType, MutAnyOrigin],
+    Int,
+    DType,
+    DeviceContext,
+) thin abi("Mojo") raises -> None
+
 
 def cross_entropy(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var p = alloc[Float32](2)
@@ -447,25 +460,27 @@ def cross_entropy(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -
 def matmul(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
-    var p = alloc[Float32](7)
-    p[0] = Float32(la.shape(0))
-    p[1] = Float32(la.shape(1))
-    p[2] = Float32(lb.shape(1))
-    p[3] = Float32(la.stride(0))
-    p[4] = Float32(la.stride(1))
-    p[5] = Float32(lb.stride(0))
-    p[6] = Float32(lb.stride(1))
+    var a_shape = la.shape_ptr()
+    var a_strides = la.stride_ptr()
+    var b_shape = lb.shape_ptr()
+    var b_strides = lb.stride_ptr()
     var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    device.handle[].get_function[TernaryOp]("mograd_matmul")(
+    device.handle[].get_function[MatmulOp]("mograd_matmul")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
-        p.bitcast[NoneType](),
+        a_shape,
+        a_strides,
+        b_shape,
+        b_strides,
         out.data_ptr(),
         node.layout().numel(),
         node.dtype(),
         device.ctx,
     )
-    p.free()
+    a_shape.free()
+    a_strides.free()
+    b_shape.free()
+    b_strides.free()
     return out^
 
 
@@ -494,25 +509,27 @@ def slice(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuf
 def matmul_t(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
-    var p = alloc[Float32](7)
-    p[0] = Float32(la.shape(0))
-    p[1] = Float32(la.shape(1))
-    p[2] = Float32(lb.shape(0))
-    p[3] = Float32(la.stride(0))
-    p[4] = Float32(la.stride(1))
-    p[5] = Float32(lb.stride(0))
-    p[6] = Float32(lb.stride(1))
+    var a_shape = la.shape_ptr()
+    var a_strides = la.stride_ptr()
+    var b_shape = lb.shape_ptr()
+    var b_strides = lb.stride_ptr()
     var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
-    device.handle[].get_function[TernaryOp]("mograd_matmul_t")(
+    device.handle[].get_function[MatmulOp]("mograd_matmul_t")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
-        p.bitcast[NoneType](),
+        a_shape,
+        a_strides,
+        b_shape,
+        b_strides,
         out.data_ptr(),
         node.layout().numel(),
         node.dtype(),
         device.ctx,
     )
-    p.free()
+    a_shape.free()
+    a_strides.free()
+    b_shape.free()
+    b_strides.free()
     return out^
 
 

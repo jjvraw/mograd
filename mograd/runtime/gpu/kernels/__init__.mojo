@@ -346,7 +346,10 @@ def mograd_scale(
 def mograd_matmul(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     b: UnsafePointer[NoneType, MutAnyOrigin],
-    shape_ptr: UnsafePointer[NoneType, MutAnyOrigin],
+    a_shape: UnsafePointer[Int, MutAnyOrigin],
+    a_strides: UnsafePointer[Int, MutAnyOrigin],
+    b_shape: UnsafePointer[Int, MutAnyOrigin],
+    b_strides: UnsafePointer[Int, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     n: Int,
     dtype: DType,
@@ -357,25 +360,17 @@ def mograd_matmul(
         comptime assert conforms_to(T, BufferArm)
         comptime d = T.node_dtype
         if dtype == d:
-            var p = shape_ptr.bitcast[Float32]()
-            var M = Int(p[0])
-            var K = Int(p[1])
-            var N = Int(p[2])
-            var lda = Int(p[3])
-            var lda1 = Int(p[4])
-            var ldb = Int(p[5])
-            var ldb1 = Int(p[6])
             matmul[d](
                 a.bitcast[Scalar[d]](),
                 b.bitcast[Scalar[d]](),
                 dst.bitcast[Scalar[d]](),
-                M,
-                K,
-                N,
-                lda,
-                lda1,
-                ldb,
-                ldb1,
+                a_shape[0],
+                a_shape[1],
+                b_shape[1],
+                a_strides[0],
+                a_strides[1],
+                b_strides[0],
+                b_strides[1],
                 ctx,
             )
             return
@@ -421,7 +416,10 @@ def matmul[
 def mograd_matmul_t(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     b: UnsafePointer[NoneType, MutAnyOrigin],
-    shape_ptr: UnsafePointer[NoneType, MutAnyOrigin],
+    a_shape: UnsafePointer[Int, MutAnyOrigin],
+    a_strides: UnsafePointer[Int, MutAnyOrigin],
+    b_shape: UnsafePointer[Int, MutAnyOrigin],
+    b_strides: UnsafePointer[Int, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     n: Int,
     dtype: DType,
@@ -432,25 +430,17 @@ def mograd_matmul_t(
         comptime assert conforms_to(T, BufferArm)
         comptime d = T.node_dtype
         if dtype == d:
-            var p = shape_ptr.bitcast[Float32]()
-            var M = Int(p[0])
-            var K = Int(p[1])
-            var N = Int(p[2])
-            var lda = Int(p[3])
-            var lda1 = Int(p[4])
-            var ldb = Int(p[5])
-            var ldb1 = Int(p[6])
             matmul_t[d](
                 a.bitcast[Scalar[d]](),
                 b.bitcast[Scalar[d]](),
                 dst.bitcast[Scalar[d]](),
-                M,
-                K,
-                N,
-                lda,
-                lda1,
-                ldb,
-                ldb1,
+                a_shape[0],
+                a_shape[1],
+                b_shape[0],
+                a_strides[0],
+                a_strides[1],
+                b_strides[0],
+                b_strides[1],
                 ctx,
             )
             return
