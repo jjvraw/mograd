@@ -305,9 +305,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def matmul(self, rhs: OpRef) -> Self:
-        return Self(
-            Op(OpType.MATMUL, (self.shape(0), rhs.shape(1)), self.dtype(), [self.contiguous(), rhs.contiguous()])
-        )
+        return Self(Op(OpType.MATMUL, (self.shape(0), rhs.shape(1)), self.dtype(), [self, rhs]))
 
     # ===-------------------------------------------------------------------===#
     # Loss operations

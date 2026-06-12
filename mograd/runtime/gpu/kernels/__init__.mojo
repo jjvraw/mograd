@@ -1,4 +1,4 @@
-from layout import Coord, TileTensor, row_major, coord
+from layout import Coord, MixedLayout, TileTensor, row_major, coord
 from std.algorithm.functional import elementwise
 from std.algorithm.backend.gpu.reduction import reduce_kernel
 from std.utils.static_tuple import StaticTuple
@@ -11,6 +11,7 @@ from std.memory import stack_allocation
 from std.sys.info import simd_width_of
 from std.utils import IndexList
 from linalg.matmul import matmul as linalg_matmul
+from linalg.matmul.gpu import matmul_kernel_naive
 from nn.argmaxmin_gpu import argmax_gpu
 from nn.rand_uniform import random_uniform
 from nn.softmax import softmax as nn_softmax
@@ -337,6 +338,161 @@ def mograd_scale(
 
 
 # ===-------------------------------------------------------------------===#
+# Matmul
+# ===-------------------------------------------------------------------===#
+
+
+@export
+def mograd_matmul(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    b: UnsafePointer[NoneType, MutAnyOrigin],
+    shape_ptr: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    n: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+        comptime T = AnyBuffer.BufVariant.Ts[k]
+        comptime assert conforms_to(T, BufferArm)
+        comptime d = T.node_dtype
+        if dtype == d:
+            var p = shape_ptr.bitcast[Float32]()
+            var M = Int(p[0])
+            var K = Int(p[1])
+            var N = Int(p[2])
+            var lda = Int(p[3])
+            var lda1 = Int(p[4])
+            var ldb = Int(p[5])
+            var ldb1 = Int(p[6])
+            matmul[d](
+                a.bitcast[Scalar[d]](),
+                b.bitcast[Scalar[d]](),
+                dst.bitcast[Scalar[d]](),
+                M,
+                K,
+                N,
+                lda,
+                lda1,
+                ldb,
+                ldb1,
+                ctx,
+            )
+            return
+    raise Error("unsupported dtype")
+
+
+def matmul[
+    dtype: DType
+](
+    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    M: Int,
+    K: Int,
+    N: Int,
+    lda: Int,
+    lda1: Int,
+    ldb: Int,
+    ldb1: Int,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    if lda == K and lda1 == 1 and ldb == N and ldb1 == 1:
+        var ta = TileTensor(a.as_unsafe_any_origin(), row_major(Coord(M, K)))
+        var tb = TileTensor(b.as_unsafe_any_origin(), row_major(Coord(K, N)))
+        var tc = TileTensor(dst.as_unsafe_any_origin(), row_major(Coord(M, N)))
+        linalg_matmul[target="gpu"](tc, ta, tb, ctx)
+    else:
+        var a_imm: UnsafePointer[Scalar[dtype], ImmutAnyOrigin] = a
+        var b_imm: UnsafePointer[Scalar[dtype], ImmutAnyOrigin] = b
+        var ta = TileTensor(a_imm, MixedLayout(Coord(M, K), Coord(lda, lda1)))
+        var tb = TileTensor(b_imm, MixedLayout(Coord(K, N), Coord(ldb, ldb1)))
+        var tc = TileTensor(dst.as_unsafe_any_origin(), row_major(Coord(M, N)))
+        comptime BLOCK = 16
+        comptime naive = matmul_kernel_naive[
+            dtype, dtype, dtype, type_of(tc).LayoutType, type_of(ta).LayoutType, type_of(tb).LayoutType, BLOCK
+        ]
+        ctx.enqueue_function[naive](
+            tc, ta, tb, M, N, K, grid_dim=(ceildiv(M, BLOCK), ceildiv(N, BLOCK)), block_dim=(BLOCK, BLOCK)
+        )
+
+
+@export
+def mograd_matmul_t(
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    b: UnsafePointer[NoneType, MutAnyOrigin],
+    shape_ptr: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    n: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+        comptime T = AnyBuffer.BufVariant.Ts[k]
+        comptime assert conforms_to(T, BufferArm)
+        comptime d = T.node_dtype
+        if dtype == d:
+            var p = shape_ptr.bitcast[Float32]()
+            var M = Int(p[0])
+            var K = Int(p[1])
+            var N = Int(p[2])
+            var lda = Int(p[3])
+            var lda1 = Int(p[4])
+            var ldb = Int(p[5])
+            var ldb1 = Int(p[6])
+            matmul_t[d](
+                a.bitcast[Scalar[d]](),
+                b.bitcast[Scalar[d]](),
+                dst.bitcast[Scalar[d]](),
+                M,
+                K,
+                N,
+                lda,
+                lda1,
+                ldb,
+                ldb1,
+                ctx,
+            )
+            return
+    raise Error("unsupported dtype")
+
+
+def matmul_t[
+    dtype: DType
+](
+    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    M: Int,
+    K: Int,
+    N: Int,
+    lda: Int,
+    lda1: Int,
+    ldb: Int,
+    ldb1: Int,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    if lda == K and lda1 == 1 and ldb == K and ldb1 == 1:
+        var ta = TileTensor(a.as_unsafe_any_origin(), row_major(Coord(M, K)))
+        var tb = TileTensor(b.as_unsafe_any_origin(), row_major(Coord(N, K)))
+        var tc = TileTensor(dst.as_unsafe_any_origin(), row_major(Coord(M, N)))
+        linalg_matmul[target="gpu", transpose_b=True](tc, ta, tb, ctx)
+    else:
+        var a_imm: UnsafePointer[Scalar[dtype], ImmutAnyOrigin] = a
+        var b_imm: UnsafePointer[Scalar[dtype], ImmutAnyOrigin] = b
+        var ta = TileTensor(a_imm, MixedLayout(Coord(M, K), Coord(lda, lda1)))
+        var tb = TileTensor(b_imm, MixedLayout(Coord(N, K), Coord(ldb, ldb1)))
+        var tc = TileTensor(dst.as_unsafe_any_origin(), row_major(Coord(M, N)))
+        comptime BLOCK = 16
+        comptime naive = matmul_kernel_naive[
+            dtype, dtype, dtype, type_of(tc).LayoutType, type_of(ta).LayoutType, type_of(tb).LayoutType, BLOCK, True
+        ]
+        ctx.enqueue_function[naive](
+            tc, ta, tb, M, N, K, grid_dim=(ceildiv(M, BLOCK), ceildiv(N, BLOCK)), block_dim=(BLOCK, BLOCK)
+        )
+
+
+# ===-------------------------------------------------------------------===#
 # Reduce
 # ===-------------------------------------------------------------------===#
 
@@ -426,88 +582,6 @@ def softmax[
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     nn_softmax[dtype, simd_width, 2, input_fn, "gpu"](Coord(rows, cols), out, axis=1, context=ctx)
     ctx.synchronize()
-
-
-@export
-def mograd_matmul(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    b: UnsafePointer[NoneType, MutAnyOrigin],
-    shape_ptr: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) abi("Mojo") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        if dtype == d:
-            var p = shape_ptr.bitcast[Float32]()
-            var M = Int(p[0])
-            var K = Int(p[1])
-            var N = Int(p[2])
-            matmul[d](a.bitcast[Scalar[d]](), b.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), M, K, N, ctx)
-            return
-    raise Error("unsupported dtype")
-
-
-def matmul[
-    dtype: DType
-](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    M: Int,
-    K: Int,
-    N: Int,
-    ctx: DeviceContext,
-) abi("Mojo") raises:
-    var ta = TileTensor(a.as_unsafe_any_origin(), row_major(Coord(M, K)))
-    var tb = TileTensor(b.as_unsafe_any_origin(), row_major(Coord(K, N)))
-    var tc = TileTensor(dst.as_unsafe_any_origin(), row_major(Coord(M, N)))
-    linalg_matmul[target="gpu"](tc, ta, tb, ctx)
-
-
-@export
-def mograd_matmul_t(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    b: UnsafePointer[NoneType, MutAnyOrigin],
-    shape_ptr: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) abi("Mojo") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        if dtype == d:
-            var p = shape_ptr.bitcast[Float32]()
-            var M = Int(p[0])
-            var K = Int(p[1])
-            var N = Int(p[2])
-            matmul_t[d](a.bitcast[Scalar[d]](), b.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), M, K, N, ctx)
-            return
-    raise Error("unsupported dtype")
-
-
-def matmul_t[
-    dtype: DType
-](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    M: Int,
-    K: Int,
-    N: Int,
-    ctx: DeviceContext,
-) abi("Mojo") raises:
-    var ta = TileTensor(a.as_unsafe_any_origin(), row_major(Coord(M, K)))
-    var tb = TileTensor(b.as_unsafe_any_origin(), row_major(Coord(N, K)))
-    var tc = TileTensor(dst.as_unsafe_any_origin(), row_major(Coord(M, N)))
-    linalg_matmul[target="gpu", transpose_b=True](tc, ta, tb, ctx)
 
 
 def transpose_kernel[

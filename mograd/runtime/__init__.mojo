@@ -445,10 +445,16 @@ def cross_entropy(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -
 
 
 def matmul(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var p = alloc[Float32](3)
-    p[0] = Float32(node.src(0).layout().shape(0))
-    p[1] = Float32(node.src(0).layout().shape(1))
-    p[2] = Float32(node.src(1).layout().shape(1))
+    var la = node.src(0).layout()
+    var lb = node.src(1).layout()
+    var p = alloc[Float32](7)
+    p[0] = Float32(la.shape(0))
+    p[1] = Float32(la.shape(1))
+    p[2] = Float32(lb.shape(1))
+    p[3] = Float32(la.stride(0))
+    p[4] = Float32(la.stride(1))
+    p[5] = Float32(lb.stride(0))
+    p[6] = Float32(lb.stride(1))
     var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[TernaryOp]("mograd_matmul")(
         inputs[0].data_ptr(),
@@ -486,10 +492,16 @@ def slice(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuf
 
 
 def matmul_t(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var p = alloc[Float32](3)
-    p[0] = Float32(node.src(0).layout().shape(0))
-    p[1] = Float32(node.src(0).layout().shape(1))
-    p[2] = Float32(node.src(1).layout().shape(0))
+    var la = node.src(0).layout()
+    var lb = node.src(1).layout()
+    var p = alloc[Float32](7)
+    p[0] = Float32(la.shape(0))
+    p[1] = Float32(la.shape(1))
+    p[2] = Float32(lb.shape(0))
+    p[3] = Float32(la.stride(0))
+    p[4] = Float32(la.stride(1))
+    p[5] = Float32(lb.stride(0))
+    p[6] = Float32(lb.stride(1))
     var out = AnyBuffer.empty(node.dtype(), device, node.layout().numel())
     device.handle[].get_function[TernaryOp]("mograd_matmul_t")(
         inputs[0].data_ptr(),
