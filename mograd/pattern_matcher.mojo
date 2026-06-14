@@ -16,36 +16,29 @@ struct Pat(Copyable, ImplicitlyCopyable, Movable):
     var op_type: OpType
     var srcs: List[Pat]
     var _any_op: Bool
-    var fp_only: Bool
 
     def __init__(out self):
         self.op_type = OpType("")
         self.srcs = List[Pat]()
         self._any_op = True
-        self.fp_only = False
 
-    def __init__(out self, op_type: OpType, fp_only: Bool = False):
+    def __init__(out self, op_type: OpType):
         self.op_type = op_type
         self.srcs = List[Pat]()
         self._any_op = False
-        self.fp_only = fp_only
 
     def __init__(out self, op_type: OpType, var srcs: List[Pat]):
         self.op_type = op_type
         self.srcs = srcs^
         self._any_op = False
-        self.fp_only = False
 
     def __init__(out self, *, copy: Self):
         self.op_type = copy.op_type
         self.srcs = copy.srcs.copy()
         self._any_op = copy._any_op
-        self.fp_only = copy.fp_only
 
     def matches(self, node: OpRef) -> Bool:
         if not self._any_op and node.op_type() != self.op_type:
-            return False
-        if self.fp_only and not node.dtype().is_floating_point():
             return False
         if len(self.srcs) == 0:
             return True
@@ -57,7 +50,6 @@ struct Pat(Copyable, ImplicitlyCopyable, Movable):
         return True
 
     def is_compound(self) -> Bool:
-        """True if this pattern constrains the structure of source nodes (fusion pattern)."""
         for i in range(len(self.srcs)):
             if not self.srcs[i]._any_op:
                 return True
@@ -90,7 +82,6 @@ struct PatternMatcher[F: TrivialRegisterPassable]:
 
 
 def extract_wildcard_srcs(pat: Pat, node: OpRef) -> List[OpRef]:
-    """Collect OpRefs matched by Pat() wildcards, depth-first."""
     if pat._any_op:
         return [node]
     var result = List[OpRef]()
