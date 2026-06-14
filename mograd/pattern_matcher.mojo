@@ -6,7 +6,7 @@ from mograd.op import OpRef, OpType
 
 
 @fieldwise_init
-struct Rule[F: TrivialRegisterPassable](Copyable, ImplicitlyDestructible, Movable):
+struct Rule[F: TrivialRegisterPassable](Copyable, ImplicitlyDeletable, Movable):
     var pat: Pat
     var func: Self.F
 
