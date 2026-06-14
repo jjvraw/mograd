@@ -6,6 +6,7 @@ from layout import IntTuple
 
 from mograd.buffer import Buffer, AnyBuffer
 from mograd.layout import Layout
+from mograd.pattern_matcher import GraphUtils
 
 
 # ===-------------------------------------------------------------------===#
@@ -159,6 +160,13 @@ struct Op(Copyable, Movable, Writable):
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write(self.op_type._name)
+
+
+@fieldwise_init
+struct _NodeEntry(Copyable, ImplicitlyCopyable, Movable):
+    var refs: Int
+    var idx: Int  # -1 until first render, then sequential alias number
+    var printed: Bool
 
 
 # ===-------------------------------------------------------------------===#
@@ -336,21 +344,52 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return self._ptr.unsafe_ptr() != other._ptr.unsafe_ptr()
 
     def write_to(self, mut writer: Some[Writer]):
-        writer.write("TODO")
+        var cache = Dict[Self, _NodeEntry]()
+        var topo = GraphUtils.toposort(self)
+        for i in range(len(topo)):
+            for j in range(len(topo[i].srcs())):
+                var s = topo[i].src(j)
+                var e = cache.get(s)
+                if e:
+                    var entry = e.value()
+                    entry.refs += 1
+                    cache[s] = entry
+                else:
+                    cache[s] = _NodeEntry(1, -1, False)
+        var next_alias = 0
+        self._render(writer, 0, cache, next_alias)
 
-    #     self._write_indented(writer, 0)
-    #
-    # def _write_indented(self, mut writer: Some[Writer], indent: Int):
-    #     var pad = String(" ") * indent
-    #     writer.write(pad + self.op_type()._name + "(shape=")
-    #     self.layout().write_to(writer)
-    #     writer.write(", dtype=" + String(self.dtype())
-    #     if len(self.srcs()) == 0:
-    #         writer.write(")")
-    #         return
-    #     writer.write(", srcs=(\n")
-    #     for i in range(len(self.srcs())):
-    #         (self.srcs()[i], writer, indent + 4)
-    #         writer.write("\n")
-    #     writer.write(pad + "))")
-    #
+    def _render(self, mut writer: Some[Writer], indent: Int, mut cache: Dict[Self, _NodeEntry], mut next_alias: Int):
+        var pad = String("")
+        for _ in range(indent * 2):
+            pad += " "
+
+        var e = cache.get(self)
+        if e and e.value().printed:
+            writer.write(pad, "x", e.value().idx)
+            return
+
+        var entry = e.value() if e else _NodeEntry(0, -1, False)
+        if entry.refs > 1 and entry.idx == -1:
+            entry.idx = next_alias
+            next_alias += 1
+        entry.printed = True
+        cache[self] = entry
+
+        var prefix = "x" + String(entry.idx) + ":=" if entry.refs > 1 else ""
+        writer.write(pad, prefix, "Op(", self.op_type()._name, ", ", self.dtype(), ", shape=(")
+        for i in range(self.layout().rank()):
+            if i > 0:
+                writer.write(",")
+            writer.write(self.layout().shape(i))
+        writer.write(")")
+        if len(self.srcs()) == 0:
+            writer.write(", src=())")
+            return
+        writer.write(", src=(")
+        for i in range(len(self.srcs())):
+            if i > 0:
+                writer.write(",")
+            writer.write("\n")
+            self.src(i)._render(writer, indent + 1, cache, next_alias)
+        writer.write("\n", pad, "))")
