@@ -1,4 +1,4 @@
-from mograd import Tensor, Device
+from mograd import Tensor
 import mograd.nn as nn
 
 
