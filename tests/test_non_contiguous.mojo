@@ -198,6 +198,16 @@ def test_sum_axis_strided() raises:
     assert_allclose(sa.sum(axis=0), [Float32(15), 18])
 
 
+def test_grad_sum_axis_strided() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], (6, 2), requires_grad=True)
+    var sa = a[0:6:2]
+    assert_true(not sa.is_contiguous())
+    var loss = sa.sum(axis=0).sum()
+    var grads = loss.gradient([a])
+    assert_allclose(grads[0], [Float32(1), 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0])
+
+
 def test_softmax_strided() raises:
     var device = Device()
     var a = Tensor(device, [Float32(1), 2, 100, 100, 3, 4, 100, 100], (4, 2))
