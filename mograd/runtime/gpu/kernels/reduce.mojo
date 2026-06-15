@@ -54,13 +54,16 @@ def sum_axis[
     outer: Int,
     reduce_size: Int,
     inner: Int,
+    rank: Int,
+    inner_sizes: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
     @always_inline
     def input_fn[_d: DType, w: Int, r: Int](coords: IndexList[r]) capturing -> SIMD[_d, w]:
         # coords: [outer_idx, reduce_idx, inner_idx]
         var flat = coords[0] * reduce_size * inner + coords[1] * inner + coords[2]
-        return a.load(flat)._refine[_d]()
+        return a.load(strided_offset(flat, rank, inner_sizes, sa))._refine[_d]()
 
     @always_inline
     def output_fn[_d: DType, w: SIMDSize, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:

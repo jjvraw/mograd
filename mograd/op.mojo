@@ -270,9 +270,9 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         if not axis:
             return Self(Op(OpType.SUM, (1,), self.dtype(), [self]))
         var ax = axis.value()
-        var out_layout = self.layout().reduce_output_shape(ax, keepdim)
+        var out_layout = self.layout().reduce_output_shape(ax, keepdim).as_contiguous()
         attrs: Attrs = {"axis": ax}
-        return Self(Op(OpType.SUM, out_layout, self.dtype(), [self.contiguous()], attrs=attrs^))
+        return Self(Op(OpType.SUM, out_layout, self.dtype(), [self], attrs=attrs^))
 
     def argmax(self, axis: Optional[Int] = None, keepdim: Bool = False) raises -> Self:
         if not axis:
@@ -328,7 +328,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def cross_entropy(self, labels: Self) -> Self:
-        return Self(Op(OpType.CROSS_ENTROPY, (1,), self.dtype(), [self.contiguous(), labels]))
+        return Self(Op(OpType.CROSS_ENTROPY, (1,), self.dtype(), [self.contiguous(), labels.contiguous()]))
 
     # ===-------------------------------------------------------------------===#
     # Trait methods

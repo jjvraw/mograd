@@ -13,11 +13,9 @@ from mograd.runtime.gpu.rewrites import MATMUL_T, GPU_REWRITES
 from mograd.runtime.gpu.kernels.utils import (
     FactoryKernel,
     UnaryStrided,
-    SumAxisKernel,
     unary_strided,
     binary_strided,
     axis_reduce_strided,
-    argmax_axis_strided,
     matmul_strided,
 )
 
@@ -348,7 +346,7 @@ def sum(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffe
 
 def argmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     if "axis" in node.attrs():
-        return argmax_axis_strided(node, inputs, device)
+        return axis_reduce_strided("mograd_argmax_axis", node, inputs, device)
     return unary_strided("mograd_argmax", node, inputs, device)
 
 
