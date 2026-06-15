@@ -305,12 +305,16 @@ def unary_strided(
     return out^
 
 
-comptime SumAxisKernel = def(
+comptime AxisReduceKernel = def(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     outer: Int,
     reduce_size: Int,
     inner: Int,
+    rank: Int,
+    inner_sizes: UnsafePointer[Int64, MutAnyOrigin],
+    sa: UnsafePointer[Int64, MutAnyOrigin],
+    contiguous: Bool,
     dtype: DType,
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
@@ -324,35 +328,7 @@ def axis_reduce_strided(
     var axis = node.attr_int("axis")
     var outer, reduce_size, inner = layout.reduce_dims(axis)
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[SumAxisKernel](name)(
-        inputs[0].data_ptr(), out.data_ptr(), outer, reduce_size, inner, node.dtype(), device.ctx
-    )
-    return out^
-
-
-comptime ArgmaxAxisKernel = def(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    outer: Int,
-    reduce_size: Int,
-    inner: Int,
-    rank: Int,
-    inner_sizes: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
-    outer_stride: Int,
-    reduce_stride: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) thin abi("Mojo") raises -> None
-
-
-@always_inline
-def argmax_axis_strided(read node: OpRef, read inputs: List[AnyBuffer], read device: Device) raises -> AnyBuffer:
-    var layout = node.src(0).layout()
-    var axis = node.attr_int("axis")
-    var outer, reduce_size, inner = layout.reduce_dims(axis)
-    var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[ArgmaxAxisKernel]("mograd_argmax_axis")(
+    device.handle[].get_function[AxisReduceKernel](name)(
         inputs[0].data_ptr(),
         out.data_ptr(),
         outer,
@@ -361,8 +337,7 @@ def argmax_axis_strided(read node: OpRef, read inputs: List[AnyBuffer], read dev
         layout.rank(),
         layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
         layout.strides_buffer(device.ctx).unsafe_ptr(),
-        layout.stride(0),
-        layout.stride(axis),
+        layout.is_contiguous(),
         node.dtype(),
         device.ctx,
     )

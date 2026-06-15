@@ -85,7 +85,7 @@ def add_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
 
 
 def relu_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    return [OpRef(Op(OpType.RELU_GRAD, node.layout(), node.dtype(), [node.src(0), upstream]))]
+    return [OpRef(Op(OpType.RELU_GRAD, node.layout().as_contiguous(), node.dtype(), [node.src(0), upstream]))]
 
 
 def exp_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
@@ -162,10 +162,12 @@ def scale_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
 def cross_entropy_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     var logits = node.src(0)
     var labels = node.src(1)
-    var grad_logits = OpRef(Op(OpType.CROSS_ENTROPY_GRAD, logits.layout(), logits.dtype(), [logits, labels, upstream]))
+    var grad_logits = OpRef(
+        Op(OpType.CROSS_ENTROPY_GRAD, logits.layout().as_contiguous(), logits.dtype(), [logits, labels, upstream])
+    )
     var dummy = OpRef(Op(OpType.EXPAND, labels.layout(), labels.dtype(), [upstream]))
     return [grad_logits, dummy]
 
 
 def softmax_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    return [OpRef(Op(OpType.SOFTMAX_GRAD, node.layout(), node.dtype(), [node, upstream.contiguous()]))]
+    return [OpRef(Op(OpType.SOFTMAX_GRAD, node.layout().as_contiguous(), node.dtype(), [node, upstream.contiguous()]))]
