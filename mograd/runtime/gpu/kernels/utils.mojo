@@ -1,6 +1,7 @@
-from layout import Coord
 from std.algorithm.functional import elementwise
 from std.gpu.host import DeviceContext
+
+from layout import Coord
 
 from mograd.buffer import AnyBuffer, BufferArm
 

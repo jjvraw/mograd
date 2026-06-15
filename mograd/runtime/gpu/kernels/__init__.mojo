@@ -1,21 +1,18 @@
-from layout import Coord, MixedLayout, TileTensor, row_major, coord
-from std.algorithm.functional import elementwise
-from std.algorithm.backend.gpu.reduction import reduce_kernel
-from std.utils.static_tuple import StaticTuple
+from std.gpu.primitives.warp import max as warp_max, sum as warp_sum
 from std.gpu import global_idx, thread_idx, block_idx, barrier
-from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from std.sys.info import size_of, has_apple_gpu_accelerator
+from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.memory import AddressSpace
 from std.math import ceildiv
 from std.memory import stack_allocation
 from std.sys.info import simd_width_of
-from std.utils import IndexList
+
+from layout import Coord, MixedLayout, TileTensor, row_major
+
 from linalg.matmul import matmul as linalg_matmul
 from linalg.matmul.gpu import matmul_kernel_naive
+
 from nn.argmaxmin_gpu import argmax_gpu
-from nn.rand_uniform import random_uniform
 from nn.softmax import softmax as nn_softmax
-from std.gpu.primitives.warp import max as warp_max, sum as warp_sum
 
 from mograd.buffer import AnyBuffer, BufferArm
 from mograd.runtime.gpu.kernels.factory import *

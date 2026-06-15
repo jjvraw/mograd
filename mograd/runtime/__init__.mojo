@@ -1,4 +1,4 @@
-from std.gpu.host import DeviceContext, DeviceBuffer
+from std.gpu.host import DeviceContext
 from std.ffi import OwnedDLHandle
 from std.pathlib.path import Path
 from std.os.env import getenv

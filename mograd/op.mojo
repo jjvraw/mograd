@@ -162,13 +162,6 @@ struct Op(Copyable, Movable, Writable):
         writer.write(self.op_type._name)
 
 
-@fieldwise_init
-struct _NodeEntry(Copyable, ImplicitlyCopyable, Movable):
-    var refs: Int
-    var idx: Int  # -1 until first render, then sequential alias number
-    var printed: Bool
-
-
 # ===-------------------------------------------------------------------===#
 # OpRef
 # ===-------------------------------------------------------------------===#
@@ -393,3 +386,10 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
             writer.write("\n")
             self.src(i)._render(writer, indent + 1, cache, next_alias)
         writer.write("\n", pad, "))")
+
+
+@fieldwise_init
+struct _NodeEntry(Copyable, ImplicitlyCopyable, Movable):
+    var refs: Int
+    var idx: Int  # -1 until first render, then sequential alias number
+    var printed: Bool
