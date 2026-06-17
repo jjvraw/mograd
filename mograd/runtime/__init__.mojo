@@ -130,10 +130,7 @@ comptime BinaryScalarElementWiseStrided = def(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     b: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    numel: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    strides_a: UnsafePointer[Int64, MutAnyOrigin],
+    read layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
@@ -301,10 +298,7 @@ def scale(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuf
         inputs[0].data_ptr(),
         s.bitcast[NoneType](),
         out.data_ptr(),
-        node.numel(),
-        la.rank(),
-        la.inner_sizes_buffer(device.ctx).unsafe_ptr(),
-        la.strides_buffer(device.ctx).unsafe_ptr(),
+        la,
         node.dtype(),
         device.ctx,
     )
@@ -318,10 +312,7 @@ def slice_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> A
     device.handle[].get_function[UnaryStrided]("mograd_slice_grad")(
         inputs[0].data_ptr(),
         out_view.data_ptr(),
-        slice_layout.numel(),
-        slice_layout.rank(),
-        slice_layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
-        slice_layout.strides_buffer(device.ctx).unsafe_ptr(),
+        slice_layout,
         node.dtype(),
         device.ctx,
     )

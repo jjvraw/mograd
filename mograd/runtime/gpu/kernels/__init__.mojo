@@ -128,70 +128,75 @@ def mograd_one_hot(
 def mograd_neg(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    numel: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    read layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    dispatch_unary_map[neg_op](a, dst, numel, rank, inner, sa, dtype, ctx)
+    var inner_buf = layout.inner_sizes_buffer(ctx)
+    var sa_buf = layout.strides_buffer(ctx)
+    dispatch_unary_map[neg_op](
+        a, dst, layout.numel(), layout.rank(), inner_buf.unsafe_ptr(), sa_buf.unsafe_ptr(), dtype, ctx
+    )
 
 
 @export
 def mograd_log(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    numel: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    read layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    dispatch_unary_map[log_op, float_only=True](a, dst, numel, rank, inner, sa, dtype, ctx)
+    var inner_buf = layout.inner_sizes_buffer(ctx)
+    var sa_buf = layout.strides_buffer(ctx)
+    dispatch_unary_map[log_op, float_only=True](
+        a, dst, layout.numel(), layout.rank(), inner_buf.unsafe_ptr(), sa_buf.unsafe_ptr(), dtype, ctx
+    )
 
 
 @export
 def mograd_exp(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    numel: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    read layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    dispatch_unary_map[exp_op, float_only=True](a, dst, numel, rank, inner, sa, dtype, ctx)
+    var inner_buf = layout.inner_sizes_buffer(ctx)
+    var sa_buf = layout.strides_buffer(ctx)
+    dispatch_unary_map[exp_op, float_only=True](
+        a, dst, layout.numel(), layout.rank(), inner_buf.unsafe_ptr(), sa_buf.unsafe_ptr(), dtype, ctx
+    )
 
 
 @export
 def mograd_relu(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    numel: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    read layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    dispatch_unary_map[relu_op](a, dst, numel, rank, inner, sa, dtype, ctx)
+    var inner_buf = layout.inner_sizes_buffer(ctx)
+    var sa_buf = layout.strides_buffer(ctx)
+    dispatch_unary_map[relu_op](
+        a, dst, layout.numel(), layout.rank(), inner_buf.unsafe_ptr(), sa_buf.unsafe_ptr(), dtype, ctx
+    )
 
 
 @export
 def mograd_slice_grad(
     upstream: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    numel: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    read layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    dispatch_unary[slice_grad](upstream, dst, numel, rank, inner, sa, dtype, ctx)
+    var inner_buf = layout.inner_sizes_buffer(ctx)
+    var sa_buf = layout.strides_buffer(ctx)
+    dispatch_unary[slice_grad](
+        upstream, dst, layout.numel(), layout.rank(), inner_buf.unsafe_ptr(), sa_buf.unsafe_ptr(), dtype, ctx
+    )
 
 
 @export
@@ -232,14 +237,15 @@ def mograd_cast(
 def mograd_contiguous(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    numel: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    read layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    dispatch_unary_map[identity_op](a, dst, numel, rank, inner, sa, dtype, ctx)
+    var inner_buf = layout.inner_sizes_buffer(ctx)
+    var sa_buf = layout.strides_buffer(ctx)
+    dispatch_unary_map[identity_op](
+        a, dst, layout.numel(), layout.rank(), inner_buf.unsafe_ptr(), sa_buf.unsafe_ptr(), dtype, ctx
+    )
 
 
 # ===-------------------------------------------------------------------===#
@@ -264,15 +270,17 @@ def mograd_add_strided(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     b: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
-    sb: UnsafePointer[Int64, MutAnyOrigin],
+    read la: Layout,
+    read lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    dispatch_binary_map[add_op](a, b, dst, n, rank, inner, sa, sb, dtype, ctx)
+    var inner_buf = la.inner_sizes_buffer(ctx)
+    var sa_buf = la.strides_buffer(ctx)
+    var sb_buf = lb.strides_buffer(ctx)
+    dispatch_binary_map[add_op](
+        a, b, dst, la.numel(), la.rank(), inner_buf.unsafe_ptr(), sa_buf.unsafe_ptr(), sb_buf.unsafe_ptr(), dtype, ctx
+    )
 
 
 @export
@@ -280,15 +288,17 @@ def mograd_mul(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     b: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
-    sb: UnsafePointer[Int64, MutAnyOrigin],
+    read la: Layout,
+    read lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    dispatch_binary_map[mul_op](a, b, dst, n, rank, inner, sa, sb, dtype, ctx)
+    var inner_buf = la.inner_sizes_buffer(ctx)
+    var sa_buf = la.strides_buffer(ctx)
+    var sb_buf = lb.strides_buffer(ctx)
+    dispatch_binary_map[mul_op](
+        a, b, dst, la.numel(), la.rank(), inner_buf.unsafe_ptr(), sa_buf.unsafe_ptr(), sb_buf.unsafe_ptr(), dtype, ctx
+    )
 
 
 @export
@@ -296,15 +306,17 @@ def mograd_div(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     b: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
-    sb: UnsafePointer[Int64, MutAnyOrigin],
+    read la: Layout,
+    read lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    dispatch_binary_map[div_op](a, b, dst, n, rank, inner, sa, sb, dtype, ctx)
+    var inner_buf = la.inner_sizes_buffer(ctx)
+    var sa_buf = la.strides_buffer(ctx)
+    var sb_buf = lb.strides_buffer(ctx)
+    dispatch_binary_map[div_op](
+        a, b, dst, la.numel(), la.rank(), inner_buf.unsafe_ptr(), sa_buf.unsafe_ptr(), sb_buf.unsafe_ptr(), dtype, ctx
+    )
 
 
 @export
@@ -312,15 +324,17 @@ def mograd_eq(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     b: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
-    sb: UnsafePointer[Int64, MutAnyOrigin],
+    read la: Layout,
+    read lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    dispatch_binary_map[eq_op](a, b, dst, n, rank, inner, sa, sb, dtype, ctx)
+    var inner_buf = la.inner_sizes_buffer(ctx)
+    var sa_buf = la.strides_buffer(ctx)
+    var sb_buf = lb.strides_buffer(ctx)
+    dispatch_binary_map[eq_op](
+        a, b, dst, la.numel(), la.rank(), inner_buf.unsafe_ptr(), sa_buf.unsafe_ptr(), sb_buf.unsafe_ptr(), dtype, ctx
+    )
 
 
 @export
@@ -328,15 +342,17 @@ def mograd_relu_grad(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     b: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
-    sb: UnsafePointer[Int64, MutAnyOrigin],
+    read la: Layout,
+    read lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    dispatch_binary_map[relu_grad_op](a, b, dst, n, rank, inner, sa, sb, dtype, ctx)
+    var inner_buf = la.inner_sizes_buffer(ctx)
+    var sa_buf = la.strides_buffer(ctx)
+    var sb_buf = lb.strides_buffer(ctx)
+    dispatch_binary_map[relu_grad_op](
+        a, b, dst, la.numel(), la.rank(), inner_buf.unsafe_ptr(), sa_buf.unsafe_ptr(), sb_buf.unsafe_ptr(), dtype, ctx
+    )
 
 
 @export
@@ -344,14 +360,15 @@ def mograd_scale(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     b: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    read layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    dispatch_binary_scalar_map[mul_op](a, b, dst, n, rank, inner, sa, dtype, ctx)
+    var inner_buf = layout.inner_sizes_buffer(ctx)
+    var sa_buf = layout.strides_buffer(ctx)
+    dispatch_binary_scalar_map[mul_op](
+        a, b, dst, layout.numel(), layout.rank(), inner_buf.unsafe_ptr(), sa_buf.unsafe_ptr(), dtype, ctx
+    )
 
 
 # ===-------------------------------------------------------------------===#
@@ -598,14 +615,13 @@ def mograd_transpose(
 def mograd_sum(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    read layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    dispatch_unary[sum](a, dst, n, rank, inner, sa, dtype, ctx)
+    var inner_buf = layout.inner_sizes_buffer(ctx)
+    var sa_buf = layout.strides_buffer(ctx)
+    dispatch_unary[sum](a, dst, layout.numel(), layout.rank(), inner_buf.unsafe_ptr(), sa_buf.unsafe_ptr(), dtype, ctx)
 
 
 @export
@@ -640,18 +656,15 @@ def mograd_sum_axis(
 def mograd_argmax(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    read layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    @always_inline
-    def body[d: DType]() capturing raises:
-        argmax[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rank, inner, sa, n, ctx)
-
-    dispatch_dtype[body, float_only=True](dtype)
+    var inner_buf = layout.inner_sizes_buffer(ctx)
+    var sa_buf = layout.strides_buffer(ctx)
+    dispatch_unary[argmax, float_only=True](
+        a, dst, layout.numel(), layout.rank(), inner_buf.unsafe_ptr(), sa_buf.unsafe_ptr(), dtype, ctx
+    )
 
 
 @export

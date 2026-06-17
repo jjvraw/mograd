@@ -7,6 +7,7 @@ from std.sys import size_of
 
 from internal_utils import CacheBustingBuffer
 
+from mograd.layout import Layout
 from mograd.runtime import BinaryElementWise, BinaryScalarElementWiseStrided
 from mograd.runtime.gpu.kernels.utils import UnaryStrided, BinaryStrided
 
@@ -25,19 +26,12 @@ def bench_unary[dtype: DType, N: Int](mut m: Bench, *, lib: OwnedDLHandle, ctx: 
     var a = CacheBustingBuffer[dtype](N, 1, ctx)
     var dst = CacheBustingBuffer[dtype](N, 1, ctx)
 
-    var inner = ctx.enqueue_create_buffer[DType.int64](1)
-    var sa = ctx.enqueue_create_buffer[DType.int64](1)
-    var one: List[Int64] = [1]
-    ctx.enqueue_copy(inner, one)
-    ctx.enqueue_copy(sa, one)
+    var layout = Layout(N)
 
     func(
         a.offset_ptr(0).bitcast[NoneType](),
         dst.offset_ptr(0).bitcast[NoneType](),
-        N,
-        1,
-        inner.unsafe_ptr().bitcast[Int64](),
-        sa.unsafe_ptr().bitcast[Int64](),
+        layout,
         dtype,
         ctx,
     )
@@ -52,10 +46,7 @@ def bench_unary[dtype: DType, N: Int](mut m: Bench, *, lib: OwnedDLHandle, ctx: 
             func(
                 a.offset_ptr(iteration).bitcast[NoneType](),
                 dst.offset_ptr(iteration).bitcast[NoneType](),
-                N,
-                1,
-                inner.unsafe_ptr().bitcast[Int64](),
-                sa.unsafe_ptr().bitcast[Int64](),
+                layout,
                 dtype,
                 dc,
             )
@@ -143,23 +134,14 @@ def bench_binary_strided[
     var b = CacheBustingBuffer[dtype](N, 1, ctx)
     var dst = CacheBustingBuffer[dtype](N, 1, ctx)
 
-    var inner = ctx.enqueue_create_buffer[DType.int64](1)
-    var sa = ctx.enqueue_create_buffer[DType.int64](1)
-    var sb = ctx.enqueue_create_buffer[DType.int64](1)
-    var one: List[Int64] = [1]
-    ctx.enqueue_copy(inner, one)
-    ctx.enqueue_copy(sa, one)
-    ctx.enqueue_copy(sb, one)
+    var layout = Layout(N)
 
     func(
         a.offset_ptr(0).bitcast[NoneType](),
         b.offset_ptr(0).bitcast[NoneType](),
         dst.offset_ptr(0).bitcast[NoneType](),
-        N,
-        1,
-        inner.unsafe_ptr().bitcast[Int64](),
-        sa.unsafe_ptr().bitcast[Int64](),
-        sb.unsafe_ptr().bitcast[Int64](),
+        layout,
+        layout,
         dtype,
         ctx,
     )
@@ -175,11 +157,8 @@ def bench_binary_strided[
                 a.offset_ptr(iteration).bitcast[NoneType](),
                 b.offset_ptr(iteration).bitcast[NoneType](),
                 dst.offset_ptr(iteration).bitcast[NoneType](),
-                N,
-                1,
-                inner.unsafe_ptr().bitcast[Int64](),
-                sa.unsafe_ptr().bitcast[Int64](),
-                sb.unsafe_ptr().bitcast[Int64](),
+                layout,
+                layout,
                 dtype,
                 dc,
             )
@@ -214,20 +193,13 @@ def bench_binary_scalar_strided[
     scalar[0] = 2.0
     var dst = CacheBustingBuffer[dtype](N, 1, ctx)
 
-    var inner = ctx.enqueue_create_buffer[DType.int64](1)
-    var sa = ctx.enqueue_create_buffer[DType.int64](1)
-    var one: List[Int64] = [1]
-    ctx.enqueue_copy(inner, one)
-    ctx.enqueue_copy(sa, one)
+    var layout = Layout(N)
 
     func(
         a.offset_ptr(0).bitcast[NoneType](),
         scalar.bitcast[NoneType](),
         dst.offset_ptr(0).bitcast[NoneType](),
-        N,
-        1,
-        inner.unsafe_ptr().bitcast[Int64](),
-        sa.unsafe_ptr().bitcast[Int64](),
+        layout,
         dtype,
         ctx,
     )
@@ -243,10 +215,7 @@ def bench_binary_scalar_strided[
                 a.offset_ptr(iteration).bitcast[NoneType](),
                 scalar.bitcast[NoneType](),
                 dst.offset_ptr(iteration).bitcast[NoneType](),
-                N,
-                1,
-                inner.unsafe_ptr().bitcast[Int64](),
-                sa.unsafe_ptr().bitcast[Int64](),
+                layout,
                 dtype,
                 dc,
             )

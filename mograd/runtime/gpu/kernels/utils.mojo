@@ -4,6 +4,7 @@ from std.gpu.host import DeviceContext
 from layout import Coord
 
 from mograd.buffer import AnyBuffer, BufferArm
+from mograd.layout import Layout
 
 # ===-------------------------------------------------------------------===#
 # Strided offset helpers
@@ -278,10 +279,7 @@ comptime FactoryKernel = def(
 comptime UnaryStrided = def(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    numel: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    strides_a: UnsafePointer[Int64, MutAnyOrigin],
+    read layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
@@ -296,10 +294,7 @@ def unary_strided(
     device.handle[].get_function[UnaryStrided](name)(
         inputs[0].data_ptr(),
         out.data_ptr(),
-        layout.numel(),
-        layout.rank(),
-        layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
-        layout.strides_buffer(device.ctx).unsafe_ptr(),
+        layout,
         node.dtype(),
         device.ctx,
     )
@@ -389,11 +384,8 @@ comptime BinaryStrided = def(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     b: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    numel: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    strides_a: UnsafePointer[Int64, MutAnyOrigin],
-    strides_b: UnsafePointer[Int64, MutAnyOrigin],
+    read la: Layout,
+    read lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
@@ -410,11 +402,8 @@ def binary_strided(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         out.data_ptr(),
-        node.numel(),
-        la.rank(),
-        la.inner_sizes_buffer(device.ctx).unsafe_ptr(),
-        la.strides_buffer(device.ctx).unsafe_ptr(),
-        lb.strides_buffer(device.ctx).unsafe_ptr(),
+        la,
+        lb,
         node.dtype(),
         device.ctx,
     )
