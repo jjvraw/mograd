@@ -4,6 +4,7 @@ from std.pathlib.path import Path
 from std.os.env import getenv
 
 from mograd import Device
+from mograd.layout import Layout
 from mograd.op import Op, OpRef, OpType
 from mograd.buffer import AnyBuffer, Buffer, BufferArm
 from mograd.pattern_matcher import Rule, Pat
@@ -140,10 +141,7 @@ comptime BinaryScalarElementWiseStrided = def(
 comptime CastOp = def(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    numel: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    strides_a: UnsafePointer[Int64, MutAnyOrigin],
+    read layout: Layout,
     in_dtype: DType,
     out_dtype: DType,
     ctx: DeviceContext,
@@ -245,10 +243,7 @@ def cast(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
     device.handle[].get_function[CastOp]("mograd_cast")(
         inputs[0].data_ptr(),
         out.data_ptr(),
-        node.numel(),
-        layout.rank(),
-        layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
-        layout.strides_buffer(device.ctx).unsafe_ptr(),
+        layout,
         node.src(0).dtype(),
         node.dtype(),
         device.ctx,

@@ -15,6 +15,7 @@ from nn.argmaxmin_gpu import argmax_gpu
 from nn.softmax import softmax as nn_softmax
 
 from mograd.buffer import AnyBuffer, BufferArm
+from mograd.layout import Layout
 from mograd.runtime.gpu.kernels.factory import *
 from mograd.runtime.gpu.kernels.elementwise import *
 from mograd.runtime.gpu.kernels.reduce import *
@@ -197,14 +198,13 @@ def mograd_slice_grad(
 def mograd_cast(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    numel: Int,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    read layout: Layout,
     in_dtype: DType,
     out_dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
+    var inner_buf = layout.inner_sizes_buffer(ctx)
+    var strides_buf = layout.strides_buffer(ctx)
     comptime for ki in range(AnyBuffer.BufVariant.Ts.size):
         comptime Ti = AnyBuffer.BufVariant.Ts[ki]
         comptime assert conforms_to(Ti, BufferArm)
@@ -216,7 +216,13 @@ def mograd_cast(
                 comptime dst_d = To.node_dtype
                 if out_dtype == dst_d:
                     cast[src_d, dst_d](
-                        a.bitcast[Scalar[src_d]](), dst.bitcast[Scalar[dst_d]](), rank, inner, sa, numel, ctx
+                        a.bitcast[Scalar[src_d]](),
+                        dst.bitcast[Scalar[dst_d]](),
+                        layout.rank(),
+                        inner_buf.unsafe_ptr(),
+                        strides_buf.unsafe_ptr(),
+                        layout.numel(),
+                        ctx,
                     )
                     return
     raise Error("unsupported dtype combination")
