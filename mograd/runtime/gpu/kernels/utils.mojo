@@ -341,18 +341,14 @@ def axis_reduce_strided(
 
 
 comptime MatmulStrided = def(
-    UnsafePointer[NoneType, MutAnyOrigin],
-    UnsafePointer[NoneType, MutAnyOrigin],
-    UnsafePointer[NoneType, MutAnyOrigin],
-    Int,
-    Int,
-    Int,
-    Int,
-    Int,
-    Int,
-    Int,
-    DType,
-    DeviceContext,
+    a: UnsafePointer[NoneType, MutAnyOrigin],
+    b: UnsafePointer[NoneType, MutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    read la: Layout,
+    read lb: Layout,
+    N: Int,
+    dtype: DType,
+    ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
 
 
@@ -367,13 +363,9 @@ def matmul_strided(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         out.data_ptr(),
-        la.shape(0),
-        la.shape(1),
+        la,
+        lb,
         node.shape(1),
-        la.stride(0),
-        la.stride(1),
-        lb.stride(0),
-        lb.stride(1),
         node.dtype(),
         device.ctx,
     )

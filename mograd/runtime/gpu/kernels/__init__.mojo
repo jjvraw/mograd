@@ -374,7 +374,7 @@ def mograd_scale(
 # ===-------------------------------------------------------------------===#
 # Matmul
 # ===-------------------------------------------------------------------===#
-# TODO: Support vendors https://github.com/pytorch/pytorch/pull/184248
+# TODO: Support vendors https://github.com/modular/modular/issues/6672
 
 
 @export
@@ -382,18 +382,20 @@ def mograd_matmul(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     b: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    M: Int,
-    K: Int,
+    read la: Layout,
+    read lb: Layout,
     N: Int,
-    lda: Int,
-    lda1: Int,
-    ldb: Int,
-    ldb1: Int,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
     @always_inline
     def body[d: DType]() capturing raises:
+        var M = la.shape(0)
+        var K = la.shape(1)
+        var lda = la.stride(0)
+        var lda1 = la.stride(1)
+        var ldb = lb.stride(0)
+        var ldb1 = lb.stride(1)
         if lda == K and lda1 == 1 and ldb == N and ldb1 == 1:
             var ta = TileTensor(a.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(M, K)))
             var tb = TileTensor(b.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(K, N)))
@@ -421,18 +423,20 @@ def mograd_matmul_t(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     b: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    M: Int,
-    K: Int,
+    read la: Layout,
+    read lb: Layout,
     N: Int,
-    lda: Int,
-    lda1: Int,
-    ldb: Int,
-    ldb1: Int,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
     @always_inline
     def body[d: DType]() capturing raises:
+        var M = la.shape(0)
+        var K = la.shape(1)
+        var lda = la.stride(0)
+        var lda1 = la.stride(1)
+        var ldb = lb.stride(0)
+        var ldb1 = lb.stride(1)
         if lda == K and lda1 == 1 and ldb == K and ldb1 == 1:
             var ta = TileTensor(a.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(M, K)))
             var tb = TileTensor(b.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(N, K)))
