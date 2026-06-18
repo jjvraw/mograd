@@ -107,13 +107,10 @@ struct NativeRuntime(Runtime):
 comptime OneHotOp = def(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    numel: Int,
     in_dtype: DType,
     out_dtype: DType,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sd: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    read ld: Layout,
+    read la: Layout,
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
 
@@ -201,13 +198,10 @@ def one_hot(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyB
     device.handle[].get_function[OneHotOp]("mograd_one_hot")(
         inputs[0].data_ptr(),
         out.data_ptr(),
-        ld.numel(),
         node.src(0).dtype(),
         node.dtype(),
-        ld.rank(),
-        ld.inner_sizes_buffer(device.ctx).unsafe_ptr(),
-        ld.strides_buffer(device.ctx).unsafe_ptr(),
-        la.strides_buffer(device.ctx).unsafe_ptr(),
+        ld,
+        la,
         device.ctx,
     )
     return out^

@@ -85,15 +85,15 @@ def mograd_full(
 def mograd_one_hot(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
     in_dtype: DType,
     out_dtype: DType,
-    rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sd: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    read ld: Layout,
+    read la: Layout,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
+    var inner_buf = ld.inner_sizes_buffer(ctx)
+    var sd_buf = ld.strides_buffer(ctx)
+    var sa_buf = la.strides_buffer(ctx)
     comptime for ki in range(AnyBuffer.BufVariant.Ts.size):
         comptime Ti = AnyBuffer.BufVariant.Ts[ki]
         comptime assert conforms_to(Ti, BufferArm)
@@ -108,11 +108,11 @@ def mograd_one_hot(
                         one_hot[src_d, dst_d](
                             a.bitcast[Scalar[src_d]](),
                             dst.bitcast[Scalar[dst_d]](),
-                            n,
-                            rank,
-                            inner,
-                            sd,
-                            sa,
+                            ld.numel(),
+                            ld.rank(),
+                            inner_buf.unsafe_ptr(),
+                            sd_buf.unsafe_ptr(),
+                            sa_buf.unsafe_ptr(),
                             ctx,
                         )
                         return
