@@ -15,8 +15,8 @@ from mograd.layout import Layout
 def strided_offset(
     flat: Int,
     rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    strides: UnsafePointer[Int64, MutAnyOrigin],
+    inner: UnsafePointer[mut=False, Int64, _],
+    strides: UnsafePointer[mut=False, Int64, _],
 ) -> Int:
     var rem = flat
     var off = 0
@@ -31,9 +31,9 @@ def strided_offset(
 def strided_offsets(
     flat: Int,
     rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
-    sb: UnsafePointer[Int64, MutAnyOrigin],
+    inner: UnsafePointer[mut=False, Int64, _],
+    sa: UnsafePointer[mut=False, Int64, _],
+    sb: UnsafePointer[mut=False, Int64, _],
 ) -> Tuple[Int, Int]:
     var rem = flat
     var a_off = 0
@@ -55,11 +55,11 @@ def unary_strided_map[
     dtype: DType,
     op: def(Scalar[dtype]) thin -> Scalar[dtype],
 ](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: UnsafePointer[mut=False, Scalar[dtype], _],
+    dst: UnsafePointer[mut=True, Scalar[dtype], _],
     rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    inner: UnsafePointer[mut=False, Int64, _],
+    sa: UnsafePointer[mut=False, Int64, _],
     n: Int,
     ctx: DeviceContext,
 ) raises:
@@ -74,12 +74,12 @@ def binary_strided_scalar_map[
     dtype: DType,
     op: def(Scalar[dtype], Scalar[dtype]) thin -> Scalar[dtype],
 ](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: UnsafePointer[mut=False, Scalar[dtype], _],
+    b: UnsafePointer[mut=False, Scalar[dtype], _],
+    dst: UnsafePointer[mut=True, Scalar[dtype], _],
     rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    inner: UnsafePointer[mut=False, Int64, _],
+    sa: UnsafePointer[mut=False, Int64, _],
     n: Int,
     ctx: DeviceContext,
 ) raises:
@@ -96,13 +96,13 @@ def binary_strided_map[
     dtype: DType,
     op: def(Scalar[dtype], Scalar[dtype]) thin -> Scalar[dtype],
 ](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: UnsafePointer[mut=False, Scalar[dtype], _],
+    b: UnsafePointer[mut=False, Scalar[dtype], _],
+    dst: UnsafePointer[mut=True, Scalar[dtype], _],
     rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
-    sb: UnsafePointer[Int64, MutAnyOrigin],
+    inner: UnsafePointer[mut=False, Int64, _],
+    sa: UnsafePointer[mut=False, Int64, _],
+    sb: UnsafePointer[mut=False, Int64, _],
     n: Int,
     ctx: DeviceContext,
 ) raises:
@@ -140,18 +140,18 @@ def dispatch_dtype[
 # ===-------------------------------------------------------------------===#
 
 comptime UnaryStridedKernel = def[dtype: DType](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    inner: UnsafePointer[Int64, ImmutAnyOrigin],
+    sa: UnsafePointer[Int64, ImmutAnyOrigin],
     n: Int,
     ctx: DeviceContext,
 ) raises thin -> None
 
 comptime BinaryContigKernel = def[dtype: DType](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    b: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     n: Int,
     ctx: DeviceContext,
@@ -162,18 +162,26 @@ def dispatch_unary[
     kernel: UnaryStridedKernel,
     float_only: Bool = False,
 ](
-    a: UnsafePointer[NoneType, MutAnyOrigin],
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     numel: Int,
     rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    inner: UnsafePointer[mut=False, Int64, _],
+    sa: UnsafePointer[mut=False, Int64, _],
     dtype: DType,
     ctx: DeviceContext,
 ) raises:
     @always_inline
     def body[d: DType]() raises capturing:
-        kernel[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rank, inner, sa, numel, ctx)
+        kernel[d](
+            a.bitcast[Scalar[d]](),
+            dst.bitcast[Scalar[d]](),
+            rank,
+            inner.as_unsafe_any_origin(),
+            sa.as_unsafe_any_origin(),
+            numel,
+            ctx,
+        )
 
     dispatch_dtype[body, float_only](dtype)
 
@@ -182,8 +190,8 @@ def dispatch_binary_contiguous[
     kernel: BinaryContigKernel,
     float_only: Bool = False,
 ](
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    b: UnsafePointer[NoneType, MutAnyOrigin],
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
+    b: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     numel: Int,
     dtype: DType,
@@ -200,18 +208,26 @@ def dispatch_unary_map[
     op: def[d: DType](x: Scalar[d]) thin -> Scalar[d],
     float_only: Bool = False,
 ](
-    a: UnsafePointer[NoneType, MutAnyOrigin],
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     numel: Int,
     rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    inner: UnsafePointer[mut=False, Int64, _],
+    sa: UnsafePointer[mut=False, Int64, _],
     dtype: DType,
     ctx: DeviceContext,
 ) raises:
     @always_inline
     def body[d: DType]() capturing raises:
-        unary_strided_map[d, op[d]](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rank, inner, sa, numel, ctx)
+        unary_strided_map[d, op[d]](
+            a.bitcast[Scalar[d]](),
+            dst.bitcast[Scalar[d]](),
+            rank,
+            inner,
+            sa,
+            numel,
+            ctx,
+        )
 
     dispatch_dtype[body, float_only](dtype)
 
@@ -220,21 +236,29 @@ def dispatch_binary_map[
     op: def[d: DType](x: Scalar[d], y: Scalar[d]) thin -> Scalar[d],
     float_only: Bool = False,
 ](
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    b: UnsafePointer[NoneType, MutAnyOrigin],
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
+    b: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     numel: Int,
     rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
-    sb: UnsafePointer[Int64, MutAnyOrigin],
+    inner: UnsafePointer[mut=False, Int64, _],
+    sa: UnsafePointer[mut=False, Int64, _],
+    sb: UnsafePointer[mut=False, Int64, _],
     dtype: DType,
     ctx: DeviceContext,
 ) raises:
     @always_inline
     def body[d: DType]() capturing raises:
         binary_strided_map[d, op[d]](
-            a.bitcast[Scalar[d]](), b.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rank, inner, sa, sb, numel, ctx
+            a.bitcast[Scalar[d]](),
+            b.bitcast[Scalar[d]](),
+            dst.bitcast[Scalar[d]](),
+            rank,
+            inner,
+            sa,
+            sb,
+            numel,
+            ctx,
         )
 
     dispatch_dtype[body, float_only](dtype)
@@ -244,20 +268,27 @@ def dispatch_binary_scalar_map[
     op: def[d: DType](x: Scalar[d], y: Scalar[d]) thin -> Scalar[d],
     float_only: Bool = False,
 ](
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    b: UnsafePointer[NoneType, MutAnyOrigin],
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
+    b: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     numel: Int,
     rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    inner: UnsafePointer[mut=False, Int64, _],
+    sa: UnsafePointer[mut=False, Int64, _],
     dtype: DType,
     ctx: DeviceContext,
 ) raises:
     @always_inline
     def body[d: DType]() capturing raises:
         binary_strided_scalar_map[d, op[d]](
-            a.bitcast[Scalar[d]](), b.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rank, inner, sa, numel, ctx
+            a.bitcast[Scalar[d]](),
+            b.bitcast[Scalar[d]](),
+            dst.bitcast[Scalar[d]](),
+            rank,
+            inner,
+            sa,
+            numel,
+            ctx,
         )
 
     dispatch_dtype[body, float_only](dtype)
@@ -269,7 +300,7 @@ def dispatch_binary_scalar_map[
 # ===-------------------------------------------------------------------===#
 
 comptime FactoryKernel = def(
-    params: UnsafePointer[NoneType, MutAnyOrigin],
+    params: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     numel: Int,
     dtype: DType,
@@ -277,7 +308,7 @@ comptime FactoryKernel = def(
 ) thin abi("Mojo") raises -> None
 
 comptime UnaryStrided = def(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     read layout: Layout,
     dtype: DType,
@@ -302,7 +333,7 @@ def unary_strided(
 
 
 comptime AxisReduceKernel = def(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     read layout: Layout,
     axis: Int,
@@ -330,8 +361,8 @@ def axis_reduce_strided(
 
 
 comptime MatmulStrided = def(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    b: UnsafePointer[NoneType, MutAnyOrigin],
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
+    b: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     read la: Layout,
     read lb: Layout,
@@ -362,8 +393,8 @@ def matmul_strided(
 
 
 comptime BinaryStrided = def(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    b: UnsafePointer[NoneType, MutAnyOrigin],
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
+    b: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     read la: Layout,
     read lb: Layout,

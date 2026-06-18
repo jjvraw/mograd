@@ -105,7 +105,7 @@ struct NativeRuntime(Runtime):
 # ===-------------------------------------------------------------------===#
 
 comptime OneHotOp = def(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     in_dtype: DType,
     out_dtype: DType,
@@ -115,8 +115,8 @@ comptime OneHotOp = def(
 ) thin abi("Mojo") raises -> None
 
 comptime BinaryElementWise = def(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    b: UnsafePointer[NoneType, MutAnyOrigin],
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
+    b: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     numel: Int,
     dtype: DType,
@@ -124,8 +124,8 @@ comptime BinaryElementWise = def(
 ) thin abi("Mojo") raises -> None
 
 comptime BinaryScalarElementWiseStrided = def(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
-    b: UnsafePointer[NoneType, MutAnyOrigin],
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
+    b: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     read layout: Layout,
     dtype: DType,
@@ -133,7 +133,7 @@ comptime BinaryScalarElementWiseStrided = def(
 ) thin abi("Mojo") raises -> None
 
 comptime CastOp = def(
-    a: UnsafePointer[NoneType, MutAnyOrigin],
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     read layout: Layout,
     in_dtype: DType,
@@ -153,7 +153,7 @@ def randn(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuf
     params[2] = node.attr("seed")
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
     device.handle[].get_function[FactoryKernel]("mograd_randn")(
-        params.bitcast[NoneType](),
+        params.bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
         node.numel(),
         node.dtype(),
@@ -170,7 +170,7 @@ def uniform(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyB
     params[2] = node.attr("seed")
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
     device.handle[].get_function[FactoryKernel]("mograd_uniform")(
-        params.bitcast[NoneType](), out.data_ptr(), node.numel(), node.dtype(), device.ctx
+        params.bitcast[NoneType]().as_unsafe_any_origin(), out.data_ptr(), node.numel(), node.dtype(), device.ctx
     )
     params.free()
     return out^
@@ -181,7 +181,7 @@ def full(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
     v[0] = node.attr("value")
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
     device.handle[].get_function[FactoryKernel]("mograd_full")(
-        v.bitcast[NoneType](),
+        v.bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
         node.numel(),
         node.dtype(),
@@ -290,7 +290,7 @@ def scale(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuf
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
     device.handle[].get_function[BinaryScalarElementWiseStrided]("mograd_scale")(
         inputs[0].data_ptr(),
-        s.bitcast[NoneType](),
+        s.bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
         la,
         node.dtype(),
@@ -378,7 +378,7 @@ def softmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyB
     var out = AnyBuffer.create(node.dtype(), device, layout.numel())
     device.handle[].get_function[BinaryOp]("mograd_softmax")(
         inputs[0].data_ptr(),
-        params.bitcast[NoneType](),
+        params.bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
         layout.numel(),
         node.dtype(),
@@ -393,8 +393,8 @@ def softmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyB
 # ===-------------------------------------------------------------------===#
 
 comptime BinaryOp = def(
-    UnsafePointer[NoneType, MutAnyOrigin],
-    UnsafePointer[NoneType, MutAnyOrigin],
+    UnsafePointer[NoneType, ImmutAnyOrigin],
+    UnsafePointer[NoneType, ImmutAnyOrigin],
     UnsafePointer[NoneType, MutAnyOrigin],
     Int,
     DType,
@@ -409,7 +409,7 @@ def transpose(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> An
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
     device.handle[].get_function[BinaryOp]("mograd_transpose")(
         inputs[0].data_ptr(),
-        p.bitcast[NoneType](),
+        p.bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
         node.numel(),
         node.dtype(),
@@ -424,9 +424,9 @@ def transpose(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> An
 # ===-------------------------------------------------------------------===#
 
 comptime TernaryOp = def(
-    UnsafePointer[NoneType, MutAnyOrigin],
-    UnsafePointer[NoneType, MutAnyOrigin],
-    UnsafePointer[NoneType, MutAnyOrigin],
+    UnsafePointer[NoneType, ImmutAnyOrigin],
+    UnsafePointer[NoneType, ImmutAnyOrigin],
+    UnsafePointer[NoneType, ImmutAnyOrigin],
     UnsafePointer[NoneType, MutAnyOrigin],
     Int,
     DType,
@@ -442,7 +442,7 @@ def cross_entropy(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -
     device.handle[].get_function[TernaryOp]("mograd_cross_entropy")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
-        p.bitcast[NoneType](),
+        p.bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
         node.numel(),
         node.dtype(),
@@ -491,7 +491,7 @@ def softmax_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises ->
     device.handle[].get_function[TernaryOp]("mograd_softmax_grad")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
-        p.bitcast[NoneType](),
+        p.bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
         layout.numel(),
         node.dtype(),
@@ -502,10 +502,10 @@ def softmax_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises ->
 
 
 comptime QuaternaryOp = def(
-    UnsafePointer[NoneType, MutAnyOrigin],
-    UnsafePointer[NoneType, MutAnyOrigin],
-    UnsafePointer[NoneType, MutAnyOrigin],
-    UnsafePointer[NoneType, MutAnyOrigin],
+    UnsafePointer[NoneType, ImmutAnyOrigin],
+    UnsafePointer[NoneType, ImmutAnyOrigin],
+    UnsafePointer[NoneType, ImmutAnyOrigin],
+    UnsafePointer[NoneType, ImmutAnyOrigin],
     UnsafePointer[NoneType, MutAnyOrigin],
     Int,
     DType,
@@ -522,7 +522,7 @@ def cross_entropy_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) rai
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         inputs[2].data_ptr(),
-        p.bitcast[NoneType](),
+        p.bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
         node.numel(),
         node.dtype(),

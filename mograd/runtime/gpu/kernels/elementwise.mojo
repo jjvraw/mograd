@@ -67,11 +67,11 @@ def relu_grad_op[d: DType](x: Scalar[d], y: Scalar[d]) -> Scalar[d]:
 def cast[
     src_dtype: DType, dst_dtype: DType
 ](
-    a: UnsafePointer[Scalar[src_dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dst_dtype], MutAnyOrigin],
+    a: UnsafePointer[mut=False, Scalar[src_dtype], _],
+    dst: UnsafePointer[mut=True, Scalar[dst_dtype], _],
     rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    inner: UnsafePointer[mut=False, Int64, _],
+    sa: UnsafePointer[mut=False, Int64, _],
     n: Int,
     ctx: DeviceContext,
 ) raises:
@@ -90,11 +90,11 @@ def cast[
 def slice_grad[
     dtype: DType
 ](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    inner: UnsafePointer[Int64, ImmutAnyOrigin],
+    sa: UnsafePointer[Int64, ImmutAnyOrigin],
     n: Int,
     ctx: DeviceContext,
 ) raises:
@@ -113,8 +113,8 @@ def slice_grad[
 def add[
     dtype: DType
 ](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    b: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     n: Int,
     ctx: DeviceContext,

@@ -50,7 +50,7 @@ struct Buffer[dtype: DType](BufferArm, Copyable):
 
     def data_ptr(ref self, with_offset: Bool = True) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
         offset = self.base_offset if with_offset else 0
-        return self.buf().unsafe_ptr() + offset
+        return (self.buf().unsafe_ptr() + offset).as_unsafe_any_origin()
 
     def raw_ptr(ref self, with_offset: Bool = True) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
         return self.data_ptr(with_offset).bitcast[NoneType]()

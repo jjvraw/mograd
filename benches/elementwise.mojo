@@ -29,8 +29,8 @@ def bench_unary[dtype: DType, N: Int](mut m: Bench, *, lib: OwnedDLHandle, ctx: 
     var layout = Layout(N)
 
     func(
-        a.offset_ptr(0).bitcast[NoneType](),
-        dst.offset_ptr(0).bitcast[NoneType](),
+        a.offset_ptr(0).bitcast[NoneType]().as_unsafe_any_origin(),
+        dst.offset_ptr(0).bitcast[NoneType]().as_unsafe_any_origin(),
         layout,
         dtype,
         ctx,
@@ -44,8 +44,8 @@ def bench_unary[dtype: DType, N: Int](mut m: Bench, *, lib: OwnedDLHandle, ctx: 
         @always_inline
         def kernel_launch(dc: DeviceContext, iteration: Int) raises:
             func(
-                a.offset_ptr(iteration).bitcast[NoneType](),
-                dst.offset_ptr(iteration).bitcast[NoneType](),
+                a.offset_ptr(iteration).bitcast[NoneType]().as_unsafe_any_origin(),
+                dst.offset_ptr(iteration).bitcast[NoneType]().as_unsafe_any_origin(),
                 layout,
                 dtype,
                 dc,
@@ -79,9 +79,9 @@ def bench_binary[dtype: DType, N: Int](mut m: Bench, *, lib: OwnedDLHandle, ctx:
     var dst = CacheBustingBuffer[dtype](N, 1, ctx)
 
     func(
-        a.offset_ptr(0).bitcast[NoneType](),
-        b.offset_ptr(0).bitcast[NoneType](),
-        dst.offset_ptr(0).bitcast[NoneType](),
+        a.offset_ptr(0).bitcast[NoneType]().as_unsafe_any_origin(),
+        b.offset_ptr(0).bitcast[NoneType]().as_unsafe_any_origin(),
+        dst.offset_ptr(0).bitcast[NoneType]().as_unsafe_any_origin(),
         N,
         dtype,
         ctx,
@@ -95,9 +95,9 @@ def bench_binary[dtype: DType, N: Int](mut m: Bench, *, lib: OwnedDLHandle, ctx:
         @always_inline
         def kernel_launch(dc: DeviceContext, iteration: Int) raises:
             func(
-                a.offset_ptr(iteration).bitcast[NoneType](),
-                b.offset_ptr(iteration).bitcast[NoneType](),
-                dst.offset_ptr(iteration).bitcast[NoneType](),
+                a.offset_ptr(iteration).bitcast[NoneType]().as_unsafe_any_origin(),
+                b.offset_ptr(iteration).bitcast[NoneType]().as_unsafe_any_origin(),
+                dst.offset_ptr(iteration).bitcast[NoneType]().as_unsafe_any_origin(),
                 N,
                 dtype,
                 dc,
@@ -137,9 +137,9 @@ def bench_binary_strided[
     var layout = Layout(N)
 
     func(
-        a.offset_ptr(0).bitcast[NoneType](),
-        b.offset_ptr(0).bitcast[NoneType](),
-        dst.offset_ptr(0).bitcast[NoneType](),
+        a.offset_ptr(0).bitcast[NoneType]().as_unsafe_any_origin(),
+        b.offset_ptr(0).bitcast[NoneType]().as_unsafe_any_origin(),
+        dst.offset_ptr(0).bitcast[NoneType]().as_unsafe_any_origin(),
         layout,
         layout,
         dtype,
@@ -154,9 +154,9 @@ def bench_binary_strided[
         @always_inline
         def kernel_launch(dc: DeviceContext, iteration: Int) raises:
             func(
-                a.offset_ptr(iteration).bitcast[NoneType](),
-                b.offset_ptr(iteration).bitcast[NoneType](),
-                dst.offset_ptr(iteration).bitcast[NoneType](),
+                a.offset_ptr(iteration).bitcast[NoneType]().as_unsafe_any_origin(),
+                b.offset_ptr(iteration).bitcast[NoneType]().as_unsafe_any_origin(),
+                dst.offset_ptr(iteration).bitcast[NoneType]().as_unsafe_any_origin(),
                 layout,
                 layout,
                 dtype,
@@ -196,9 +196,9 @@ def bench_binary_scalar_strided[
     var layout = Layout(N)
 
     func(
-        a.offset_ptr(0).bitcast[NoneType](),
-        scalar.bitcast[NoneType](),
-        dst.offset_ptr(0).bitcast[NoneType](),
+        a.offset_ptr(0).bitcast[NoneType]().as_unsafe_any_origin(),
+        scalar.bitcast[NoneType]().as_unsafe_any_origin(),
+        dst.offset_ptr(0).bitcast[NoneType]().as_unsafe_any_origin(),
         layout,
         dtype,
         ctx,
@@ -212,9 +212,9 @@ def bench_binary_scalar_strided[
         @always_inline
         def kernel_launch(dc: DeviceContext, iteration: Int) raises:
             func(
-                a.offset_ptr(iteration).bitcast[NoneType](),
-                scalar.bitcast[NoneType](),
-                dst.offset_ptr(iteration).bitcast[NoneType](),
+                a.offset_ptr(iteration).bitcast[NoneType]().as_unsafe_any_origin(),
+                scalar.bitcast[NoneType]().as_unsafe_any_origin(),
+                dst.offset_ptr(iteration).bitcast[NoneType]().as_unsafe_any_origin(),
                 layout,
                 dtype,
                 dc,

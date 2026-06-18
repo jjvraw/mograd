@@ -15,11 +15,11 @@ from mograd.runtime.gpu.kernels.utils import strided_offset
 def sum[
     dtype: DType
 ](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    inner: UnsafePointer[Int64, ImmutAnyOrigin],
+    sa: UnsafePointer[Int64, ImmutAnyOrigin],
     n: Int,
     ctx: DeviceContext,
 ) raises:
@@ -53,14 +53,14 @@ def sum[
 def sum_axis[
     dtype: DType
 ](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: UnsafePointer[mut=False, Scalar[dtype], _],
+    dst: UnsafePointer[mut=True, Scalar[dtype], _],
     outer: Int,
     reduce_size: Int,
     inner: Int,
     rank: Int,
-    inner_sizes: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    inner_sizes: UnsafePointer[mut=False, Int64, _],
+    sa: UnsafePointer[mut=False, Int64, _],
     ctx: DeviceContext,
 ) raises:
     @always_inline
@@ -97,11 +97,11 @@ def sum_axis[
 def argmax[
     dtype: DType
 ](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    inner: UnsafePointer[Int64, ImmutAnyOrigin],
+    sa: UnsafePointer[Int64, ImmutAnyOrigin],
     n: Int,
     ctx: DeviceContext,
 ) raises:
@@ -127,14 +127,14 @@ def argmax[
 def argmax_axis[
     dtype: DType
 ](
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: UnsafePointer[mut=False, Scalar[dtype], _],
+    dst: UnsafePointer[mut=True, Scalar[dtype], _],
     outer: Int,
     reduce_size: Int,
     inner: Int,
     rank: Int,
-    inner_sizes: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    inner_sizes: UnsafePointer[mut=False, Int64, _],
+    sa: UnsafePointer[mut=False, Int64, _],
     ctx: DeviceContext,
 ) raises:
     def kernel[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:

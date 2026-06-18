@@ -11,7 +11,7 @@ from nn.rand_uniform import random_uniform
 def randn[
     dtype: DType
 ](
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dst: UnsafePointer[mut=True, Scalar[dtype], _],
     n: Int,
     mean: Float32,
     std: Float32,
@@ -28,7 +28,7 @@ def randn[
         IndexList[1](n),
         mean,
         std,
-        seed_buf.unsafe_ptr(),
+        seed_buf.unsafe_ptr().as_unsafe_any_origin(),
         ctx,
     )
     ctx.synchronize()
@@ -42,8 +42,8 @@ def randn[
 def uniform[
     dtype: DType
 ](
-    params: UnsafePointer[Float32, MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    params: UnsafePointer[mut=False, Float32, _],
+    dst: UnsafePointer[mut=True, Scalar[dtype], _],
     n: Int,
     ctx: DeviceContext,
 ) raises where dtype.is_floating_point():
@@ -55,7 +55,9 @@ def uniform[
     def store[width: SIMDSize, rank: Int](idx: IndexList[rank], val: SIMD[dtype, width]) capturing:
         dst.store(idx[0], val)
 
-    random_uniform[output_fn=store, target="gpu"](IndexList[1](n), low, high, seed_buf.unsafe_ptr(), ctx)
+    random_uniform[output_fn=store, target="gpu"](
+        IndexList[1](n), low, high, seed_buf.unsafe_ptr().as_unsafe_any_origin(), ctx
+    )
     ctx.synchronize()
 
 
@@ -66,7 +68,7 @@ def uniform[
 
 def full[
     dtype: DType
-](val: Scalar[dtype], dst: UnsafePointer[Scalar[dtype], MutAnyOrigin], n: Int, ctx: DeviceContext) raises:
+](val: Scalar[dtype], dst: UnsafePointer[mut=True, Scalar[dtype], _], n: Int, ctx: DeviceContext) raises:
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         dst.store[simd_width](Int(coord[0].value()), val)
 
@@ -82,13 +84,13 @@ def full[
 def one_hot[
     in_dtype: DType, out_dtype: DType
 ](
-    a: UnsafePointer[Scalar[in_dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[out_dtype], MutAnyOrigin],
+    a: UnsafePointer[mut=False, Scalar[in_dtype], _],
+    dst: UnsafePointer[mut=True, Scalar[out_dtype], _],
     n: Int,
     rank: Int,
-    inner: UnsafePointer[Int64, MutAnyOrigin],
-    sd: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
+    inner: UnsafePointer[mut=False, Int64, _],
+    sd: UnsafePointer[mut=False, Int64, _],
+    sa: UnsafePointer[mut=False, Int64, _],
     ctx: DeviceContext,
 ) raises where out_dtype.is_integral():
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
