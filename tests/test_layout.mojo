@@ -88,6 +88,56 @@ def test_permute_negative_axes_2d() raises:
     assert_equal(l.stride(), IntTuple(1, 4))
     assert_false(l.is_contiguous())
 
+def test_permutation_of_contiguous_identity() raises:
+    var l = Layout(3, 4)
+
+    var order = l.permutation_of_contiguous()
+
+    assert_true(order)
+    assert_equal(order.value(), IntTuple(0, 1))
+
+def test_permutation_of_contiguous_2d_transpose() raises:
+    var l = Layout(3, 4).permute(1, 0)
+
+    var order = l.permutation_of_contiguous()
+
+    assert_true(order)
+    assert_equal(order.value(), IntTuple(1, 0))
+
+def test_permutation_of_contiguous_swaps_last_two_axes_only() raises:
+    var l = Layout(2, 3, 4).permute(0, 2, 1)
+
+    var order = l.permutation_of_contiguous()
+
+    assert_true(order)
+    assert_equal(order.value(), IntTuple(0, 2, 1))
+
+def test_permutation_of_contiguous_via_transpose_2d() raises:
+    var l = Layout(3, 4).transpose()
+
+    var order = l.permutation_of_contiguous()
+
+    assert_true(order)
+    assert_equal(order.value(), IntTuple(1, 0))
+
+def test_permutation_of_contiguous_via_transpose_3d_batched() raises:
+    var l = Layout(2, 3, 4).transpose()
+
+    var order = l.permutation_of_contiguous()
+
+    assert_true(order)
+    assert_equal(order.value(), IntTuple(0, 2, 1))
+
+def test_permutation_of_contiguous_rejects_broadcast() raises:
+    var l = Layout(3, 4).expand_axis(0, 5)
+
+    assert_false(l.permutation_of_contiguous())
+
+def test_permutation_of_contiguous_rejects_slice() raises:
+    var l = Layout(10)[0:10:2]
+
+    assert_false(l.permutation_of_contiguous())
+
 def test_view_1d_to_2d() raises:
     var l = Layout(12)
 

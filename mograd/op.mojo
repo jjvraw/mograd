@@ -294,9 +294,8 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     def cast(self, out_dtype: DType) -> OpRef:
         return OpRef(Op(OpType.CAST, self.layout().as_contiguous(), out_dtype, [self]))
 
-    def transpose(self) -> Self:
-        # TODO: use self.layout().transpose() once the transpose kernel handles non-contiguous layouts
-        return Self(Op(OpType.TRANSPOSE, (self.shape(1), self.shape(0)), self.dtype(), [self.contiguous()]))
+    def transpose(self, dim0: Int = -2, dim1: Int = -1) raises -> Self:
+        return Self(Op(OpType.TRANSPOSE, self.layout().transpose(dim0, dim1), self.dtype(), [self]))
 
     def contiguous(self) -> Self:
         if self.layout().is_contiguous():

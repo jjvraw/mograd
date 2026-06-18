@@ -85,13 +85,13 @@ struct NativeRuntime(Runtime):
             Rule(Pat(OpType.ONE_HOT), one_hot),
             # Layout
             Rule(Pat(OpType.CONTIGUOUS), contiguous),
-            Rule(Pat(OpType.RESHAPE), reshape),
-            Rule(Pat(OpType.EXPAND), expand),
+            Rule(Pat(OpType.EXPAND), view),
             Rule(Pat(OpType.VIEW), view),
-            Rule(Pat(OpType.SLICE), slice),
+            Rule(Pat(OpType.SLICE), view),
+            Rule(Pat(OpType.RESHAPE), view),
+            Rule(Pat(OpType.TRANSPOSE), view),
             # TODO:
             Rule(Pat(OpType.CROSS_ENTROPY), cross_entropy),
-            Rule(Pat(OpType.TRANSPOSE), transpose),
             Rule(Pat(OpType.SOFTMAX_GRAD), softmax_grad),
             Rule(Pat(OpType.CROSS_ENTROPY_GRAD), cross_entropy_grad),
         ]
@@ -352,14 +352,6 @@ def contiguous(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> A
     return unary_strided("mograd_contiguous", node, inputs, device)
 
 
-def expand(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return inputs[0].view(node.layout())
-
-
-def reshape(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return inputs[0].view(node.layout())
-
-
 def view(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     return inputs[0].view(node.layout())
 
@@ -468,10 +460,6 @@ def disk(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
                 data.append(ptr[i])
             return AnyBuffer(Buffer[d].from_data(device, data))
     raise Error("unsupported dtype")
-
-
-def slice(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return inputs[0].view(node.layout())
 
 
 # ===-------------------------------------------------------------------===#

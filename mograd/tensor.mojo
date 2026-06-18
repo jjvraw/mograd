@@ -229,8 +229,22 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
         """
         return Self(self.device, self.op.view(shape), self.requires_grad)
 
-    def transpose(self) raises -> Self:
-        return Self(self.device, self.op.transpose(), self.requires_grad)
+    def transpose(self, dim0: Int = -2, dim1: Int = -1) raises -> Self:
+        """Returns a transposed view of the tensor by swapping `dim0` and `dim1`.
+        All other dimensions are left in their original positions.
+        Defaults to swapping the last two dimensions.
+
+        Args:
+            dim0: First dimension to swap.
+            dim1: Second dimension to swap.
+
+        Returns:
+            Transposed tensor view.
+
+        Raises:
+            If dim0 equals dim1 or either dim is out of bounds.
+        """
+        return Self(self.device, self.op.transpose(dim0, dim1), self.requires_grad)
 
     def __getitem__(self, s: Slice) raises -> Self:
         var dim = self.op.layout().shape(0)

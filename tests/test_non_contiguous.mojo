@@ -271,6 +271,77 @@ def test_reshape_strided() raises:
     assert_allclose(r, [Float32(1), 2, 5, 6, 9, 10])
 
 
+def test_softmax_transposed() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(100), 1, 1, 100, 1, 1], (3, 2))
+    var t = a.transpose()
+    assert_true(not t.is_contiguous())
+    var out = t.softmax()
+    assert_allclose(out, [Float32(1), 0, 0, 0, 1, 0], tol=1e-5)
+
+
+def test_relu_transposed() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(-1), 2, 3, -4, -5, 6], (3, 2))
+    var t = a.transpose()
+    assert_true(not t.is_contiguous())
+    var c = t.relu()
+    assert_allclose(c, [Float32(0), 3, 0, 2, 0, 6])
+
+
+def test_sum_axis_transposed() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6], (3, 2))
+    var t = a.transpose()
+    assert_true(not t.is_contiguous())
+    assert_allclose(t.sum(axis=1), [Float32(9), 12])
+
+
+def test_argmax_axis_transposed() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 9, 2, 4, 0, 3], (2, 3))
+    var t = a.transpose()
+    assert_true(not t.is_contiguous())
+    assert_allclose(t.argmax(axis=1), [Float32(1), 0, 1])
+
+
+def test_matmul_transposed() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6], (2, 3))
+    var t = a.transpose()
+    assert_true(not t.is_contiguous())
+    var identity = Tensor(device, [Float32(1), 0, 0, 1], (2, 2))
+    assert_allclose(t @ identity, [Float32(1), 4, 2, 5, 3, 6])
+
+
+def test_cross_entropy_transposed_logits() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2, 1, 2], (2, 2))
+    var t = a.transpose()
+    assert_true(not t.is_contiguous())
+    var labels = Tensor.full(device, (2, 2), Float32(0.5))
+    assert_close(t.cross_entropy(labels), Float32(0.693147), tol=1e-3)
+
+
+def test_reshape_transposed() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6], (2, 3))
+    var t = a.transpose()
+    assert_true(not t.is_contiguous())
+    var r = t.reshape((1, 6))
+    assert_allclose(r, [Float32(1), 4, 2, 5, 3, 6])
+
+
+def test_grad_relu_transposed() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(-1), -2, 3, 4], (2, 2), requires_grad=True)
+    var t = a.transpose()
+    assert_true(not t.is_contiguous())
+    var c = t.relu().sum()
+    var grads = c.gradient([a])
+    assert_allclose(grads[0], [Float32(0), 0, 1, 1])
+
+
 def main() raises:
     comptime assert has_accelerator(), "GPU required to run non-contiguous tests"
     TestSuite.discover_tests[__functions_in_module()]().run()

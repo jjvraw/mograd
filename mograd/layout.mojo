@@ -2,7 +2,7 @@ from std.format.tstring import TString
 from std.builtin.builtin_slice import StridedSlice
 from std.gpu.host import DeviceBuffer, DeviceContext
 
-from layout.int_tuple import IntTuple, reverse, prefix_product, product, sorted
+from layout.int_tuple import IntTuple, reverse, prefix_product, product, sorted, compact_order
 
 # ===-------------------------------------------------------------------===#
 # Layout
@@ -309,6 +309,41 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Writable):
         axes = axes.replace_entry(d1, IntTuple(d0))
 
         layout = self.permute(axes)
+
+    # ===-------------------------------------------------------------------===#
+    # Permutation detection
+    # ===-------------------------------------------------------------------===#
+
+    def permutation_of_contiguous(self) raises -> Optional[IntTuple]:
+        """Returns the axis order that recovers a contiguous layout, if one exists.
+
+        The returned order lists axes from slowest- to fastest-varying (i.e. by
+        stride descending). If this layout is exactly a contiguous buffer viewed
+        through that axis order, `compact_order` reconstructs its strides
+        exactly and the order is returned. Otherwise returns None — this
+        rejects broadcasts (stride 0 on a dim with size > 1 can never match a
+        compact stride) and slices (a narrowed stride can never match either).
+        """
+
+        def by_stride_desc(a: IntTuple, b: IntTuple) -> Bool:
+            return a.value(0) > b.value(0)
+
+        var pairs = IntTuple()
+        for i in range(self.rank()):
+            pairs.append(IntTuple(self.stride(i), i))
+
+        var sorted_pairs = sorted[by_stride_desc](pairs)
+
+        var axis_order = IntTuple()
+        var rank_of = IntTuple(num_elems=self.rank())
+        for pos in range(self.rank()):
+            var axis = sorted_pairs[pos].value(1)
+            axis_order.append(IntTuple(axis))
+            rank_of.replace_entry(axis, int_value=self.rank() - 1 - pos)
+
+        if compact_order(self.shape(), rank_of) != self.stride():
+            return None
+        return axis_order
 
     # ===-------------------------------------------------------------------===#
     # View
