@@ -5,6 +5,14 @@ PLATFORM="$(uname -s)"
 
 if [[ "$PLATFORM" == "Darwin" ]]; then
     CC="xcrun clang"
+
+    if ! xcrun --find metal &>/dev/null 2>&1; then
+        echo "[mograd] ERROR: Metal toolchain not found."
+        exit 1
+    fi
+
+    METAL_VERSION=$(xcrun metal --version 2>&1 | head -1)
+    echo "[mograd] Metal toolchain OK: $METAL_VERSION"
 else
     CC="gcc"
 fi
