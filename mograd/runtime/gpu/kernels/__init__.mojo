@@ -632,20 +632,26 @@ def mograd_sum(
 def mograd_sum_axis(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    outer: Int,
-    reduce_size: Int,
-    inner: Int,
-    rank: Int,
-    inner_sizes: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
-    contiguous: Bool,
+    read layout: Layout,
+    axis: Int,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
     @always_inline
     def body[d: DType]() capturing raises:
+        var outer, reduce_size, inner = layout.reduce_dims(axis)
+        var inner_buf = layout.inner_sizes_buffer(ctx)
+        var sa_buf = layout.strides_buffer(ctx)
         sum_axis[d](
-            a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), outer, reduce_size, inner, rank, inner_sizes, sa, ctx
+            a.bitcast[Scalar[d]](),
+            dst.bitcast[Scalar[d]](),
+            outer,
+            reduce_size,
+            inner,
+            layout.rank(),
+            inner_buf.unsafe_ptr(),
+            sa_buf.unsafe_ptr(),
+            ctx,
         )
 
     dispatch_dtype[body](dtype)
@@ -675,27 +681,34 @@ def mograd_argmax(
 def mograd_argmax_axis(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    outer: Int,
-    reduce_size: Int,
-    inner: Int,
-    rank: Int,
-    inner_sizes: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
-    contiguous: Bool,
+    read layout: Layout,
+    axis: Int,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
     @always_inline
     def body[d: DType]() capturing raises:
-        if contiguous and inner == 1 and rank == 2:
+        var outer, reduce_size, inner = layout.reduce_dims(axis)
+        var rank = layout.rank()
+        if layout.is_contiguous() and inner == 1 and rank == 2:
             var a_imm: UnsafePointer[Scalar[d], ImmutAnyOrigin] = a.bitcast[Scalar[d]]()
             var inp = TileTensor(a_imm, row_major(Coord(outer, reduce_size)))
             var out = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(outer, 1)))
             argmax_gpu[d, d](ctx, inp, out)
         else:
             # TODO: use nn.argmaxmin when generalised to mid-axis (modular/.../nn/argmaxmin.mojo:59)
+            var inner_buf = layout.inner_sizes_buffer(ctx)
+            var sa_buf = layout.strides_buffer(ctx)
             argmax_axis[d](
-                a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), outer, reduce_size, inner, rank, inner_sizes, sa, ctx
+                a.bitcast[Scalar[d]](),
+                dst.bitcast[Scalar[d]](),
+                outer,
+                reduce_size,
+                inner,
+                rank,
+                inner_buf.unsafe_ptr(),
+                sa_buf.unsafe_ptr(),
+                ctx,
             )
 
     dispatch_dtype[body, float_only=True](dtype)

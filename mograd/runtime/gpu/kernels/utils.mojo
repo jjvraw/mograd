@@ -304,13 +304,8 @@ def unary_strided(
 comptime AxisReduceKernel = def(
     a: UnsafePointer[NoneType, MutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    outer: Int,
-    reduce_size: Int,
-    inner: Int,
-    rank: Int,
-    inner_sizes: UnsafePointer[Int64, MutAnyOrigin],
-    sa: UnsafePointer[Int64, MutAnyOrigin],
-    contiguous: Bool,
+    read layout: Layout,
+    axis: Int,
     dtype: DType,
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
@@ -322,18 +317,12 @@ def axis_reduce_strided(
 ) raises -> AnyBuffer:
     var layout = node.src(0).layout()
     var axis = node.attr_int("axis")
-    var outer, reduce_size, inner = layout.reduce_dims(axis)
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
     device.handle[].get_function[AxisReduceKernel](name)(
         inputs[0].data_ptr(),
         out.data_ptr(),
-        outer,
-        reduce_size,
-        inner,
-        layout.rank(),
-        layout.inner_sizes_buffer(device.ctx).unsafe_ptr(),
-        layout.strides_buffer(device.ctx).unsafe_ptr(),
-        layout.is_contiguous(),
+        layout,
+        axis,
         node.dtype(),
         device.ctx,
     )
