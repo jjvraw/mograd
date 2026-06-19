@@ -24,12 +24,17 @@ mojo = ">=1.0.0b2.dev2026050306,<2"
 max = ">=26.4.0.dev2026052815,<27"
 numpy = "*" # (LazyLoader)
 
+[target.linux-64.dependencies]
+gcc = "*"
+
+[activation]
+scripts = ["scripts/activate.sh"]
 
 [activation.env]
-MOGRAD_SO = "mograd/runtime/gpu/kernels/libmograd_gpu.so"
+MOGRAD_SO = "$CONDA_PREFIX/lib/mograd/libmograd_gpu.so"
 
 [environments]
-lint = {features = ["lint"]}
+lint = { features = ["lint"], no-default-feature = true }
 
 [feature.lint.dependencies]
 mojo = ">=1.0.0b2.dev2026050306,<2"
@@ -38,27 +43,21 @@ mojo = ">=1.0.0b2.dev2026050306,<2"
 format-check = { cmd = "mojo format -l 120 mograd/ examples/ benches/ && git diff --exit-code" }
 
 [tasks]
-build-gpu = { cmd = "bash scripts/build_gpu.sh" }
+build-gpu = { cmd = "MOGRAD_FORCE_BUILD=1 bash scripts/build_gpu.sh" }
 
 format = { cmd = "mojo format -l 120 mograd/ examples/ benches/"}
 
 # Test GPU
 test-grad               = { cmd = "mojo -I . tests/test_grad.mojo" }
-test-grad-b             = { cmd = "mojo -I . tests/test_grad.mojo", depends-on = ["build-gpu"]}
 test-nn                 = { cmd = "mojo -I . tests/test_nn.mojo" }
-test-nn-b               = { cmd = "mojo -I . tests/test_nn.mojo", depends-on = ["build-gpu"]}
 test-ops                = { cmd = "mojo -I . tests/test_ops.mojo", }
-test-ops-b              = { cmd = "mojo -I . tests/test_ops.mojo", depends-on = ["build-gpu"]}
 test-data               = { cmd = "mojo -I . tests/test_data.mojo" }
-test-data-b             = { cmd = "mojo -I . tests/test_data.mojo", depends-on = ["build-gpu"]}
 test-non-contiguous     = { cmd = "mojo -I . tests/test_non_contiguous.mojo" }
-test-non-contiguous-b   = { cmd = "mojo -I . tests/test_non_contiguous.mojo", depends-on = ["build-gpu"]}
 test-gpu                = { depends-on = [  "test-grad",
                                             "test-nn",
                                             "test-ops",
                                             "test-data",
                                             "test-non-contiguous"] }
-test-gpu-b              = { depends-on = [  "build-gpu", "test-gpu"] }
 
 # Test Graph
 test-gpu-rewrites       = { cmd = "mojo -I . tests/test_gpu_rewrites.mojo" }
@@ -74,15 +73,12 @@ test-graph              = { depends-on = [  "test-pattern-matcher",
 
 # Examples
 mnist                   = { cmd = "mojo -I . examples/mnist/train.mojo" }
-mnist-b                 = { cmd = "mojo -I . examples/mnist/train.mojo", depends-on = ["build-gpu"]}
 examples                = { depends-on = ["mnist"] }
-examples-b              = { depends-on = ["build-gpu", "examples"] }
 
 # Test All
 test-all                = { depends-on = ["test-gpu", "test-graph", "examples"] }
-test-all-b              = { depends-on = ["build-gpu", "test-all"] }
 
 # Benchamrks
-bench-elementwise       = { cmd = "mojo -I . benches/elementwise.mojo", depends-on = ["build-gpu"]}
-bench-transpose         = { cmd = "mojo -I . benches/transpose.mojo", depends-on = ["build-gpu"]}
-bench-matmul            = { cmd = "mojo -I . benches/matmul.mojo", depends-on = ["build-gpu"]}
+bench-elementwise       = { cmd = "mojo -I . benches/elementwise.mojo" }
+bench-transpose         = { cmd = "mojo -I . benches/transpose.mojo" }
+bench-matmul            = { cmd = "mojo -I . benches/matmul.mojo" }

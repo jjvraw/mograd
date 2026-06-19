@@ -18,8 +18,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: prefix-dev/setup-pixi@v0.9.4
         with:
-          environments: default
-      - run: pixi run format-check
+          environments: lint
+      - run: pixi run -e lint format-check
 
   graph:
     name: Graph
@@ -32,18 +32,16 @@ jobs:
       - run: pixi run test-graph
 
   test-gpu-m1:
-    env:
-      PIXI_CACHE_DIR: /tmp/pixi-cache-4090
     name: Tests (M1)
     runs-on: [self-hosted, runner-m1]
     if: github.event_name == 'pull_request'
     concurrency:
-      group: runner-m1-${{ github.ref }}
+      group: runner-m1-tests-${{ github.ref }}
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
       - run: pixi clean
-      - run: pixi run test-gpu-b
+      - run: pixi run test-gpu
 
   examples-m1:
     name: Examples (M1)
@@ -51,26 +49,24 @@ jobs:
     if: github.event_name == 'pull_request'
     needs: test-gpu-m1
     concurrency:
-      group: runner-m1-${{ github.ref }}
+      group: runner-m1-examples-${{ github.ref }}
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
       - run: pixi clean
-      - run: pixi run examples-b
+      - run: pixi run examples
 
   test-gpu-4090:
-    env:
-      PIXI_CACHE_DIR: /tmp/pixi-cache-m1
     name: Tests (4090)
     runs-on: [self-hosted, runner-4090]
     if: github.event_name == 'pull_request'
     concurrency:
-      group: runner-4090-${{ github.ref }}
+      group: runner-4090-tests-${{ github.ref }}
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
       - run: pixi clean
-      - run: pixi run test-gpu-b
+      - run: pixi run test-gpu
 
   examples-4090:
     name: Examples (4090)
@@ -78,9 +74,9 @@ jobs:
     if: github.event_name == 'pull_request'
     needs: test-gpu-4090
     concurrency:
-      group: runner-4090-${{ github.ref }}
+      group: runner-4090-examples-${{ github.ref }}
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
       - run: pixi clean
-      - run: pixi run examples-b
+      - run: pixi run examples
