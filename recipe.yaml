@@ -1,0 +1,70 @@
+context:
+  name: mograd
+  version: "0.0.0"
+
+package:
+  name: ${{ name }}
+  version: ${{ version }}
+
+source:
+  - path: .
+
+build:
+  number: 0
+  script:
+    # ── Mojo source distribution ─────────────────────────────────────────
+    - mkdir -p $PREFIX/lib/mojo
+    - cp -r mograd $PREFIX/lib/mojo/
+
+    # ── Machine-local GPU build inputs ───────────────────────────────────
+    - mkdir -p $PREFIX/share/mograd/scripts
+    - mkdir -p $PREFIX/share/mograd/mograd/runtime
+
+    - cp scripts/build_gpu.sh $PREFIX/share/mograd/scripts/build_gpu.sh
+    - chmod +x $PREFIX/share/mograd/scripts/build_gpu.sh
+
+    - cp -r mograd/runtime $PREFIX/share/mograd/mograd/runtime
+
+    # ── Runtime env var ──────────────────────────────────────────────────
+    - mkdir -p $PREFIX/etc/conda/env_vars.d
+    - |
+      cat > $PREFIX/etc/conda/env_vars.d/mograd.json << EOF
+      {
+        "MOGRAD_SO": "$PREFIX/lib/mograd/libmograd_gpu.so"
+      }
+      EOF
+
+    # ── Activation hook ──────────────────────────────────────────────────
+    # This builds/refreshes the machine-local shared library on activation.
+    - mkdir -p $PREFIX/etc/conda/activate.d
+    - |
+      cat > $PREFIX/etc/conda/activate.d/10-mograd-build-gpu.sh << 'EOF'
+      #!/usr/bin/env bash
+
+      export MOGRAD_SO="${MOGRAD_SO:-$CONDA_PREFIX/lib/mograd/libmograd_gpu.so}"
+
+      if [ -x "$CONDA_PREFIX/share/mograd/scripts/build_gpu.sh" ]; then
+          bash "$CONDA_PREFIX/share/mograd/scripts/build_gpu.sh"
+      fi
+      EOF
+    - chmod +x $PREFIX/etc/conda/activate.d/10-mograd-build-gpu.sh
+
+requirements:
+  run:
+    - mojo >=1.0.0b2.dev2026050306,<2
+    - max >=26.4.0.dev2026052815,<27
+    - numpy
+
+    # Needed because libmograd_gpu.so is built on the user's machine.
+    - if: linux
+      then:
+        - gcc
+
+about:
+  homepage: https://github.com/jjvraw/mograd
+  repository: https://github.com/jjvraw/mograd
+  license: Apache-2.0
+  summary: Autograd tensor library for Mojo
+  description: |
+    mograd is an autograd tensor library for Mojo with a tensor API,
+    neural network components, a thin rewriteable graph IR
