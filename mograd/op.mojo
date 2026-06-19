@@ -188,6 +188,9 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     def layout(ref self) -> ref[self._ptr[].layout] Layout:
         return self._ptr[].layout
 
+    def shape(ref self) -> IntTuple:
+        return self._ptr[].layout.shape()
+
     def shape(ref self, i: Int) -> Int:
         return self._ptr[].layout.shape(i)
 

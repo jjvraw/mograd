@@ -178,8 +178,8 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
     def is_contiguous(self) -> Bool:
         return self.op.layout().is_contiguous()
 
-    def shape(self) -> Layout:
-        return self.op.layout().copy()
+    def shape(self) -> IntTuple:
+        return self.op.shape()
 
     def shape(self, idx: Int) -> Int:
         return self.op.shape(idx)
