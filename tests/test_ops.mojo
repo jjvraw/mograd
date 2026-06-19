@@ -41,6 +41,66 @@ def test_slice_preserves_shape_for_matmul() raises:
     assert_allclose(x[1:3] @ identity, [Float32(3), 4, 5, 6])
 
 
+def test_batched_matmul_rank3() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8], (2, 2, 2))
+    var identity = Tensor(device, [Float32(1), 0, 0, 1, 1, 0, 0, 1], (2, 2, 2))
+    assert_allclose(a @ identity, [Float32(1), 2, 3, 4, 5, 6, 7, 8])
+
+
+def test_batched_matmul_transpose_b_rank3() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8], (2, 2, 2))
+    var identity = Tensor(device, [Float32(1), 0, 0, 1, 1, 0, 0, 1], (2, 2, 2))
+    assert_allclose(a.matmul(identity.transpose()), [Float32(1), 2, 3, 4, 5, 6, 7, 8])
+
+
+def test_batched_matmul_rank4() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(i) for i in range(16)], (2, 2, 2, 2))
+    var identity = Tensor(
+        device, [Float32(1), 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1], (2, 2, 2, 2)
+    )
+    assert_allclose(a @ identity, [Float32(i) for i in range(16)])
+
+
+def test_batched_matmul_non_square() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], (2, 2, 3))
+    var b = Tensor(device, [Float32(1), 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1], (2, 3, 2))
+    assert_allclose(a @ b, [Float32(1), 2, 4, 5, 8, 9, 11, 12])
+
+
+def test_reshape_then_matmul() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4, 5, 6], (6,)).reshape((2, 3))
+    var identity = Tensor(device, [Float32(1), 0, 0, 0, 1, 0, 0, 0, 1], (3, 3))
+    assert_allclose(x @ identity, [Float32(1), 2, 3, 4, 5, 6])
+
+
+def test_view_then_batched_matmul() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8], (8,)).view((2, 2, 2))
+    var identity = Tensor(device, [Float32(1), 0, 0, 1, 1, 0, 0, 1], (2, 2, 2))
+    assert_allclose(x @ identity, [Float32(1), 2, 3, 4, 5, 6, 7, 8])
+
+
+def test_transpose_single_batch_axis_then_matmul() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(i) for i in range(12)], (2, 3, 2)).transpose(0, 1)
+    var identity = Tensor(device, [Float32(1), 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1], (3, 2, 2))
+    assert_allclose(a @ identity, a.contiguous())
+
+
+def test_attention_style_middle_transpose_matmul() raises:
+    var device = Device()
+    var a = Tensor(device, [Float32(i) for i in range(16)], (2, 2, 2, 2)).transpose(1, 2)
+    var identity = Tensor(
+        device, [Float32(1), 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1], (2, 2, 2, 2)
+    )
+    assert_allclose(a @ identity, a.contiguous())
+
+
 def test_softmax_sums_to_one() raises:
     var device = Device()
     var x = Tensor(device, [Float32(1), 2, 3, 4], (4,))

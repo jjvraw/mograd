@@ -312,8 +312,34 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     # Contraction operations
     # ===-------------------------------------------------------------------===#
 
-    def matmul(self, rhs: OpRef) -> Self:
-        return Self(Op(OpType.MATMUL, (self.shape(0), rhs.shape(1)), self.dtype(), [self, rhs]))
+    def matmul(self, rhs: OpRef) raises -> Self:
+        var la = self.layout()
+        var lb = rhs.layout()
+        var rank = la.rank()
+
+        if rank != lb.rank():
+            raise Error(t"matmul: rank mismatch {String(rank)} vs {String(lb.rank())}")
+        if rank < 2:
+            raise Error("matmul requires tensors of rank >= 2")
+
+        var out_shape = IntTuple()
+        for i in range(rank - 2):
+            var a_dim = la.shape(i)
+            var b_dim = lb.shape(i)
+            if a_dim != b_dim:
+                raise Error(t"matmul: batch dim {String(i)} mismatch {String(a_dim)} vs {String(b_dim)}")
+            out_shape.append(IntTuple(a_dim))
+        out_shape.append(IntTuple(self.shape(rank - 2)))
+        out_shape.append(IntTuple(rhs.shape(rank - 1)))
+
+        var out_layout = Layout(rank, out_shape, Layout.row_major_strides(out_shape), 0)
+
+        # Batch dims that don't nest into a single flat stride can't be expressed
+        # as a strided view for the matmul kernels, so materialise first.
+        var a_src = self if la.batch_dims_collapsible() else self.contiguous()
+        var b_src = rhs if lb.batch_dims_collapsible() else rhs.contiguous()
+
+        return Self(Op(OpType.MATMUL, out_layout, self.dtype(), [a_src, b_src]))
 
     # ===-------------------------------------------------------------------===#
     # Loss operations

@@ -5,12 +5,12 @@ from std.gpu.memory import AddressSpace
 from std.math import ceildiv
 from std.memory import stack_allocation
 from std.sys.info import simd_width_of
+from std.utils.index import IndexList
 
-from layout import Coord, MixedLayout, TensorLayout, TileTensor, row_major
+from layout import Coord, Idx, MixedLayout, TensorLayout, TileTensor, row_major
 from layout import stack_allocation as tile_stack_allocation
 
-from linalg.matmul import matmul as linalg_matmul
-from linalg.matmul.gpu import matmul_kernel_naive
+from linalg.bmm import batched_matmul, naive_batched_matmul_kernel
 
 from nn.argmaxmin_gpu import argmax_gpu
 from nn.softmax import softmax as nn_softmax
@@ -451,6 +451,37 @@ def mograd_scale(
 # ===-------------------------------------------------------------------===#
 # TODO: Support vendors https://github.com/modular/modular/issues/6672
 
+comptime MATMUL_KN_BUCKETS = (128, 256, 512, 1024, 2048, 4096)
+
+
+@always_inline
+def _try_static_square_batched_matmul[
+    d: DType, transpose_b: Bool
+](
+    a: UnsafePointer[Scalar[d], ImmutAnyOrigin],
+    b: UnsafePointer[Scalar[d], ImmutAnyOrigin],
+    dst: UnsafePointer[Scalar[d], MutAnyOrigin],
+    batch: Int,
+    M: Int,
+    K: Int,
+    N: Int,
+    ctx: DeviceContext,
+) raises -> Bool:
+    """Tries the comptime-static-(K, N) fast path for K == N at a handful
+    of typical sizes.
+    """
+    if K != N:
+        return False
+    comptime for i in range(len(MATMUL_KN_BUCKETS)):
+        comptime S = MATMUL_KN_BUCKETS[i]
+        if K == S:
+            var ta = TileTensor(a, row_major(Coord(batch, M, Idx[S])))
+            var tb = TileTensor(b, row_major(Coord(batch, Idx[S], Idx[S])))
+            var tc = TileTensor(dst, row_major(Coord(batch, M, Idx[S])))
+            batched_matmul[target="gpu", transpose_b=transpose_b](tc, ta, tb, context=ctx)
+            return True
+    return False
+
 
 @export
 def mograd_matmul(
@@ -465,27 +496,59 @@ def mograd_matmul(
 ) abi("Mojo") raises:
     @always_inline
     def body[d: DType]() capturing raises:
-        var M = la.shape(0)
-        var K = la.shape(1)
-        var lda = la.stride(0)
-        var lda1 = la.stride(1)
-        var ldb = lb.stride(0)
-        var ldb1 = lb.stride(1)
-        if lda == K and lda1 == 1 and ldb == N and ldb1 == 1:
-            var ta = TileTensor(a.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(M, K)))
-            var tb = TileTensor(b.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(K, N)))
-            var tc = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(M, N)))
-            linalg_matmul[target="gpu"](tc, ta, tb, ctx)
+        var rank = la.rank()
+        # Defensive: op.mojo's matmul() should have already materialised
+        # any non-collapsible operand via .contiguous() before it ever
+        # reaches this kernel.
+        if not (la.batch_dims_collapsible() and lb.batch_dims_collapsible()):
+            raise Error("matmul: received non-collapsible batch dims, expected op.mojo to materialise these first")
+
+        var M = la.shape(rank - 2)
+        var K = la.shape(rank - 1)
+        var lda0 = la.stride(rank - 2)
+        var lda1 = la.stride(rank - 1)
+        var ldb0 = lb.stride(rank - 2)
+        var ldb1 = lb.stride(rank - 1)
+        var batch = la.numel() // (M * K)
+        var batch_stride_a = la.stride(rank - 3) if rank >= 3 else M * K
+        var batch_stride_b = lb.stride(rank - 3) if rank >= 3 else K * N
+
+        if lda0 == K and lda1 == 1 and ldb0 == N and ldb1 == 1:
+            comptime if d.is_floating_point():
+                if _try_static_square_batched_matmul[d, False](
+                    a.bitcast[Scalar[d]]().as_unsafe_any_origin(),
+                    b.bitcast[Scalar[d]]().as_unsafe_any_origin(),
+                    dst.bitcast[Scalar[d]]().as_unsafe_any_origin(),
+                    batch,
+                    M,
+                    K,
+                    N,
+                    ctx,
+                ):
+                    return
+            var ta = TileTensor(a.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, K)))
+            var tb = TileTensor(b.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, K, N)))
+            var tc = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, N)))
+            batched_matmul[target="gpu"](tc, ta, tb, context=ctx)
         else:
-            var ta = TileTensor(a.bitcast[Scalar[d]](), MixedLayout(Coord(M, K), Coord(lda, lda1)))
-            var tb = TileTensor(b.bitcast[Scalar[d]](), MixedLayout(Coord(K, N), Coord(ldb, ldb1)))
-            var tc = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(M, N)))
+            var ta = TileTensor(
+                a.bitcast[Scalar[d]](), MixedLayout(Coord(batch, M, K), Coord(batch_stride_a, lda0, lda1))
+            )
+            var tb = TileTensor(
+                b.bitcast[Scalar[d]](), MixedLayout(Coord(batch, K, N), Coord(batch_stride_b, ldb0, ldb1))
+            )
+            var tc = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, N)))
             comptime BLOCK = 16
-            comptime naive = matmul_kernel_naive[
-                d, d, d, type_of(tc).LayoutType, type_of(ta).LayoutType, type_of(tb).LayoutType, BLOCK
+            comptime naive = naive_batched_matmul_kernel[
+                3, d, d, d, type_of(tc).LayoutType, type_of(ta).LayoutType, type_of(tb).LayoutType
             ]
             ctx.enqueue_function[naive](
-                tc, ta, tb, M, N, K, grid_dim=(ceildiv(M, BLOCK), ceildiv(N, BLOCK)), block_dim=(BLOCK, BLOCK)
+                tc,
+                ta,
+                tb,
+                IndexList[3](batch, M, N),
+                grid_dim=(ceildiv(N, BLOCK), ceildiv(M, BLOCK), batch),
+                block_dim=(BLOCK, BLOCK),
             )
 
     dispatch_dtype[body](dtype)
@@ -504,27 +567,59 @@ def mograd_matmul_t(
 ) abi("Mojo") raises:
     @always_inline
     def body[d: DType]() capturing raises:
-        var M = la.shape(0)
-        var K = la.shape(1)
-        var lda = la.stride(0)
-        var lda1 = la.stride(1)
-        var ldb = lb.stride(0)
-        var ldb1 = lb.stride(1)
-        if lda == K and lda1 == 1 and ldb == K and ldb1 == 1:
-            var ta = TileTensor(a.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(M, K)))
-            var tb = TileTensor(b.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(N, K)))
-            var tc = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(M, N)))
-            linalg_matmul[target="gpu", transpose_b=True](tc, ta, tb, ctx)
+        var rank = la.rank()
+        # Defensive: op.mojo's matmul() should have already materialised
+        # any non-collapsible operand via .contiguous() before it ever
+        # reaches this kernel.
+        if not (la.batch_dims_collapsible() and lb.batch_dims_collapsible()):
+            raise Error("matmul: received non-collapsible batch dims, expected op.mojo to materialise these first")
+
+        var M = la.shape(rank - 2)
+        var K = la.shape(rank - 1)
+        var lda0 = la.stride(rank - 2)
+        var lda1 = la.stride(rank - 1)
+        var ldb0 = lb.stride(rank - 2)
+        var ldb1 = lb.stride(rank - 1)
+        var batch = la.numel() // (M * K)
+        var batch_stride_a = la.stride(rank - 3) if rank >= 3 else M * K
+        var batch_stride_b = lb.stride(rank - 3) if rank >= 3 else N * K
+
+        if lda0 == K and lda1 == 1 and ldb0 == K and ldb1 == 1:
+            comptime if d.is_floating_point():
+                if _try_static_square_batched_matmul[d, True](
+                    a.bitcast[Scalar[d]]().as_unsafe_any_origin(),
+                    b.bitcast[Scalar[d]]().as_unsafe_any_origin(),
+                    dst.bitcast[Scalar[d]]().as_unsafe_any_origin(),
+                    batch,
+                    M,
+                    K,
+                    N,
+                    ctx,
+                ):
+                    return
+            var ta = TileTensor(a.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, K)))
+            var tb = TileTensor(b.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, N, K)))
+            var tc = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, N)))
+            batched_matmul[target="gpu", transpose_b=True](tc, ta, tb, context=ctx)
         else:
-            var ta = TileTensor(a.bitcast[Scalar[d]](), MixedLayout(Coord(M, K), Coord(lda, lda1)))
-            var tb = TileTensor(b.bitcast[Scalar[d]](), MixedLayout(Coord(N, K), Coord(ldb, ldb1)))
-            var tc = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(M, N)))
+            var ta = TileTensor(
+                a.bitcast[Scalar[d]](), MixedLayout(Coord(batch, M, K), Coord(batch_stride_a, lda0, lda1))
+            )
+            var tb = TileTensor(
+                b.bitcast[Scalar[d]](), MixedLayout(Coord(batch, N, K), Coord(batch_stride_b, ldb0, ldb1))
+            )
+            var tc = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, N)))
             comptime BLOCK = 16
-            comptime naive = matmul_kernel_naive[
-                d, d, d, type_of(tc).LayoutType, type_of(ta).LayoutType, type_of(tb).LayoutType, BLOCK, True
+            comptime naive = naive_batched_matmul_kernel[
+                3, d, d, d, type_of(tc).LayoutType, type_of(ta).LayoutType, type_of(tb).LayoutType, transpose_b=True
             ]
             ctx.enqueue_function[naive](
-                tc, ta, tb, M, N, K, grid_dim=(ceildiv(M, BLOCK), ceildiv(N, BLOCK)), block_dim=(BLOCK, BLOCK)
+                tc,
+                ta,
+                tb,
+                IndexList[3](batch, M, N),
+                grid_dim=(ceildiv(N, BLOCK), ceildiv(M, BLOCK), batch),
+                block_dim=(BLOCK, BLOCK),
             )
 
     dispatch_dtype[body](dtype)

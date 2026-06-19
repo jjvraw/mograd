@@ -284,6 +284,21 @@ def test_matmul_grad_b() raises:
     assert_allclose(grads[0], num, tol=0.05)
 
 
+def test_batched_matmul_grad() raises:
+    def fwd(a: Tensor[]) raises -> Tensor[]:
+        var b = Tensor(a.device.value(), [Float32(1), 2, 3, 4, 5, 6, 7, 8], (2, 2, 2))
+        return (a @ b).sum()
+
+    var device = Device()
+    var a_data: List[Float32] = [1, 2, 3, 4, 5, 6, 7, 8]
+    var num = numerical_grad[fwd](device, a_data, (2, 2, 2))
+    var a = Tensor(device, a_data, (2, 2, 2), requires_grad=True)
+    var b = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8], (2, 2, 2))
+    var loss = (a @ b).sum()
+    var grads = loss.gradient([a])
+    assert_allclose(grads[0], num, tol=0.05)
+
+
 def test_softmax_grad() raises:
     def fwd(x: Tensor[]) raises -> Tensor[]:
         var e0 = Tensor(x.device.value(), [Float32(1), 0, 0, 0], (4,))

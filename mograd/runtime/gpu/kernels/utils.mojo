@@ -385,7 +385,7 @@ def matmul_strided(
         out.data_ptr(),
         la,
         lb,
-        node.shape(1),
+        node.shape(node.layout().rank() - 1),
         node.dtype(),
         device.ctx,
     )

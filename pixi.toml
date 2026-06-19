@@ -53,15 +53,24 @@ test-data               = { cmd = "mojo -I . tests/test_data.mojo" }
 test-data-b             = { cmd = "mojo -I . tests/test_data.mojo", depends-on = ["build-gpu"]}
 test-non-contiguous     = { cmd = "mojo -I . tests/test_non_contiguous.mojo" }
 test-non-contiguous-b   = { cmd = "mojo -I . tests/test_non_contiguous.mojo", depends-on = ["build-gpu"]}
-test-gpu                = { depends-on = ["test-grad", "test-nn", "test-ops", "test-data", "test-non-contiguous"] }
-test-gpu-b              = { depends-on = ["build-gpu", "test-gpu"] }
+test-gpu                = { depends-on = [  "test-grad",
+                                            "test-nn",
+                                            "test-ops",
+                                            "test-data",
+                                            "test-non-contiguous"] }
+test-gpu-b              = { depends-on = [  "build-gpu", "test-gpu"] }
 
 # Test Graph
 test-gpu-rewrites       = { cmd = "mojo -I . tests/test_gpu_rewrites.mojo" }
 test-pattern-matcher    = { cmd = "mojo -I . tests/test_pattern_matcher.mojo" }
 test-layout             = { cmd = "mojo -I . tests/test_layout.mojo" }
 test-custom-rules       = { cmd = "mojo -I . tests/test_custom_rules.mojo" }
-test-graph              = { depends-on = ["test-pattern-matcher", "test-gpu-rewrites", "test-layout", "test-custom-rules"] }
+test-ops-graph          = { cmd = "mojo -I . tests/test_ops_graph.mojo" }
+test-graph              = { depends-on = [  "test-pattern-matcher",
+                                            "test-gpu-rewrites",
+                                            "test-layout",
+                                            "test-custom-rules",
+                                            "test-ops-graph"] }
 
 # Examples
 mnist                   = { cmd = "mojo -I . examples/mnist/train.mojo" }
@@ -76,3 +85,4 @@ test-all-b              = { depends-on = ["build-gpu", "test-all"] }
 # Benchamrks
 bench-elementwise       = { cmd = "mojo -I . benches/elementwise.mojo", depends-on = ["build-gpu"]}
 bench-transpose         = { cmd = "mojo -I . benches/transpose.mojo", depends-on = ["build-gpu"]}
+bench-matmul            = { cmd = "mojo -I . benches/matmul.mojo", depends-on = ["build-gpu"]}

@@ -371,10 +371,10 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
     # Contraction operations
     # ===-------------------------------------------------------------------===#
 
-    def __matmul__(self, other: Self) -> Self:
+    def __matmul__(self, other: Self) raises -> Self:
         return self.matmul(other)
 
-    def matmul(self, other: Self) -> Self:
+    def matmul(self, other: Self) raises -> Self:
         return Self(self.device, self.op.matmul(other.op), self.requires_grad or other.requires_grad)
 
     # ===-------------------------------------------------------------------===#

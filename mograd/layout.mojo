@@ -153,6 +153,30 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Writable):
         """Returns true if layout is contiguous in memory."""
         return self.stride() == Self.row_major_strides(self.shape())
 
+    def batch_dims_collapsible(self) raises -> Bool:
+        """True if every batch axis (positions 0..rank-3) nests row-major
+        into the batch axis right after it, so all of them fold into one
+        flat dim of stride `self.stride(rank - 3)`.
+
+        A single batch axis (rank == 3) is always representable as-is,
+        however it's strided, i.e. there's nothing to collapse. This only
+        matters once there are >= 2 batch axes (rank >= 4): e.g.
+        `transpose(1, 2)` on a (B, T, H, Dh) tensor scrambles B's and H's
+        relative memory order, so they can no longer be addressed via a single
+        combined stride.
+
+        A broadcast (stride-0) batch axis sitting next to a non-broadcast one
+        will also report False, since 0 won't equal the neighbor's
+        `shape * stride`. If all batch axes are broadcast (or there's only
+        one), this trivially returns True, with stride 0 as the folded dim's
+        stride.
+        """
+        var rank = self.rank()
+        for i in range(rank - 4, -1, -1):
+            if self.stride(i) != self.shape(i + 1) * self.stride(i + 1):
+                return False
+        return True
+
     def as_contiguous(self) -> Layout:
         """Returns a new row-major layout with the same shape, zeroing base_offset."""
         return Layout(self.rank(), self.shape(), Self.row_major_strides(self.shape()), 0)
