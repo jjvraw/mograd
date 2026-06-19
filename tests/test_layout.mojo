@@ -128,6 +128,23 @@ def test_permutation_of_contiguous_via_transpose_3d_batched() raises:
     assert_true(order)
     assert_equal(order.value(), IntTuple(0, 2, 1))
 
+def test_permutation_of_contiguous_via_transpose_3d_explicit_dims() raises:
+    # Explicit, non-default dims: swap the first two axes, leave the last untouched.
+    var l = Layout(2, 3, 4).transpose(0, 1)
+
+    var order = l.permutation_of_contiguous()
+
+    assert_true(order)
+    assert_equal(order.value(), IntTuple(1, 0, 2))
+
+def test_permutation_of_contiguous_via_transpose_negative_dims() raises:
+    var l = Layout(2, 3, 4).transpose(-3, -1)
+
+    var order = l.permutation_of_contiguous()
+
+    assert_true(order)
+    assert_equal(order.value(), IntTuple(2, 1, 0))
+
 def test_permutation_of_contiguous_rejects_broadcast() raises:
     var l = Layout(3, 4).expand_axis(0, 5)
 

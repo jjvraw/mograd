@@ -336,21 +336,40 @@ def test_cast_one_hot_to_float32() raises:
     assert_allclose(oh, [Float32(1), 0, 0, 0, 1, 0, 0, 0, 1])
 
 
-# TODO: enable once transpose uses layout().transpose() (lazy strided view)
-# def test_contiguous_transpose_is_not_contiguous() raises:
-#     var device = Device()
-#     var x = Tensor.ones(device, (3, 4))
-#     var t = x.transpose()
-#     assert_true(not t.is_contiguous())
-#
-# def test_contiguous_transpose_after_contiguous_is_contiguous() raises:
-#     var device = Device()
-#     var x = Tensor(device, [Float32(1), 2, 3, 4, 5, 6], (2, 3))
-#     var t = x.transpose()
-#     assert_true(not t.is_contiguous())
-#     var c = t.contiguous()
-#     assert_true(c.is_contiguous())
-#     assert_allclose(c, [Float32(1), 4, 2, 5, 3, 6])
+def test_contiguous_transpose_is_not_contiguous() raises:
+    var device = Device()
+    var x = Tensor.ones(device, (3, 4))
+    var t = x.transpose()
+    assert_true(not t.is_contiguous())
+
+def test_contiguous_transpose_after_contiguous_is_contiguous() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4, 5, 6], (2, 3))
+    var t = x.transpose()
+    assert_true(not t.is_contiguous())
+    var c = t.contiguous()
+    assert_true(c.is_contiguous())
+    assert_allclose(c, [Float32(1), 4, 2, 5, 3, 6])
+
+
+def test_contiguous_transpose_after_contiguous_is_contiguous_3d() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], (2, 2, 3))
+    var t = x.transpose()
+    assert_true(not t.is_contiguous())
+    var c = t.contiguous()
+    assert_true(c.is_contiguous())
+    assert_allclose(c, [Float32(1), 4, 2, 5, 3, 6, 7, 10, 8, 11, 9, 12])
+
+
+def test_contiguous_transpose_explicit_dims_after_contiguous_is_contiguous() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], (2, 3, 2))
+    var t = x.transpose(0, 1)  # swaps the first two axes, leaves the last untouched
+    assert_true(not t.is_contiguous())
+    var c = t.contiguous()
+    assert_true(c.is_contiguous())
+    assert_allclose(c, [Float32(1), 2, 7, 8, 3, 4, 9, 10, 5, 6, 11, 12])
 
 
 def test_contiguous_strided_slice_after_contiguous_is_contiguous() raises:

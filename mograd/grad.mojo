@@ -113,13 +113,13 @@ def sum_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
         var up_layout = upstream.layout()
         var bcast_layout: Layout
         if up_layout.rank() == in_layout.rank():
-            # keepdim=True: upstream has size-1 at axis; expand it with stride 0
+            # keepdim=True: upstream has size-1 at axis, expand it with stride 0
             var new_strides = IntTuple()
             for i in range(in_layout.rank()):
                 new_strides.append(IntTuple(0 if i == ax else up_layout._strides.value(i)))
             bcast_layout = Layout(in_layout.rank(), in_layout.shape(), new_strides, 0)
         else:
-            # keepdim=False: upstream is missing the axis dim; insert it with stride 0
+            # keepdim=False: upstream is missing the axis dim, insert it with stride 0
             bcast_layout = up_layout.expand_axis(ax, in_layout.shape(ax))
         return [OpRef(Op(OpType.EXPAND, bcast_layout, node.dtype(), [upstream]))]
     # Full reduce: all strides zero so every output element reads upstream[0]

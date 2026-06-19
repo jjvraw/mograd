@@ -74,4 +74,5 @@ test-all                = { depends-on = ["test-gpu", "test-graph", "examples"] 
 test-all-b              = { depends-on = ["build-gpu", "test-all"] }
 
 # Benchamrks
-bench-elementwise       = { cmd = "mojo -I . benches/elementwise.mojo" }
+bench-elementwise       = { cmd = "mojo -I . benches/elementwise.mojo", depends-on = ["build-gpu"]}
+bench-transpose         = { cmd = "mojo -I . benches/transpose.mojo", depends-on = ["build-gpu"]}

@@ -3,6 +3,8 @@ from std.ffi import OwnedDLHandle
 from std.pathlib.path import Path
 from std.os.env import getenv
 
+from layout.int_tuple import IntTuple
+
 from mograd import Device
 from mograd.layout import Layout
 from mograd.op import Op, OpRef, OpType
@@ -348,7 +350,21 @@ def matmul_t(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> Any
 # ===-------------------------------------------------------------------===#
 
 
+def _is_last_two_swap(order: IntTuple, rank: Int) -> Bool:
+    """True if `order` is the identity permutation except the last two axes."""
+    if rank < 2:
+        return False
+    for i in range(rank - 2):
+        if order.value(i) != i:
+            return False
+    return order.value(rank - 2) == rank - 1 and order.value(rank - 1) == rank - 2
+
+
 def contiguous(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+    var layout = node.src(0).layout()
+    var order = layout.permutation_of_contiguous()
+    if order and _is_last_two_swap(order.value(), layout.rank()):
+        return unary_strided("mograd_transpose_last2", node, inputs, device)
     return unary_strided("mograd_contiguous", node, inputs, device)
 
 

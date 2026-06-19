@@ -6,7 +6,8 @@ from std.math import ceildiv
 from std.memory import stack_allocation
 from std.sys.info import simd_width_of
 
-from layout import Coord, MixedLayout, TileTensor, row_major
+from layout import Coord, MixedLayout, TensorLayout, TileTensor, row_major
+from layout import stack_allocation as tile_stack_allocation
 
 from linalg.matmul import matmul as linalg_matmul
 from linalg.matmul.gpu import matmul_kernel_naive
@@ -246,6 +247,80 @@ def mograd_contiguous(
     dispatch_unary_map[identity_op](
         a, dst, layout.numel(), layout.rank(), inner_buf.unsafe_ptr(), sa_buf.unsafe_ptr(), dtype, ctx
     )
+
+
+# ===-------------------------------------------------------------------===#
+# Transpose (last two dims)
+# ===-------------------------------------------------------------------===#
+
+comptime TRANSPOSE_TILE = 32
+
+
+def transpose_last2_kernel[
+    dtype: DType,
+    InLayout: TensorLayout,
+    OutLayout: TensorLayout,
+](
+    input: TileTensor[dtype, InLayout, ImmutAnyOrigin],
+    output: TileTensor[dtype, OutLayout, MutAnyOrigin],
+    M: Int,
+    N: Int,
+):
+    comptime assert input.flat_rank == 3 and output.flat_rank == 3
+
+    var b = block_idx.z
+    var tx = thread_idx.x
+    var ty = thread_idx.y
+    var tile_m = block_idx.x * TRANSPOSE_TILE
+    var tile_n = block_idx.y * TRANSPOSE_TILE
+
+    var tile = tile_stack_allocation[dtype, address_space=AddressSpace.SHARED](
+        row_major[TRANSPOSE_TILE, TRANSPOSE_TILE + 1]()
+    )
+
+    var m = tile_m + tx
+    var n = tile_n + ty
+    if m < M and n < N:
+        tile[ty, tx] = input[b, m, n]
+    barrier()
+
+    var m2 = tile_m + ty
+    var n2 = tile_n + tx
+    if m2 < M and n2 < N:
+        output[b, m2, n2] = tile[tx, ty]
+
+
+@export
+def mograd_transpose_last2(
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    read layout: Layout,
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    @always_inline
+    def body[d: DType]() capturing raises:
+        var rank = layout.rank()
+        var M = layout.shape(rank - 2)
+        var N = layout.shape(rank - 1)
+        var sm = layout.stride(rank - 2)
+        var sn = layout.stride(rank - 1)
+        var batch = layout.numel() // (M * N)
+
+        var input = TileTensor(a.bitcast[Scalar[d]](), MixedLayout(Coord(batch, M, N), Coord(M * N, sm, sn)))
+        var output = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, N)))
+
+        comptime kernel = transpose_last2_kernel[d, type_of(input).LayoutType, type_of(output).LayoutType]
+        ctx.enqueue_function[kernel](
+            input,
+            output,
+            M,
+            N,
+            grid_dim=(ceildiv(M, TRANSPOSE_TILE), ceildiv(N, TRANSPOSE_TILE), batch),
+            block_dim=(TRANSPOSE_TILE, TRANSPOSE_TILE),
+        )
+
+    dispatch_dtype[body](dtype)
 
 
 # ===-------------------------------------------------------------------===#

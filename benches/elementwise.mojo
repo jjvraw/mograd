@@ -238,7 +238,7 @@ def main() raises:
     var lib = OwnedDLHandle(getenv("MOGRAD_SO"))
 
     comptime dtypes = (DType.float32,)
-    comptime sizes = (1024 * 1024, 1024 * 1024 * 16, 1024 * 1024 * 64)
+    comptime sizes = (1024 * 1024, 1024 * 1024 * 16, 1024 * 1024 * 64, 1024 * 1024 * 128, 1024 * 1024 * 256)
 
     comptime unary_syms = ("mograd_neg", "mograd_exp", "mograd_log", "mograd_relu", "mograd_contiguous")
     comptime binary_strided_syms = ("mograd_add_strided", "mograd_mul", "mograd_div", "mograd_eq", "mograd_relu_grad")
