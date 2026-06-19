@@ -87,10 +87,8 @@ fi
 
 MOJO_VERSION="$(mojo --version 2>&1 | head -1)"
 log "$MOJO_VERSION"
-log "Building GPU library"
+log "Building libmograd_gpu.so"
 log "mode: $MODE"
-log "source root: $SRC_ROOT"
-log "output: $SO_PATH"
 
 START="$(date +%s)"
 
