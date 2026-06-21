@@ -8,23 +8,23 @@ from mograd.tensor import Tensor, Device
 # ===-------------------------------------------------------------------===#
 
 
-struct Linear[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movable) where dtype.is_floating_point():
+struct Linear(Copyable, ImplicitlyCopyable, Movable):
     var in_features: Int
     var out_features: Int
-    var _weight: ArcPointer[Optional[Tensor[Self.dtype]]]  # [out_features, in_features], lazy init
+    var _weight: ArcPointer[Optional[Tensor]]
 
     def __init__(out self, in_features: Int, out_features: Int):
         self.in_features = in_features
         self.out_features = out_features
-        self._weight = ArcPointer(Optional[Tensor[Self.dtype]](None))
+        self._weight = ArcPointer(Optional[Tensor](None))
 
-    def __call__(mut self, x: Tensor[Self.dtype]) raises -> Tensor[Self.dtype]:
+    def __call__(mut self, x: Tensor) raises -> Tensor:
         if not self._weight[]:
             if not x.device:
                 raise Error("Linear requires a device context on first call")
             var bound = Float32(sqrt(Float32(6) / Float32(self.in_features)))
             var seed = UInt32(self.out_features * self.in_features)
-            self._weight[] = Tensor[Self.dtype].uniform(
+            self._weight[] = Tensor.uniform(
                 x.device.value(),
                 (self.out_features, self.in_features),
                 low=-bound,

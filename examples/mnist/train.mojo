@@ -6,7 +6,7 @@ import mograd.nn as nn
 from model import MLP
 
 
-def accuracy(mut model: MLP, x: Tensor[DType.float32], y: Tensor[DType.float32], batch_size: Int) raises -> Float32:
+def accuracy(mut model: MLP, x: Tensor, y: Tensor, batch_size: Int) raises -> Float32:
     var n = x.shape(0)
     var avg_acc: Float32 = 0.0
     for step in range(n // batch_size):
@@ -31,7 +31,7 @@ def main() raises:
         var y = data.y_train[step * batch_size : (step + 1) * batch_size]
 
         var logits = model(x)
-        var loss = logits.cross_entropy(y.one_hot(10).cast[DType.float32]())
+        var loss = logits.cross_entropy(y.one_hot(10).cast(DType.float32))
 
         var params = opt.params()
         var grads = loss.gradient(params)

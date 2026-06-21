@@ -55,6 +55,25 @@ struct Buffer[dtype: DType](BufferArm, Copyable):
     def raw_ptr(ref self, with_offset: Bool = True) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
         return self.data_ptr(with_offset).bitcast[NoneType]()
 
+    def item(self) raises -> Scalar[Self.dtype]:
+        with self.buf().map_to_host() as host:
+            return (host.unsafe_ptr() + self.base_offset)[0]
+
+    def to_list(self, layout: Layout) raises -> List[Scalar[Self.dtype]]:
+        var result = List[Scalar[Self.dtype]]()
+        var inner = layout.inner_sizes()
+        with self.buf().map_to_host() as host:
+            var base = host.unsafe_ptr() + self.base_offset
+            for i in range(layout.numel()):
+                var off = 0
+                var rem = i
+                for d in range(layout.rank()):
+                    var idx = rem // inner.value(d)
+                    rem %= inner.value(d)
+                    off += idx * layout._strides.value(d)
+                result.append(base[off])
+        return result^
+
     @staticmethod
     def empty(device: Device, numel: Int) raises -> Self:
         var dev_buf = device.ctx.enqueue_create_buffer[Self.dtype](numel)
@@ -99,6 +118,21 @@ struct AnyBuffer(Copyable, Movable):
 
     def unsafe_get[dtype: DType](ref self) -> ref[self._buf] Buffer[dtype]:
         return self._buf.unsafe_get[Buffer[dtype]]()
+
+    def dtype(self) raises -> DType:
+        comptime for k in range(Self.BufVariant.Ts.size):
+            comptime T = Self.BufVariant.Ts[k]
+            comptime assert conforms_to(T, BufferArm)
+            comptime d = T.node_dtype
+            if self._buf.isa[T]():
+                return d
+        raise Error("Unsupported dtype")
+
+    def item[dtype: DType](self) raises -> Scalar[dtype]:
+        return self.unsafe_get[dtype]().item()
+
+    def to_list[dtype: DType](self, layout: Layout) raises -> List[Scalar[dtype]]:
+        return self.unsafe_get[dtype]().to_list(layout)
 
     def data_ptr(ref self, with_offset: Bool = True) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
         comptime for k in range(Self.BufVariant.Ts.size):

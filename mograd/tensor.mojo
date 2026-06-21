@@ -6,7 +6,7 @@ from layout import IntTuple
 from mograd import Device
 from mograd.op import AttrVal, Op, OpRef, OpType
 from mograd.layout import Layout
-from mograd.buffer import Buffer
+from mograd.buffer import AnyBuffer
 from mograd.runtime import NativeRuntime
 from mograd.scheduler import SchedulerRules
 from mograd.grad import Grad
@@ -16,12 +16,13 @@ from mograd.grad import Grad
 # ===-------------------------------------------------------------------===#
 
 
-struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movable, Writable):
+struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
     var op: OpRef
+    var dtype: DType
     var requires_grad: Bool
     # TODO: Use ArcPointer when Optional[ArcPointer] is resolved:
     # https://github.com/modular/modular/issues/3293
-    var _grad: ArcPointer[Optional[Tensor[Self.dtype]]]
+    var _grad: ArcPointer[Optional[Tensor]]
     var device: Optional[Device]
 
     # ===-------------------------------------------------------------------===#
@@ -37,20 +38,18 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
         self.device = device
         self.op = op^
         self.requires_grad = requires_grad
-        self._grad = ArcPointer(Optional[Tensor[Self.dtype]](None))
+        self._grad = ArcPointer(Optional[Tensor](None))
+        self.dtype = self.op.dtype()
 
-    def __init__(
-        out self,
-        device: Device,
-        data: List[Scalar[Self.dtype]],
-        shape: Layout,
-        requires_grad: Bool = False,
-    ) raises:
+    def __init__[
+        D: DType = DType.float32, /
+    ](out self, device: Device, data: List[Scalar[D]], shape: Layout, requires_grad: Bool = False,) raises:
         var b = Buffer.from_data(device, data)
         self.device = device
-        self.op = OpRef(Op(OpType.BUFFER, shape, self.dtype, [], b^))
+        self.op = OpRef(Op(OpType.BUFFER, shape, D, [], b^))
         self.requires_grad = requires_grad
-        self._grad = ArcPointer(Optional[Tensor[self.dtype]](None))
+        self.dtype = D
+        self._grad = ArcPointer(Optional[Tensor](None))
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
@@ -60,116 +59,90 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
     def empty(
         device: Device,
         shape: Layout,
+        dtype: DType = DType.float32,
         requires_grad: Bool = False,
     ) raises -> Self:
-        var b = Buffer[Self.dtype].empty(device, shape.numel())
-        return Tensor[Self.dtype](device, OpRef(Op(OpType.BUFFER, shape, Self.dtype, [], b^)), requires_grad)
+        var b = AnyBuffer.create(dtype, device, shape.numel())
+        return Tensor(device, OpRef(Op(OpType.BUFFER, shape, dtype, [], b^)), requires_grad)
 
     @staticmethod
-    def ones(
-        device: Device,
-        shape: Layout,
-        requires_grad: Bool = False,
-    ) raises -> Self:
-        return Self.full(device, Scalar[Self.dtype](1.0), shape, requires_grad)
+    def ones[
+        dtype: DType = DType.float32, /
+    ](device: Device, shape: Layout, requires_grad: Bool = False,) raises -> Self:
+        return Self.full(device, Scalar[dtype](1.0), shape, requires_grad)
 
     @staticmethod
-    def full(
-        device: Device,
-        value: Scalar[Self.dtype],
-        shape: Layout,
-        requires_grad: Bool = False,
-    ) raises -> Self:
-        var b = Buffer[Self.dtype].full(device, value, shape.numel())
-        return Tensor[Self.dtype](device, OpRef(Op(OpType.BUFFER, shape, Self.dtype, [], b^)), requires_grad)
+    def full[
+        dtype: DType = DType.float32, /
+    ](device: Device, value: Scalar[dtype], shape: Layout, requires_grad: Bool = False,) raises -> Self:
+        var b = AnyBuffer.create(dtype, device, shape.numel(), fill=Float64(value))
+        return Tensor(device, OpRef(Op(OpType.BUFFER, shape, dtype, [], b^)), requires_grad)
 
     @staticmethod
     def uniform(
         device: Device,
         shape: Layout,
+        dtype: DType = DType.float32,
         low: Float32 = 0.0,
         high: Float32 = 1.0,
         seed: UInt32 = 42,
         requires_grad: Bool = False,
-    ) -> Self where Self.dtype.is_floating_point():
+    ) -> Self:
         attrs: Dict[String, AttrVal] = {"low": low, "high": high, "seed": Float32(seed)}
-        return Tensor[Self.dtype](device, OpRef(Op(OpType.UNIFORM, shape, Self.dtype, [], attrs=attrs^)), requires_grad)
+        return Tensor(device, OpRef(Op(OpType.UNIFORM, shape, dtype, [], attrs=attrs^)), requires_grad)
 
     @staticmethod
     def randn(
         device: Device,
         shape: Layout,
+        dtype: DType = DType.float32,
         mean: Float32 = 0.0,
         std: Float32 = 1.0,
         seed: UInt32 = 42,
         requires_grad: Bool = False,
-    ) -> Self where Self.dtype.is_floating_point():
+    ) -> Self:
         attrs: Dict[String, AttrVal] = {"mean": mean, "std": std, "seed": Float32(seed)}
-        return Tensor[Self.dtype](device, OpRef(Op(OpType.RANDN, shape, Self.dtype, [], attrs^)), requires_grad)
+        return Tensor(device, OpRef(Op(OpType.RANDN, shape, dtype, [], attrs^)), requires_grad)
 
     @staticmethod
-    def disk(
-        device: Device,
-        path: String,
-        shape: Layout,
-    ) -> Self:
-        return Tensor[Self.dtype](device, OpRef(Op(OpType.DISK, shape, Self.dtype, [], {"path": path})))
+    def disk(device: Device, path: String, shape: Layout, dtype: DType = DType.float32) -> Self:
+        return Tensor(device, OpRef(Op(OpType.DISK, shape, dtype, [], {"path": path})))
 
     @staticmethod
     def full(
         device: Device,
         shape: Layout,
         fill_value: Float32,
+        dtype: DType = DType.float32,
         requires_grad: Bool = False,
     ) -> Self:
-        return Tensor[Self.dtype](
-            device, OpRef(Op(OpType.FULL, shape, Self.dtype, [], {"value": fill_value})), requires_grad
-        )
+        return Tensor(device, OpRef(Op(OpType.FULL, shape, dtype, [], {"value": fill_value})), requires_grad)
 
     @staticmethod
-    def ones_like[
-        other_dtype: DType
-    ](other: Tensor[other_dtype], requires_grad: Bool = False) raises -> Tensor[other_dtype]:
-        return Tensor[other_dtype].ones(other.device.value(), other.op.layout(), requires_grad)
+    def ones_like(other: Tensor, requires_grad: Bool = False) raises -> Tensor:
+        return Tensor.ones(other.device.value(), other.op.layout(), requires_grad)
 
     @staticmethod
-    def from_buffer(device: Device, layout: Layout, var buf: Buffer[Self.dtype]) -> Self:
-        return Tensor[Self.dtype](
-            device,
-            OpRef(Op(OpType.BUFFER, layout, Self.dtype, [], buf^)),
-        )
+    def from_buffer(device: Device, layout: Layout, var buf: AnyBuffer) raises -> Self:
+        var dtype = buf.dtype()
+        return Tensor(device, OpRef(Op(OpType.BUFFER, layout, dtype, [], buf^)))
 
     # ===-------------------------------------------------------------------===#
     # Materialisation / Device I/O
     # ===-------------------------------------------------------------------===#
 
-    def value(self, rules: Optional[SchedulerRules] = None) raises -> Buffer[Self.dtype]:
-        var result = NativeRuntime.run(self.op, self.device)
-        return result.unsafe_get[Self.dtype]().copy()
+    def value(self, rules: Optional[SchedulerRules] = None) raises -> AnyBuffer:
+        return NativeRuntime.run(self.op, self.device, rules.copy())
 
-    def item(self, rules: Optional[SchedulerRules] = None) raises -> Scalar[Self.dtype]:
-        var buf = self.value(rules)
-        var result: Scalar[Self.dtype]
-        with buf.buf().map_to_host() as host:
-            result = (host.unsafe_ptr() + buf.base_offset)[0]
-        return result
+    def item[T: DType = DType.float32](self, rules: Optional[SchedulerRules] = None) raises -> Scalar[T]:
+        if T != self.dtype:
+            raise Error("Tensor.item: requested dtype does not match tensor dtype")
+        return self.value(rules).item[T]()
 
-    def to_list(self, rules: Optional[SchedulerRules] = None) raises -> List[Scalar[Self.dtype]]:
-        var result = List[Scalar[Self.dtype]]()
-        var buf = self.value(rules)
-        var layout = self.op.layout()
-        var inner = layout.inner_sizes()
-        with buf.buf().map_to_host() as host:
-            var base = host.unsafe_ptr() + buf.base_offset
-            for i in range(layout.numel()):
-                var off = 0
-                var rem = i
-                for d in range(layout.rank()):
-                    var idx = rem // inner.value(d)
-                    rem %= inner.value(d)
-                    off += idx * layout._strides.value(d)
-                result.append(base[off])
-        return result^
+    def to_list[T: DType = DType.float32](self, rules: Optional[SchedulerRules] = None) raises -> List[Scalar[T]]:
+        if T != self.dtype:
+            raise Error("Tensor.to_list: requested dtype does not match tensor dtype")
+        return self.value(rules).to_list[T](self.op.layout())
 
     # ===-------------------------------------------------------------------===#
     # Layout
@@ -251,8 +224,8 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
         var start, stop, step = s.indices(dim)
         return Self(self.device, self.op.slice(start, stop, step), self.requires_grad)
 
-    def cast[out_dtype: DType](self) -> Tensor[out_dtype]:
-        return Tensor[out_dtype](self.device, self.op.cast(out_dtype), self.requires_grad)
+    def cast(self, dtype: DType) -> Tensor:
+        return Tensor(self.device, self.op.cast(dtype), self.requires_grad)
 
     # ===-------------------------------------------------------------------===#
     # Elementwise operations
@@ -293,13 +266,13 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
     def mul(self, other: Self) -> Self:
         return Self(self.device, self.op * other.op, self.requires_grad or other.requires_grad)
 
-    def __mul__(self, scalar: Scalar[Self.dtype]) -> Self:
+    def __mul__(self, scalar: Float32) -> Self:
         return self.scale(scalar)
 
-    def __rmul__(self, scalar: Scalar[Self.dtype]) -> Self:
+    def __rmul__(self, scalar: Float32) -> Self:
         return self.scale(scalar)
 
-    def scale(self, scalar: Scalar[Self.dtype]) -> Self:
+    def scale(self, scalar: Float32) -> Self:
         return Self(self.device, self.op.scale(scalar), self.requires_grad)
 
     def __truediv__(self, other: Self) -> Self:
@@ -338,7 +311,7 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
         return Self(self.device, self.op.sum(axis, keepdim), self.requires_grad)
 
     def mean(self) raises -> Self:
-        return self.sum() * (1.0 / Scalar[Self.dtype](self.op.layout().numel()))
+        return self.sum() * (1.0 / Float32(self.op.layout().numel()))
 
     def argmax(self, axis: Optional[Int] = None, keepdim: Bool = False) raises -> Self:
         """Returns the indices of the maximum values of a tensor across a dimension.
@@ -362,10 +335,8 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
     # Indexing & Encoding
     # ===-------------------------------------------------------------------===#
 
-    def one_hot[
-        out_dtype: DType = DType.int64
-    ](self, num_classes: Int) -> Tensor[out_dtype] where out_dtype.is_integral():
-        return Tensor[out_dtype](self.device, self.op.one_hot(num_classes, out_dtype), False)
+    def one_hot(self, num_classes: Int, out_dtype: DType = DType.int64) -> Tensor:
+        return Tensor(self.device, self.op.one_hot(num_classes, out_dtype), False)
 
     # ===-------------------------------------------------------------------===#
     # Contraction operations
@@ -391,7 +362,7 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
     # Loss
     # ===-------------------------------------------------------------------===#
 
-    def cross_entropy(self, labels: Self) -> Self where Self.dtype.is_floating_point():
+    def cross_entropy(self, labels: Self) -> Self:
         return Self(self.device, self.op.cross_entropy(labels.op), self.requires_grad)
 
     # ===-------------------------------------------------------------------===#
@@ -400,29 +371,29 @@ struct Tensor[dtype: DType = DType.float32](Copyable, ImplicitlyCopyable, Movabl
 
     def gradient(
         mut self,
-        targets: List[Tensor[Self.dtype]],
-        var gradient: Optional[Tensor[Self.dtype]] = None,
-    ) raises -> List[Tensor[Self.dtype]] where Self.dtype.is_floating_point():
+        targets: List[Tensor],
+        var gradient: Optional[Tensor] = None,
+    ) raises -> List[Tensor]:
         var initial_grad_op: OpRef
         if gradient:
             initial_grad_op = gradient.take().op
         else:
-            initial_grad_op = Tensor[Self.dtype].ones_like(self).op
+            initial_grad_op = Tensor.ones_like(self).op
 
         var target_ops = List[OpRef]()
         for t in targets:
             target_ops.append(t.op)
 
-        var grads = Grad[Self.dtype].compute(self.op, initial_grad_op, target_ops)
+        var grads = Grad.compute(self.op, initial_grad_op, target_ops)
 
-        var result = List[Tensor[Self.dtype]]()
+        var result = List[Tensor]()
         for i in range(len(grads)):
             if grads[i]:
-                result.append(Tensor[Self.dtype](self.device, grads[i].value()))
+                result.append(Tensor(self.device, grads[i].value()))
             else:
                 if not self.device:
                     raise Error("gradient requires a device context")
-                result.append(Tensor[Self.dtype].empty(self.device.value(), targets[i].op.layout()))
+                result.append(Tensor.empty(self.device.value(), targets[i].op.layout()))
         return result^
 
     # ===-------------------------------------------------------------------===#

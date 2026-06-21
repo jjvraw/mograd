@@ -5,6 +5,7 @@ from mograd.pattern_matcher import Pat, Rule
 from mograd.layout import Layout
 from mograd.simplify import Simplifier, RewriteFn
 from mograd.tensor import Tensor
+from mograd.buffer import AnyBuffer, BufferArm
 
 
 def _assert_allclose_impl[
@@ -28,25 +29,26 @@ def _assert_allclose_impl[
 
 
 def assert_allclose[
-    dtype: DType
+    dtype: DType, //
 ](
-    actual: Tensor[dtype],
+    actual: Tensor,
     expected: List[Scalar[dtype]],
-    tol: Scalar[dtype] = 1e-5,
-) raises where dtype.is_floating_point():
-    _assert_allclose_impl[dtype](actual.to_list(), expected, tol)
+    tol: Scalar[dtype] = Scalar[dtype](Float64(1e-5) if dtype.is_floating_point() else Float64(0)),
+) raises:
+    _assert_allclose_impl[dtype](actual.to_list[dtype](), expected, tol)
 
 
-def assert_allclose[
-    dtype: DType
-](actual: Tensor[dtype], expected: List[Scalar[dtype]], tol: Scalar[dtype] = 0,) raises where dtype.is_integral():
-    _assert_allclose_impl[dtype](actual.to_list(), expected, tol)
-
-
-def assert_allclose[
-    dtype: DType
-](actual: Tensor[dtype], expected: Tensor[dtype], tol: Scalar[dtype] = 1e-5,) raises where dtype.is_floating_point():
-    _assert_allclose_impl[dtype](actual.to_list(), expected.to_list(), tol)
+def assert_allclose(actual: Tensor, expected: Tensor, tol: Float64 = 1e-5) raises:
+    if actual.dtype != expected.dtype:
+        raise Error("dtype mismatch: " + String(actual.dtype) + " vs " + String(expected.dtype))
+    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+        comptime T = AnyBuffer.BufVariant.Ts[k]
+        comptime assert conforms_to(T, BufferArm)
+        comptime d = T.node_dtype
+        if actual.dtype == d:
+            _assert_allclose_impl[d](actual.to_list[d](), expected.to_list[d](), Scalar[d](tol))
+            return
+    raise Error("Unsupported dtype: " + String(actual.dtype))
 
 
 def _assert_close_impl[
@@ -60,14 +62,14 @@ def _assert_close_impl[
 
 def assert_close[
     dtype: DType
-](actual: Tensor[dtype], expected: Scalar[dtype], tol: Scalar[dtype] = 1e-5,) raises where dtype.is_floating_point():
-    _assert_close_impl[dtype](actual.item(), expected, tol)
+](actual: Tensor, expected: Scalar[dtype], tol: Scalar[dtype] = 1e-5,) raises where dtype.is_floating_point():
+    _assert_close_impl[dtype](actual.item[dtype](), expected, tol)
 
 
 def assert_close[
     dtype: DType
-](actual: Tensor[dtype], expected: Scalar[dtype], tol: Scalar[dtype] = 0,) raises where dtype.is_integral():
-    _assert_close_impl[dtype](actual.item(), expected, tol)
+](actual: Tensor, expected: Scalar[dtype], tol: Scalar[dtype] = 0,) raises where dtype.is_integral():
+    _assert_close_impl[dtype](actual.item[dtype](), expected, tol)
 
 
 def leaf(shape: Layout, dtype: DType = DType.float32) -> OpRef:

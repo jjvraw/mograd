@@ -11,7 +11,7 @@ from mograd.pattern_matcher import PatternMatcher, Rule, Pat, GraphUtils
 comptime GradFn = def(node: OpRef, upstream: OpRef) thin raises -> List[OpRef]
 
 
-struct Grad[dtype: DType] where dtype.is_floating_point():
+struct Grad:
     var grad_map: Dict[OpRef, OpRef]
 
     def __init__(out self):
@@ -23,7 +23,7 @@ struct Grad[dtype: DType] where dtype.is_floating_point():
         initial_grad: OpRef,
         target_ops: List[OpRef],
     ) raises -> List[Optional[OpRef]]:
-        var grad = Grad[Self.dtype]()
+        var grad = Grad()
         grad.grad_map[root] = initial_grad
 
         var pm = PatternMatcher[GradFn](

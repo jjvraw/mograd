@@ -102,7 +102,7 @@ def test_cast_strided() raises:
     var a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8], (4, 2))
     var sa = a[0:4:2]
     assert_true(not sa.is_contiguous())
-    var c = sa.cast[DType.float16]()
+    var c = sa.cast(DType.float16)
     assert_allclose(c, [Float16(1), 2, 5, 6])
 
 

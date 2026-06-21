@@ -7,7 +7,7 @@ from mograd.layout import Layout
 from mograd.testing import assert_allclose, assert_close
 
 
-comptime FwdFn = def(x: Tensor[]) thin raises -> Tensor[]
+comptime FwdFn = def(x: Tensor) thin raises -> Tensor[]
 
 
 def numerical_grad[
@@ -320,8 +320,8 @@ def test_cross_entropy_grad_row_sums() raises:
     for _ in range(40):
         logits_data.append(Float32(1.0))
     var logits = Tensor(device, logits_data, (4, 10), requires_grad=True)
-    var labels = Tensor(device, [Float32(0), 1, 2, 3], (4,)).cast[DType.float32]()
-    var loss = logits.cross_entropy(labels.one_hot(10).cast[DType.float32]())
+    var labels = Tensor(device, [Float32(0), 1, 2, 3], (4,)).cast(DType.float32)
+    var loss = logits.cross_entropy(labels.one_hot(10).cast(DType.float32))
     var grads = loss.gradient([logits])
     var grad_vals = grads[0].to_list()
     for row in range(4):
@@ -333,8 +333,8 @@ def test_cross_entropy_grad_row_sums() raises:
 
 def test_cross_entropy_grad() raises:
     def fwd(x: Tensor[]) raises -> Tensor[]:
-        var labels = Tensor(x.device.value(), [Float32(0), 1, 2, 3], (4,)).cast[DType.float32]()
-        return x.cross_entropy(labels.one_hot(10).cast[DType.float32]())
+        var labels = Tensor(x.device.value(), [Float32(0), 1, 2, 3], (4,)).cast(DType.float32)
+        return x.cross_entropy(labels.one_hot(10).cast(DType.float32))
 
     var device= Device()
     var logits_data = List[Float32]()
@@ -343,8 +343,8 @@ def test_cross_entropy_grad() raises:
 
     var num = numerical_grad[fwd](device, logits_data, (4, 10))
     var logits = Tensor(device, logits_data, (4, 10), requires_grad=True)
-    var labels = Tensor(device, [Float32(0), 1, 2, 3], (4,)).cast[DType.float32]()
-    var loss = logits.cross_entropy(labels.one_hot(10).cast[DType.float32]())
+    var labels = Tensor(device, [Float32(0), 1, 2, 3], (4,)).cast(DType.float32)
+    var loss = logits.cross_entropy(labels.one_hot(10).cast(DType.float32))
     var grads = loss.gradient([logits])
     assert_allclose(grads[0], num, tol=0.05)
 
@@ -353,20 +353,20 @@ def test_simple_mlp_grad() raises:
     def fwd_w1(w1: Tensor[]) raises -> Tensor[]:
         var device= w1.device.value()
         var x = Tensor(device, [Float32(0.1), 0.2, 0.3, 0.4], (1, 4))
-        var labels = Tensor(device, [Float32(0)], (1,)).cast[DType.float32]()
+        var labels = Tensor(device, [Float32(0)], (1,)).cast(DType.float32)
         var h1 = (x @ w1.transpose()).relu()
         var l2 = nn.Linear(8, 4)
         var l3 = nn.Linear(4, 3)
-        return l3(l2(h1).relu()).cross_entropy(labels.one_hot(3).cast[DType.float32]())
+        return l3(l2(h1).relu()).cross_entropy(labels.one_hot(3).cast(DType.float32))
 
     def fwd_w2(w2: Tensor[]) raises -> Tensor[]:
         var device= w2.device.value()
         var x = Tensor(device, [Float32(0.1), 0.2, 0.3, 0.4], (1, 4))
-        var labels = Tensor(device, [Float32(0)], (1,)).cast[DType.float32]()
+        var labels = Tensor(device, [Float32(0)], (1,)).cast(DType.float32)
         var l1 = nn.Linear(4, 8)
         var h2 = (l1(x).relu() @ w2.transpose()).relu()
         var l3 = nn.Linear(4, 3)
-        return l3(h2).cross_entropy(labels.one_hot(3).cast[DType.float32]())
+        return l3(h2).cross_entropy(labels.one_hot(3).cast(DType.float32))
 
     def fwd_w3(w3: Tensor[]) raises -> Tensor[]:
         var device= w3.device.value()
@@ -374,7 +374,7 @@ def test_simple_mlp_grad() raises:
         var labels = Tensor(device, [Float32(0)], (1,))
         var l1 = nn.Linear(4, 8)
         var l2 = nn.Linear(8, 4)
-        return (l2(l1(x).relu()).relu() @ w3.transpose()).cross_entropy(labels.one_hot(3).cast[DType.float32]())
+        return (l2(l1(x).relu()).relu() @ w3.transpose()).cross_entropy(labels.one_hot(3).cast(DType.float32))
 
     var device= Device()
 
@@ -389,7 +389,7 @@ def test_simple_mlp_grad() raises:
     var labels = Tensor(device, [Float32(0)], (1,))
     var h1 = l1(x).relu()
     var h2 = l2(h1).relu()
-    var loss = l3(h2).cross_entropy(labels.one_hot(3).cast[DType.float32]())
+    var loss = l3(h2).cross_entropy(labels.one_hot(3).cast(DType.float32))
     var params = opt.params()
     var grads = loss.gradient(params)
 

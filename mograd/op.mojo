@@ -100,6 +100,7 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
 
 
 comptime Attrs = Dict[String, AttrVal]
+# TODO: Casting rules
 comptime AttrVal = Variant[Int, Float32, Bool, String]
 
 
@@ -240,7 +241,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     def neg(self) -> Self:
         return Self(Op(OpType.NEG, self.layout().as_contiguous(), self.dtype(), [self]))
 
-    def scale(self, scalar: Scalar) -> Self:
+    def scale(self, scalar: Float32) -> Self:
         return Self(Op(OpType.SCALE, self.layout().as_contiguous(), self.dtype(), [self], attrs={"scalar": scalar}))
 
     def exp(self) -> Self:
