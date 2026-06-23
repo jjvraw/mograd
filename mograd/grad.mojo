@@ -176,11 +176,11 @@ def softmax_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
 
 
 def gather_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    var table = node.src(0)
+    var src = node.src(0)
     var indices = node.src(1)
-    var grad_table = upstream.scatter_add(indices, table.shape(0))
+    var grad_src = upstream.scatter_add(indices, src.shape(0))
     var dummy = OpRef(Op(OpType.EXPAND, indices.layout(), indices.dtype(), [upstream]))
-    return [grad_table, dummy]
+    return [grad_src, dummy]
 
 
 def scatter_add_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:

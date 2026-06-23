@@ -302,7 +302,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
 
     def gather(self, indices: OpRef) raises -> OpRef:
         if self.layout().rank() != 2:
-            raise Error("gather expects a 2D embedding table [num_embeddings, embedding_dim]")
+            raise Error("gather expects a 2D source tensor [num_rows, row_size]")
         var out_shape = indices.shape()
         out_shape.append(IntTuple(self.shape(1)))
         var out_layout = Layout(len(out_shape), out_shape, Layout.row_major_strides(out_shape), 0)
@@ -310,9 +310,9 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
 
     def scatter_add(self, indices: OpRef, num_rows: Int) raises -> OpRef:
         if self.layout().rank() != indices.layout().rank() + 1:
-            raise Error("scatter_add expects values shaped [*indices.shape, embedding_dim]")
-        var embedding_dim = self.shape(self.layout().rank() - 1)
-        return OpRef(Op(OpType.SCATTER_ADD, Layout(num_rows, embedding_dim), self.dtype(), [indices, self]))
+            raise Error("scatter_add expects values shaped [*indices.shape, row_size]")
+        var row_size = self.shape(self.layout().rank() - 1)
+        return OpRef(Op(OpType.SCATTER_ADD, Layout(num_rows, row_size), self.dtype(), [indices, self]))
 
     def transpose(self, dim0: Int = -2, dim1: Int = -1) raises -> Self:
         return Self(Op(OpType.TRANSPOSE, self.layout().transpose(dim0, dim1), self.dtype(), [self]))
