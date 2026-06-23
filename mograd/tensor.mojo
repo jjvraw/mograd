@@ -338,6 +338,12 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
     def one_hot(self, num_classes: Int, out_dtype: DType = DType.int64) -> Tensor:
         return Tensor(self.device, self.op.one_hot(num_classes, out_dtype), False)
 
+    def gather(self, indices: Tensor) raises -> Tensor:
+        return Tensor(self.device, self.op.gather(indices.op), self.requires_grad)
+
+    def scatter_add(self, indices: Tensor, num_rows: Int) raises -> Tensor:
+        return Tensor(self.device, self.op.scatter_add(indices.op, num_rows), self.requires_grad)
+
     # ===-------------------------------------------------------------------===#
     # Contraction operations
     # ===-------------------------------------------------------------------===#

@@ -66,6 +66,8 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime EXPAND = OpType("EXPAND")
     comptime ONE_HOT = OpType("ONE_HOT")
     comptime CAST = OpType("CAST")
+    comptime GATHER = OpType("GATHER")
+    comptime SCATTER_ADD = OpType("SCATTER_ADD")
 
     # ===-------------------------------------------------------------------===#
     # Contraction ops
@@ -297,6 +299,20 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
 
     def cast(self, out_dtype: DType) -> OpRef:
         return OpRef(Op(OpType.CAST, self.layout().as_contiguous(), out_dtype, [self]))
+
+    def gather(self, indices: OpRef) raises -> OpRef:
+        if self.layout().rank() != 2:
+            raise Error("gather expects a 2D embedding table [num_embeddings, embedding_dim]")
+        var out_shape = indices.shape()
+        out_shape.append(IntTuple(self.shape(1)))
+        var out_layout = Layout(len(out_shape), out_shape, Layout.row_major_strides(out_shape), 0)
+        return OpRef(Op(OpType.GATHER, out_layout, self.dtype(), [self, indices]))
+
+    def scatter_add(self, indices: OpRef, num_rows: Int) raises -> OpRef:
+        if self.layout().rank() != indices.layout().rank() + 1:
+            raise Error("scatter_add expects values shaped [*indices.shape, embedding_dim]")
+        var embedding_dim = self.shape(self.layout().rank() - 1)
+        return OpRef(Op(OpType.SCATTER_ADD, Layout(num_rows, embedding_dim), self.dtype(), [indices, self]))
 
     def transpose(self, dim0: Int = -2, dim1: Int = -1) raises -> Self:
         return Self(Op(OpType.TRANSPOSE, self.layout().transpose(dim0, dim1), self.dtype(), [self]))

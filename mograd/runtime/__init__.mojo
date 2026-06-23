@@ -16,6 +16,7 @@ from mograd.runtime.gpu.rewrites import MATMUL_T, GPU_REWRITES
 from mograd.runtime.gpu.kernels.utils import (
     FactoryKernel,
     UnaryStrided,
+    BinaryStrided,
     unary_strided,
     binary_strided,
     axis_reduce_strided,
@@ -78,13 +79,14 @@ struct NativeRuntime(Runtime):
             Rule(Pat(OpType.SLICE_GRAD), slice_grad),
             # Reduce
             Rule(Pat(OpType.SUM), sum),
-            Rule(Pat(OpType.SOFTMAX), softmax),
             Rule(Pat(OpType.ARGMAX), argmax),
             # Linalg
             Rule(Pat(OpType.MATMUL), matmul),
             Rule(Pat(MATMUL_T), matmul_t),
             # Indexing & Encoding
             Rule(Pat(OpType.ONE_HOT), one_hot),
+            Rule(Pat(OpType.GATHER), gather),
+            Rule(Pat(OpType.SCATTER_ADD), scatter_add),
             # Layout
             Rule(Pat(OpType.CONTIGUOUS), contiguous),
             Rule(Pat(OpType.EXPAND), view),
@@ -92,7 +94,8 @@ struct NativeRuntime(Runtime):
             Rule(Pat(OpType.SLICE), view),
             Rule(Pat(OpType.RESHAPE), view),
             Rule(Pat(OpType.TRANSPOSE), view),
-            # TODO:
+            # TODO: Make layout aware.
+            Rule(Pat(OpType.SOFTMAX), softmax),
             Rule(Pat(OpType.CROSS_ENTROPY), cross_entropy),
             Rule(Pat(OpType.SOFTMAX_GRAD), softmax_grad),
             Rule(Pat(OpType.CROSS_ENTROPY_GRAD), cross_entropy_grad),
@@ -190,6 +193,26 @@ def full(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
         device.ctx,
     )
     v.free()
+    return out^
+
+
+def gather(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+    return binary_strided("mograd_gather", node, inputs, device)
+
+
+def scatter_add(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+    var la = node.src(0).layout()
+    var lb = node.src(1).layout()
+    var out = AnyBuffer.create(node.dtype(), device, node.numel(), fill=0.0)
+    device.handle[].get_function[BinaryStrided]("mograd_scatter_add")(
+        inputs[0].data_ptr(),
+        inputs[1].data_ptr(),
+        out.data_ptr(),
+        la,
+        lb,
+        node.dtype(),
+        device.ctx,
+    )
     return out^
 
 

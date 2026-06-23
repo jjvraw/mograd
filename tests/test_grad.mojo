@@ -349,6 +349,41 @@ def test_cross_entropy_grad() raises:
     assert_allclose(grads[0], num, tol=0.05)
 
 
+def test_gather_grad_scatter_adds_repeated_indices() raises:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
+        var indices = Tensor(x.device.value(), [Int64(1), 3, 1, 0], (4,))
+        return x.gather(indices).sum()
+
+    var device = Device()
+    var data: List[Float32] = [Float32(i) for i in range(12)]
+    var num = numerical_grad[fwd](device, data, (4, 3))
+    var table = Tensor(device, data, (4, 3), requires_grad=True)
+    var indices = Tensor(device, [Int64(1), 3, 1, 0], (4,))
+    var loss = table.gather(indices).sum()
+    var grads = loss.gradient([table])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], [Float32(1), 1, 1, 2, 2, 2, 0, 0, 0, 1, 1, 1])
+
+
+def test_scatter_add_grad_is_gather() raises:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
+        var indices = Tensor(x.device.value(), [Int64(1), 3, 1, 0], (4,))
+        var weights = Tensor(x.device.value(), [Float32(i) for i in range(15)], (5, 3))
+        return (x.scatter_add(indices, 5) * weights).sum()
+
+    var device = Device()
+    var data: List[Float32] = [Float32(i) for i in range(12)]
+    var num = numerical_grad[fwd](device, data, (4, 3))
+    var values = Tensor(device, data, (4, 3), requires_grad=True)
+    var indices = Tensor(device, [Int64(1), 3, 1, 0], (4,))
+    var weights = Tensor(device, [Float32(i) for i in range(15)], (5, 3))
+    var loss = (values.scatter_add(indices, 5) * weights).sum()
+    var grads = loss.gradient([values])
+    assert_allclose(grads[0], num, tol=0.05)
+    # d(loss)/d(values[i]) == weights[indices[i]] (the SCATTER_ADD grad is GATHER)
+    assert_allclose(grads[0], weights.gather(indices))
+
+
 def test_simple_mlp_grad() raises:
     def fwd_w1(w1: Tensor[]) raises -> Tensor[]:
         var device= w1.device.value()

@@ -450,6 +450,69 @@ def test_contiguous_already_contiguous_is_noop() raises:
     assert_true(c.is_contiguous())
 
 
+def test_gather_rows() raises:
+    var device = Device()
+    var table = Tensor(device, [Float32(i) for i in range(12)], (4, 3))
+    var indices = Tensor(device, [Int64(1), 3, 1, 0], (4,))
+    assert_allclose(table.gather(indices), [Float32(3), 4, 5, 9, 10, 11, 3, 4, 5, 0, 1, 2])
+
+
+def test_gather_shape() raises:
+    var device = Device()
+    var table = Tensor.ones(device, (5, 8))
+    var indices = Tensor(device, [Int64(0), 2, 4], (3,))
+    var out = table.gather(indices)
+    assert_true(out.shape(0) == 3 and out.shape(1) == 8)
+
+
+def test_gather_2d_indices() raises:
+    var device = Device()
+    var table = Tensor(device, [Float32(i) for i in range(8)], (4, 2))
+    var indices = Tensor(device, [Int64(0), 1, 2, 3], (2, 2))
+    assert_allclose(table.gather(indices), [Float32(0), 1, 2, 3, 4, 5, 6, 7])
+
+
+def test_gather_transposed_table_is_stride_aware() raises:
+    var device = Device()
+    var table = Tensor(device, [Float32(i) for i in range(12)], (3, 4)).transpose()
+    var indices = Tensor(device, [Int64(1), 3, 1, 0], (4,))
+    assert_allclose(table.gather(indices), [Float32(1), 5, 9, 3, 7, 11, 1, 5, 9, 0, 4, 8])
+
+
+def test_gather_sliced_indices_is_stride_aware() raises:
+    var device = Device()
+    var table = Tensor(device, [Float32(i) for i in range(12)], (4, 3))
+    var indices = Tensor(device, [Int64(0), 1, 3, 1], (4,))[1:3]
+    assert_allclose(table.gather(indices), [Float32(3), 4, 5, 9, 10, 11])
+
+
+def test_scatter_add_rows() raises:
+    var device = Device()
+    var values = Tensor(device, [Float32(1) for _ in range(12)], (4, 3))
+    var indices = Tensor(device, [Int64(1), 3, 1, 0], (4,))
+    var out = values.scatter_add(indices, 5)
+    assert_allclose(
+        out,
+        [Float32(1), 1, 1, 2, 2, 2, 0, 0, 0, 1, 1, 1, 0, 0, 0],
+    )
+
+
+def test_scatter_add_shape() raises:
+    var device = Device()
+    var values = Tensor.ones(device, (3, 8))
+    var indices = Tensor(device, [Int64(0), 2, 4], (3,))
+    var out = values.scatter_add(indices, 5)
+    assert_true(out.shape(0) == 5 and out.shape(1) == 8)
+
+
+def test_scatter_add_is_gather_inverse() raises:
+    var device = Device()
+    var table = Tensor(device, [Float32(i) for i in range(12)], (4, 3))
+    var indices = Tensor(device, [Int64(2), 0, 3], (3,))
+    var gathered = table.gather(indices)
+    assert_allclose(gathered.scatter_add(indices, 4), [Float32(0), 1, 2, 0, 0, 0, 6, 7, 8, 9, 10, 11])
+
+
 def main() raises:
     comptime assert has_accelerator(), "GPU required to run tensor op tests"
     TestSuite.discover_tests[__functions_in_module()]().run()

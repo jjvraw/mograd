@@ -120,6 +120,78 @@ def mograd_one_hot(
     raise Error("unsupported dtype combination")
 
 
+@export
+def mograd_gather(
+    table: UnsafePointer[NoneType, ImmutAnyOrigin],
+    indices: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    read la: Layout,
+    read lb: Layout,
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    @always_inline
+    def for_dtype[d: DType]() capturing raises:
+        var embedding_dim = la.shape(la.rank() - 1)
+        var n = lb.numel() * embedding_dim
+        var idx_inner_buf = lb.inner_sizes_buffer(ctx)
+        var idx_strides_buf = lb.strides_buffer(ctx)
+
+        gather[d](
+            table.bitcast[Scalar[d]](),
+            indices.bitcast[Scalar[DType.int64]](),
+            dst.bitcast[Scalar[d]](),
+            n,
+            embedding_dim,
+            la.stride(0),
+            la.stride(1),
+            lb.rank(),
+            idx_inner_buf.unsafe_ptr(),
+            idx_strides_buf.unsafe_ptr(),
+            ctx,
+        )
+
+    dispatch_dtype[for_dtype, float_only=True](dtype)
+
+
+@export
+def mograd_scatter_add(
+    indices: UnsafePointer[NoneType, ImmutAnyOrigin],
+    upstream: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    read la: Layout,
+    read lb: Layout,
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    @always_inline
+    def for_dtype[d: DType]() capturing raises:
+        var embedding_dim = lb.shape(lb.rank() - 1)
+        var n = lb.numel()
+        var idx_inner_buf = la.inner_sizes_buffer(ctx)
+        var idx_strides_buf = la.strides_buffer(ctx)
+        var up_inner_buf = lb.inner_sizes_buffer(ctx)
+        var up_strides_buf = lb.strides_buffer(ctx)
+
+        comptime assert d.is_floating_point()
+        scatter_add[d](
+            indices.bitcast[Scalar[DType.int64]](),
+            upstream.bitcast[Scalar[d]](),
+            dst.bitcast[Scalar[d]](),
+            n,
+            embedding_dim,
+            la.rank(),
+            idx_inner_buf.unsafe_ptr(),
+            idx_strides_buf.unsafe_ptr(),
+            lb.rank(),
+            up_inner_buf.unsafe_ptr(),
+            up_strides_buf.unsafe_ptr(),
+            ctx,
+        )
+
+    dispatch_dtype[for_dtype, float_only=True](dtype)
+
+
 # ===-------------------------------------------------------------------===#
 # Unary Maps
 # ===-------------------------------------------------------------------===#

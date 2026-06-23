@@ -44,6 +44,8 @@ struct Grad:
                 Rule(Pat(OpType.CROSS_ENTROPY), cross_entropy_grad),
                 Rule(Pat(OpType.SCALE), scale_grad),
                 Rule(Pat(OpType.TRANSPOSE), transpose_grad),
+                Rule(Pat(OpType.GATHER), gather_grad),
+                Rule(Pat(OpType.SCATTER_ADD), scatter_add_grad),
             ]
         )
 
@@ -171,3 +173,18 @@ def cross_entropy_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
 
 def softmax_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     return [OpRef(Op(OpType.SOFTMAX_GRAD, node.layout().as_contiguous(), node.dtype(), [node, upstream.contiguous()]))]
+
+
+def gather_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    var table = node.src(0)
+    var indices = node.src(1)
+    var grad_table = upstream.scatter_add(indices, table.shape(0))
+    var dummy = OpRef(Op(OpType.EXPAND, indices.layout(), indices.dtype(), [upstream]))
+    return [grad_table, dummy]
+
+
+def scatter_add_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    var indices = node.src(0)
+    var dummy = OpRef(Op(OpType.EXPAND, indices.layout(), indices.dtype(), [upstream]))
+    var grad_values = upstream.gather(indices)
+    return [dummy, grad_values]

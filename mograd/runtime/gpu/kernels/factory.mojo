@@ -1,7 +1,10 @@
 from std.algorithm.functional import elementwise
+from std.atomic import Atomic
 
 from nn.rand_normal import random_normal
 from nn.rand_uniform import random_uniform
+
+from mograd.runtime.gpu.kernels.utils import strided_offset
 
 # ===-------------------------------------------------------------------===#
 # Tensor.randn
@@ -106,5 +109,71 @@ def one_hot[
         var col = flat % C
         var class_idx = Int(a.load(row * Int(sa[0])))
         dst.store(dst_off, Scalar[out_dtype](1) if class_idx == col else Scalar[out_dtype](0))
+
+    elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
+
+
+# ===-------------------------------------------------------------------===#
+# Tensor.gather
+# ===-------------------------------------------------------------------===#
+#
+# TODO: Indices are always int64 for now.
+
+
+def gather[
+    dtype: DType
+](
+    table: UnsafePointer[mut=False, Scalar[dtype], _],
+    indices: UnsafePointer[mut=False, Scalar[DType.int64], _],
+    dst: UnsafePointer[mut=True, Scalar[dtype], _],
+    n: Int,
+    embedding_dim: Int,
+    table_row_stride: Int,
+    table_col_stride: Int,
+    idx_rank: Int,
+    idx_inner: UnsafePointer[mut=False, Int64, _],
+    idx_strides: UnsafePointer[mut=False, Int64, _],
+    ctx: DeviceContext,
+) raises:
+    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+        var flat = Int(coord[0].value())
+        var row = flat // embedding_dim
+        var col = flat % embedding_dim
+        var idx_off = strided_offset(row, idx_rank, idx_inner, idx_strides)
+        var table_row = Int(indices.load(idx_off))
+        var table_off = table_row * table_row_stride + col * table_col_stride
+        dst.store(flat, table.load(table_off))
+
+    elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
+
+
+# ===-------------------------------------------------------------------===#
+# Tensor.scatter_add
+# ===-------------------------------------------------------------------===#
+
+
+def scatter_add[
+    dtype: DType
+](
+    indices: UnsafePointer[mut=False, Scalar[DType.int64], _],
+    upstream: UnsafePointer[mut=False, Scalar[dtype], _],
+    dst: UnsafePointer[mut=True, Scalar[dtype], _],
+    n: Int,
+    embedding_dim: Int,
+    idx_rank: Int,
+    idx_inner: UnsafePointer[mut=False, Int64, _],
+    idx_strides: UnsafePointer[mut=False, Int64, _],
+    up_rank: Int,
+    up_inner: UnsafePointer[mut=False, Int64, _],
+    up_strides: UnsafePointer[mut=False, Int64, _],
+    ctx: DeviceContext,
+) raises where dtype.is_floating_point():
+    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+        var flat = Int(coord[0].value())
+        var row = flat // embedding_dim
+        var idx_off = strided_offset(row, idx_rank, idx_inner, idx_strides)
+        var table_row = Int(indices.load(idx_off))
+        var up_off = strided_offset(flat, up_rank, up_inner, up_strides)
+        _ = Atomic.fetch_add(dst + (table_row * embedding_dim + (flat % embedding_dim)), upstream.load(up_off))
 
     elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
