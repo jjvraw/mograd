@@ -4,7 +4,7 @@ from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.memory import AddressSpace
 from std.math import ceildiv
 from std.memory import stack_allocation
-from std.sys.info import simd_width_of
+from std.sys.info import simd_width_of, has_apple_gpu_accelerator
 from std.utils.index import IndexList
 
 from layout import Coord, Idx, MixedLayout, TensorLayout, TileTensor, row_major
@@ -131,7 +131,7 @@ def mograd_gather(
     ctx: DeviceContext,
 ) abi("Mojo") raises:
     @always_inline
-    def for_dtype[d: DType]() capturing raises:
+    def body[d: DType]() capturing raises:
         var row_size = la.shape(la.rank() - 1)
         var n = lb.numel() * row_size
         var idx_inner_buf = lb.inner_sizes_buffer(ctx)
@@ -151,7 +151,7 @@ def mograd_gather(
             ctx,
         )
 
-    dispatch_dtype[for_dtype, float_only=True](dtype)
+    dispatch_dtype[body, float_only=True](dtype)
 
 
 @export
@@ -165,7 +165,7 @@ def mograd_scatter_add(
     ctx: DeviceContext,
 ) abi("Mojo") raises:
     @always_inline
-    def for_dtype[d: DType]() capturing raises:
+    def body[d: DType]() capturing raises:
         var row_size = lb.shape(lb.rank() - 1)
         var n = lb.numel()
         var idx_inner_buf = la.inner_sizes_buffer(ctx)
@@ -189,7 +189,12 @@ def mograd_scatter_add(
             ctx,
         )
 
-    dispatch_dtype[for_dtype, float_only=True](dtype)
+    comptime if has_apple_gpu_accelerator():
+        if dtype != DType.float32:
+            raise Error("scatter_add: only float32 is supported on Apple GPU")
+        body[DType.float32]()
+    else:
+        dispatch_dtype[body, float_only=True](dtype)
 
 
 # ===-------------------------------------------------------------------===#

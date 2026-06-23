@@ -1,5 +1,6 @@
 from std.memory import ArcPointer
 from std.hashlib.hasher import Hasher
+from std.sys.info import has_apple_gpu_accelerator
 from std.utils import Variant
 
 from layout import IntTuple
@@ -312,6 +313,11 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         if self.layout().rank() != indices.layout().rank() + 1:
             raise Error("scatter_add expects values shaped [*indices.shape, row_size]")
         var row_size = self.shape(self.layout().rank() - 1)
+        comptime if has_apple_gpu_accelerator():
+            if self.dtype() != DType.float32:
+                raise Error(
+                    "scatter_add: only float64 is supported on Apple GPU for scatter_add (no native non-f32 atomic add)"
+                )
         return OpRef(Op(OpType.SCATTER_ADD, Layout(num_rows, row_size), self.dtype(), [indices, self]))
 
     def transpose(self, dim0: Int = -2, dim1: Int = -1) raises -> Self:

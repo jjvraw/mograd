@@ -174,6 +174,7 @@ def scatter_add[
         var idx_off = strided_offset(row, idx_rank, idx_inner, idx_strides)
         var dst_row = Int(indices.load(idx_off))
         var values_off = strided_offset(flat, values_rank, values_inner, values_strides)
-        _ = Atomic.fetch_add(dst + (dst_row * row_size + (flat % row_size)), values.load(values_off))
+        var dst_ptr = dst + (dst_row * row_size + (flat % row_size))
+        _ = Atomic.fetch_add(dst_ptr, values.load(values_off))
 
     elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)

@@ -1,5 +1,6 @@
 from std.sys import has_accelerator
-from std.testing import TestSuite, assert_almost_equal, assert_true
+from std.sys.info import has_apple_gpu_accelerator 
+from std.testing import TestSuite, assert_almost_equal, assert_raises, assert_true
 
 from mograd import Tensor, Device
 from mograd.testing import assert_allclose, assert_close
@@ -503,6 +504,19 @@ def test_scatter_add_shape() raises:
     var indices = Tensor(device, [Int64(0), 2, 4], (3,))
     var out = values.scatter_add(indices, 5)
     assert_true(out.shape(0) == 5 and out.shape(1) == 8)
+
+
+def test_scatter_add_float16() raises:
+    var device = Device()
+    var values = Tensor(device, [Float16(1) for _ in range(12)], (4, 3))
+    var indices = Tensor(device, [Int64(1), 3, 1, 0], (4,))
+
+    comptime if has_apple_gpu_accelerator():
+        with assert_raises():
+            _ = values.scatter_add(indices, 5)
+    else:
+        var out = values.scatter_add(indices, 5)
+        assert_allclose(out, [Float16(1), 1, 1, 2, 2, 2, 0, 0, 0, 1, 1, 1, 0, 0, 0])
 
 
 def test_scatter_add_is_gather_inverse() raises:
