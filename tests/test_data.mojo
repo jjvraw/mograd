@@ -1,10 +1,18 @@
+from std.collections.string import Codepoint
+from std.os.path import join
+from std.python import Python
 from std.sys import has_accelerator
 from std.testing import TestSuite, assert_true
 
 from mograd import Tensor, Device
-from mograd.data import mnist
+from mograd.data import mnist, tiny_shakespeare
 
 # TODO: Ensure prior data is removed.
+
+
+def _fresh_cache_dir() raises -> String:
+    var tempfile = Python.import_module("tempfile")
+    return String(tempfile.mkdtemp())
 
 def test_mnist_shapes() raises:
     var device = Device()
@@ -40,6 +48,33 @@ def test_mnist_slice_shape() raises:
     assert_true(xb.shape(0) == 32 and xb.shape(1) == 784)
     var yb = data.y_train[0:32]
     assert_true(yb.shape(0) == 32)
+
+
+def test_tiny_shakespeare_shapes() raises:
+    var device = Device()
+    var data = tiny_shakespeare(device, cache_dir=_fresh_cache_dir())
+    assert_true(data.vocab_size == 65)
+    assert_true(data.data.shape(0) == data.train_size + data.val_size)
+    assert_true(data.train_size > data.val_size)
+
+
+def test_tiny_shakespeare_decodes_known_prefix() raises:
+    var device = Device()
+    var cache_dir = _fresh_cache_dir()
+    var data = tiny_shakespeare(device, cache_dir=cache_dir)
+
+    var vocab = List[Int]()
+    with open(join(cache_dir, "tinyshakespeare_vocab.txt"), "r") as f:
+        for line in f.read().splitlines():
+            if line:
+                vocab.append(Int(line))
+
+    var ids = data.data[0:13].to_list[DType.int64]()
+    var decoded = String("")
+    for id in ids:
+        decoded += String(Codepoint.from_u32(UInt32(vocab[Int(id)])).value())
+
+    assert_true(decoded == "First Citizen")
 
 
 def main() raises:
