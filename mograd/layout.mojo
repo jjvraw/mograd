@@ -554,6 +554,30 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Writable):
         """
         layout = self.view(IntTuple(*shape))
 
+    def flatten(self, start_dim: Int = 0, end_dim: Int = -1) raises -> Self:
+        """Returns a layout with dimensions flattened from start_dim to end_dim."""
+        var ndim = self.rank()
+        var end = end_dim if end_dim >= 0 else ndim + end_dim
+        var start = start_dim if start_dim >= 0 else ndim + start_dim
+
+        if start < 0 or end >= ndim or start > end:
+            raise Error(t"Invalid flatten dims: start={String(start)} end={String(end)} for rank={String(ndim)}")
+
+        var new_shape = IntTuple()
+        var flat_size = 1
+
+        for i in range(start):
+            new_shape.append(self.shape(i))
+
+        for i in range(start, end + 1):
+            flat_size *= self.shape(i)
+        new_shape.append(flat_size)
+
+        for i in range(end + 1, ndim):
+            new_shape.append(self.shape(i))
+
+        return self.view(new_shape)
+
     # ===-------------------------------------------------------------------===#
     # Slice
     # ===-------------------------------------------------------------------===#

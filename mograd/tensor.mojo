@@ -79,6 +79,12 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         return Tensor(device, OpRef(Op(OpType.BUFFER, shape, dtype, [], b^)), requires_grad)
 
     @staticmethod
+    def full[
+        dtype: DType = DType.float32, /
+    ](device: Device, value: Float32, shape: Layout, requires_grad: Bool = False,) raises -> Self:
+        return Self.full(device, Scalar[dtype](value), shape, requires_grad)
+
+    @staticmethod
     def uniform(
         device: Device,
         shape: Layout,
@@ -201,6 +207,21 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
             does match the original.
         """
         return Self(self.device, self.op.view(shape), self.requires_grad)
+
+    def flatten(self, start_dim: Int = 0, end_dim: Int = -1) raises -> Self:
+        """Returns a new tensor with dimensions flattened from start_dim to end_dim.
+
+        Args:
+            start_dim: The starting dimension to flatten (default: 0).
+            end_dim: The ending dimension to flatten (default: -1, the last dimension).
+
+        Returns:
+            A new tensor with the specified dimensions flattened.
+
+        Raises:
+            Error: If start_dim or end_dim are out of bounds.
+        """
+        return Self(self.device, self.op.flatten(start_dim, end_dim), self.requires_grad)
 
     def transpose(self, dim0: Int = -2, dim1: Int = -1) raises -> Self:
         """Returns a transposed view of the tensor by swapping `dim0` and `dim1`.

@@ -357,5 +357,19 @@ def test_squeeze_rejects_non_one_dim() raises:
         _ = l.squeeze(0)
 
 
+def test_flatten_all() raises:
+    var l = Layout(2, 3, 4)
+    var f = l.flatten()
+    assert_equal(f.rank(), 1)
+    assert_equal(f.shape(), IntTuple(24))
+
+
+def test_flatten_partial() raises:
+    var l = Layout(2, 3, 4)
+    var f = l.flatten(1, 2)
+    assert_equal(f.rank(), 2)
+    assert_equal(f.shape(), IntTuple(2, 12))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

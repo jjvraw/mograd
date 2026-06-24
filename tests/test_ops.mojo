@@ -606,9 +606,51 @@ def test_triu_3d() raises:
 
 def test_triu_with_inf() raises:
     var device = Device()
-    var x = Tensor.full(device, (2, 2), Float32(1.0))
+    var mask = Tensor.full(device, (2, 2), -1e9).triu(1)
+    assert_allclose(mask, [Float32(0), -1e9, 0, 0])
+
+
+def test_triu_with_inf_causal_mask() raises:
+    var device = Device()
+    var mask = Tensor.full(device, (1, 1, 4, 4), -1e9).triu(1)
+    assert_true(mask.shape(0) == 1 and mask.shape(1) == 1 and mask.shape(2) == 4 and mask.shape(3) == 4)
+    var flat = mask.flatten()
+    var data = flat.to_list()
+    for i in range(len(data)):
+        var row = i // 4
+        var col = i % 4
+        if col > row:
+            assert_true(data[i] == Float32(-1e9))
+        else:
+            assert_true(data[i] == Float32(0))
+
+
+def test_full_with_float32_literal() raises:
+    var device = Device()
+    var x = Tensor.full(device, (2, 3), Float32(3.5))
+    assert_allclose(x, Tensor.full(device, (2, 3), 3.5))
+
+
+def test_full_with_large_negative() raises:
+    var device = Device()
+    var x = Tensor.full(device, (2, 2), Float32(-1e9))
     var mask = x.triu(1)
-    assert_allclose(mask, [Float32(0), 1, 0, 0])
+    assert_allclose(mask, [Float32(0), -1e9, 0, 0])
+
+
+def test_flatten_all() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4, 5, 6], (2, 3))
+    var flat = x.flatten()
+    assert_true(flat.shape(0) == 6)
+    assert_allclose(flat, [Float32(1), 2, 3, 4, 5, 6])
+
+
+def test_flatten_partial() raises:
+    var device = Device()
+    var x = Tensor.ones(device, (2, 3, 4))
+    var flat = x.flatten(1, 2)
+    assert_true(flat.shape(0) == 2 and flat.shape(1) == 12)
 
 
 def main() raises:

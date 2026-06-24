@@ -297,6 +297,11 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         assert self.layout().is_contiguous(), "Tensor.view requires contiguous layout."
         return Self(Op(OpType.VIEW, self.layout().view(shape.shape()), self.dtype(), [self]))
 
+    def flatten(self, start_dim: Int = 0, end_dim: Int = -1) raises -> Self:
+        var src = self.contiguous()
+        var flattened_layout = src.layout().flatten(start_dim, end_dim)
+        return Self(Op(OpType.RESHAPE, flattened_layout, self.dtype(), [src]))
+
     def one_hot(self, var num_classes: Int, out_dtype: DType) -> OpRef:
         n = Float32(num_classes)
         return OpRef(Op(OpType.ONE_HOT, (self.shape(0), num_classes), out_dtype, [self], attrs={"num_classes": n}))
