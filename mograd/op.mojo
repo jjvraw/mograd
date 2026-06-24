@@ -71,6 +71,7 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime SCATTER_ADD = OpType("SCATTER_ADD")
     comptime SQUEEZE = OpType("SQUEEZE")
     comptime UNSQUEEZE = OpType("UNSQUEEZE")
+    comptime TRIU = OpType("TRIU")
 
     # ===-------------------------------------------------------------------===#
     # Contraction ops
@@ -349,6 +350,12 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         var new_layout = self.layout().unsqueeze(dim)
         attrs: Attrs = {"dim": dim}
         return Self(Op(OpType.UNSQUEEZE, new_layout, self.dtype(), [self], attrs=attrs^))
+
+    def triu(self, diagonal: Int = 0) raises -> Self:
+        if self.layout().rank() < 2:
+            raise Error("triu requires a tensor of rank >= 2")
+        attrs: Attrs = {"diagonal": diagonal}
+        return Self(Op(OpType.TRIU, self.layout().as_contiguous(), self.dtype(), [self], attrs=attrs^))
 
     # ===-------------------------------------------------------------------===#
     # Contraction operations

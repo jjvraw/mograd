@@ -8,7 +8,6 @@ from mograd.runtime.gpu.kernels.utils import strided_offset, unary_strided_map
 # ===-------------------------------------------------------------------===#
 
 
-# TODO: Remove once all ops respect layout strides (broadcast can then stay a zero-copy view)
 @always_inline
 def identity_op[d: DType](x: Scalar[d]) -> Scalar[d]:
     return x
@@ -126,3 +125,36 @@ def add[
         dst.store[simd_width](flat, a.load[simd_width](flat) + b.load[simd_width](flat))
 
     elementwise[simd_width=width, target="gpu"](apply_fast, Coord(n), ctx)
+
+
+# ===-------------------------------------------------------------------===#
+# Triu
+# ===-------------------------------------------------------------------===#
+
+
+def triu_impl[
+    dtype: DType
+](
+    a: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    numel: Int,
+    rows: Int,
+    cols: Int,
+    rank: Int,
+    inner: UnsafePointer[Int64, ImmutAnyOrigin],
+    sa: UnsafePointer[Int64, ImmutAnyOrigin],
+    diagonal: Int64,
+    ctx: DeviceContext,
+) raises:
+    def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+        var diag = Int(diagonal)
+        var flat = Int(coord[0].value())
+        var idx_in_last2d = flat % (rows * cols)
+        var row = idx_in_last2d // cols
+        var col = idx_in_last2d % cols
+        if col >= row + diag:
+            dst.store(flat, a.load(strided_offset(flat, rank, inner, sa)))
+        else:
+            dst.store(flat, Scalar[dtype](0))
+
+    elementwise[simd_width=1, target="gpu"](apply, Coord(numel), ctx)

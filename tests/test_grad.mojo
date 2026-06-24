@@ -506,6 +506,32 @@ def test_squeeze_unsqueeze_roundtrip_grad() raises:
     assert_allclose(grads[0], [Float32(1), 1, 1, 1])
 
 
+def test_triu_grad() raises:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
+        return x.triu(0).sum()
+
+    var device = Device()
+    var data: List[Float32] = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    var num = numerical_grad[fwd](device, data, (3, 3))
+    var x = Tensor(device, data, (3, 3), requires_grad=True)
+    var loss = x.triu(0).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+
+
+def test_triu_diagonal_grad() raises:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
+        return x.triu(1).sum()
+
+    var device = Device()
+    var data: List[Float32] = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    var num = numerical_grad[fwd](device, data, (3, 3))
+    var x = Tensor(device, data, (3, 3), requires_grad=True)
+    var loss = x.triu(1).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+
+
 def main() raises:
     comptime assert has_accelerator(), "GPU required to run gradient tests"
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -1178,3 +1178,40 @@ def mograd_cross_entropy_grad(
                 )
                 return
     raise Error("unsupported dtype")
+
+
+@export
+def mograd_triu(
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    read layout: Layout,
+    diagonal: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    @always_inline
+    def body[d: DType]() capturing raises:
+        var rank = layout.rank()
+
+        if rank < 2:
+            raise Error("triu requires rank >= 2")
+
+        var rows = layout.shape(rank - 2)
+        var cols = layout.shape(rank - 1)
+        var inner_buf = layout.inner_sizes_buffer(ctx)
+        var sa_buf = layout.strides_buffer(ctx)
+
+        triu_impl[d](
+            a.bitcast[Scalar[d]](),
+            dst.bitcast[Scalar[d]](),
+            layout.numel(),
+            rows,
+            cols,
+            rank,
+            inner_buf.unsafe_ptr().as_unsafe_any_origin(),
+            sa_buf.unsafe_ptr().as_unsafe_any_origin(),
+            Int64(diagonal),
+            ctx,
+        )
+
+    dispatch_dtype[body](dtype)

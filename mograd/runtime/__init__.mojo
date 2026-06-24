@@ -96,6 +96,7 @@ struct NativeRuntime(Runtime):
             Rule(Pat(OpType.TRANSPOSE), view),
             Rule(Pat(OpType.SQUEEZE), view),
             Rule(Pat(OpType.UNSQUEEZE), view),
+            Rule(Pat(OpType.TRIU), triu),
             # TODO: Make layout aware.
             Rule(Pat(OpType.SOFTMAX), softmax),
             Rule(Pat(OpType.CROSS_ENTROPY), cross_entropy),
@@ -145,6 +146,15 @@ comptime CastOp = def(
     read layout: Layout,
     in_dtype: DType,
     out_dtype: DType,
+    ctx: DeviceContext,
+) thin abi("Mojo") raises -> None
+
+comptime TriuOp = def(
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    read layout: Layout,
+    diagonal: Int,
+    dtype: DType,
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
 
@@ -395,6 +405,20 @@ def contiguous(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> A
 
 def view(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     return inputs[0].view(node.layout())
+
+
+def triu(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+    var out = AnyBuffer.create(node.dtype(), device, node.numel())
+    var diagonal = node.attr_int("diagonal")
+    device.handle[].get_function[TriuOp]("mograd_triu")(
+        inputs[0].data_ptr(),
+        out.data_ptr(),
+        node.src(0).layout(),
+        diagonal,
+        node.dtype(),
+        device.ctx,
+    )
+    return out^
 
 
 # _-_-_-_-_-

@@ -583,6 +583,34 @@ def test_unsqueeze_negative_dim() raises:
     assert_true(y.shape(0) == 3 and y.shape(1) == 4 and y.shape(2) == 1)
 
 
+def test_triu_2d() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9], (3, 3))
+    var t = x.triu(0)
+    assert_allclose(t, [Float32(1), 2, 3, 0, 5, 6, 0, 0, 9])
+
+
+def test_triu_diagonal_1() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9], (3, 3))
+    var t = x.triu(1)
+    assert_allclose(t, [Float32(0), 2, 3, 0, 0, 6, 0, 0, 0])
+
+
+def test_triu_3d() raises:
+    var device = Device()
+    var x = Tensor.ones(device, (2, 3, 3))
+    var t = x.triu(0)
+    assert_true(t.shape() == x.shape())
+
+
+def test_triu_with_inf() raises:
+    var device = Device()
+    var x = Tensor.full(device, (2, 2), Float32(1.0))
+    var mask = x.triu(1)
+    assert_allclose(mask, [Float32(0), 1, 0, 0])
+
+
 def main() raises:
     comptime assert has_accelerator(), "GPU required to run tensor op tests"
     TestSuite.discover_tests[__functions_in_module()]().run()

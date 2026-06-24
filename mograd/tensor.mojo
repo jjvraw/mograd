@@ -247,6 +247,21 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         """
         return Self(self.device, self.op.unsqueeze(dim), self.requires_grad)
 
+    def triu(self, diagonal: Int = 0) raises -> Self:
+        """Returns the upper triangular part of the tensor, zeroing the rest.
+
+        Args:
+            diagonal: Diagonal offset. 0 keeps main diagonal and above,
+                     1 keeps above main diagonal, -1 keeps main diagonal and below.
+
+        Returns:
+            Upper triangular tensor.
+
+        Raises:
+            If tensor rank is less than 2.
+        """
+        return Self(self.device, self.op.triu(diagonal), self.requires_grad)
+
     def __getitem__(self, s: Slice) raises -> Self:
         var dim = self.op.layout().shape(0)
         var start, stop, step = s.indices(dim)

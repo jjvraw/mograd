@@ -48,6 +48,7 @@ struct Grad:
                 Rule(Pat(OpType.SCATTER_ADD), scatter_add_grad),
                 Rule(Pat(OpType.SQUEEZE), squeeze_grad),
                 Rule(Pat(OpType.UNSQUEEZE), unsqueeze_grad),
+                Rule(Pat(OpType.TRIU), triu_grad),
             ]
         )
 
@@ -209,3 +210,8 @@ def squeeze_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
 def unsqueeze_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     var dim = node.attr_int("dim")
     return [upstream.squeeze(dim)]
+
+
+def triu_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    var diagonal = node.attr_int("diagonal")
+    return [upstream.triu(diagonal)]
