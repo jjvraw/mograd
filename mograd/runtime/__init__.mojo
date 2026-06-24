@@ -67,6 +67,7 @@ struct NativeRuntime(Runtime):
             Rule(Pat(OpType.NEG), neg),
             Rule(Pat(OpType.LOG), log),
             Rule(Pat(OpType.EXP), exp),
+            Rule(Pat(OpType.SQRT), sqrt),
             Rule(Pat(OpType.RELU), relu),
             Rule(Pat(OpType.CAST), cast),
             # Binary Elementwise
@@ -259,6 +260,10 @@ def log(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffe
 
 def exp(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     return unary_strided("mograd_exp", node, inputs, device)
+
+
+def sqrt(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+    return unary_strided("mograd_sqrt", node, inputs, device)
 
 
 def relu(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:

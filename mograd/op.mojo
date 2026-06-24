@@ -40,6 +40,7 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime NEG = OpType("NEG")
     comptime SCALE = OpType("SCALE")
     comptime EXP = OpType("EXP")
+    comptime SQRT = OpType("SQRT")
     comptime LOG = OpType("LOG")
     comptime RELU = OpType("RELU")
     comptime RELU_GRAD = OpType("RELU_GRAD")
@@ -252,6 +253,9 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
 
     def exp(self) -> Self:
         return Self(Op(OpType.EXP, self.layout().as_contiguous(), self.dtype(), [self]))
+
+    def sqrt(self) -> Self:
+        return Self(Op(OpType.SQRT, self.layout().as_contiguous(), self.dtype(), [self]))
 
     def log(self) -> Self:
         return Self(Op(OpType.LOG, self.layout().as_contiguous(), self.dtype(), [self]))

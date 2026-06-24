@@ -248,6 +248,21 @@ def mograd_exp(
 
 
 @export
+def mograd_sqrt(
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    read layout: Layout,
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    var inner_buf = layout.inner_sizes_buffer(ctx)
+    var sa_buf = layout.strides_buffer(ctx)
+    dispatch_unary_map[sqrt_op, float_only=True](
+        a, dst, layout.numel(), layout.rank(), inner_buf.unsafe_ptr(), sa_buf.unsafe_ptr(), dtype, ctx
+    )
+
+
+@export
 def mograd_relu(
     a: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],

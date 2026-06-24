@@ -33,6 +33,7 @@ struct Grad:
                 Rule(Pat(OpType.RELU), relu_grad),
                 Rule(Pat(OpType.SOFTMAX), softmax_grad),
                 Rule(Pat(OpType.EXP), exp_grad),
+                Rule(Pat(OpType.SQRT), sqrt_grad),
                 Rule(Pat(OpType.LOG), log_grad),
                 Rule(Pat(OpType.NEG), neg_grad),
                 Rule(Pat(OpType.DIV), div_grad),
@@ -96,6 +97,10 @@ def relu_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
 
 def exp_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     return [node * upstream]
+
+
+def sqrt_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    return [(upstream / node).scale(0.5)]
 
 
 def log_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:

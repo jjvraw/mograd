@@ -193,6 +193,20 @@ def test_exp_grad() raises:
     assert_allclose(grads[0], [Float32(1.0), 2.718282, 7.389056], tol=1e-3)
 
 
+def test_sqrt_grad() raises:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
+        return x.sqrt().sum()
+
+    var device = Device()
+    var data: List[Float32] = [1.0, 4.0, 9.0]
+    var num = numerical_grad[fwd](device, data, (3,))
+    var x = Tensor(device, data, (3,), requires_grad=True)
+    var loss = x.sqrt().sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], [Float32(0.5), 0.25, 1.0 / 6.0], tol=1e-3)
+
+
 def test_div_grad_numerator() raises:
     def fwd(x: Tensor[]) raises -> Tensor[]:
         var b = Tensor(x.device.value(), [Float32(2.0), 4.0, 8.0], (3,))

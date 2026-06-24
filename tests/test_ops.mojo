@@ -302,6 +302,12 @@ def test_log_exp_inverse() raises:
     assert_allclose(x.exp().log(), data)
 
 
+def test_sqrt_values() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(4), 9, 16], (3,))
+    assert_allclose(x.sqrt(), [Float32(2), 3, 4], tol=1e-4)
+
+
 def test_relu_zeros_negatives() raises:
     var device = Device()
     var x = Tensor(device, [Float32(-2), -1, 0, 1, 2], (5,))

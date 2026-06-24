@@ -350,6 +350,9 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
     def exp(self) -> Self:
         return Self(self.device, self.op.exp(), self.requires_grad)
 
+    def sqrt(self) -> Self:
+        return Self(self.device, self.op.sqrt(), self.requires_grad)
+
     def relu(self) -> Self:
         return Self(self.device, self.op.relu(), self.requires_grad)
 

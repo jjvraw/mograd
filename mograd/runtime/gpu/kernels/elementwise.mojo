@@ -1,4 +1,4 @@
-from std.math import log as math_log, exp as math_exp
+from std.math import log as math_log, exp as math_exp, sqrt as math_sqrt
 from std.algorithm.functional import elementwise
 
 from mograd.runtime.gpu.kernels.utils import strided_offset, unary_strided_map
@@ -26,6 +26,11 @@ def log_op[d: DType](x: Scalar[d]) -> Scalar[d] where d.is_floating_point():
 @always_inline
 def exp_op[d: DType](x: Scalar[d]) -> Scalar[d] where d.is_floating_point():
     return math_exp(x)
+
+
+@always_inline
+def sqrt_op[d: DType](x: Scalar[d]) -> Scalar[d] where d.is_floating_point():
+    return math_sqrt(x)
 
 
 @always_inline
