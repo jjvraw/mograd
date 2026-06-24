@@ -475,37 +475,10 @@ def transpose(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> An
     return out^
 
 
-# ===-------------------------------------------------------------------===#
-# BinaryOps
-# ===-------------------------------------------------------------------===#
-
-comptime TernaryOp = def(
-    UnsafePointer[NoneType, ImmutAnyOrigin],
-    UnsafePointer[NoneType, ImmutAnyOrigin],
-    UnsafePointer[NoneType, ImmutAnyOrigin],
-    UnsafePointer[NoneType, MutAnyOrigin],
-    Int,
-    DType,
-    DeviceContext,
-) thin abi("Mojo") raises -> None
-
-
 def cross_entropy(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var p = alloc[Float32](2)
-    p[0] = Float32(node.src(0).layout().shape(0))
-    p[1] = Float32(node.src(0).layout().shape(1))
-    var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[TernaryOp]("mograd_cross_entropy")(
-        inputs[0].data_ptr(),
-        inputs[1].data_ptr(),
-        p.bitcast[NoneType]().as_unsafe_any_origin(),
-        out.data_ptr(),
-        node.numel(),
-        node.dtype(),
-        device.ctx,
-    )
-    p.free()
-    return out^
+    if node.src(0).layout().is_contiguous() and node.src(1).layout().is_contiguous():
+        return binary_strided("mograd_cross_entropy", node, inputs, device)
+    return binary_strided("mograd_cross_entropy_strided", node, inputs, device)
 
 
 # TODO: Revisit this, this is slop and can probably be cleaned up.
@@ -535,32 +508,33 @@ def softmax_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises ->
     return binary_strided("mograd_softmax_grad", node, inputs, device)
 
 
-comptime QuaternaryOp = def(
-    UnsafePointer[NoneType, ImmutAnyOrigin],
-    UnsafePointer[NoneType, ImmutAnyOrigin],
-    UnsafePointer[NoneType, ImmutAnyOrigin],
-    UnsafePointer[NoneType, ImmutAnyOrigin],
-    UnsafePointer[NoneType, MutAnyOrigin],
-    Int,
-    DType,
-    DeviceContext,
+comptime TernaryStrided = def(
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
+    b: UnsafePointer[NoneType, ImmutAnyOrigin],
+    c: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    read la: Layout,
+    read lb: Layout,
+    dtype: DType,
+    ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
 
 
 def cross_entropy_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var p = alloc[Float32](2)
-    p[0] = Float32(node.src(0).layout().shape(0))
-    p[1] = Float32(node.src(0).layout().shape(1))
+    var la = node.src(0).layout()
+    var lb = node.src(1).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[QuaternaryOp]("mograd_cross_entropy_grad")(
+    var name = "mograd_cross_entropy_grad"
+    if not (la.is_contiguous() and lb.is_contiguous()):
+        name = "mograd_cross_entropy_grad_strided"
+    device.handle[].get_function[TernaryStrided](name)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         inputs[2].data_ptr(),
-        p.bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
-        node.numel(),
+        la,
+        lb,
         node.dtype(),
         device.ctx,
     )
-    p.free()
     return out^

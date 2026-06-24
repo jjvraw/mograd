@@ -264,10 +264,39 @@ def test_cross_entropy_strided_logits() raises:
     assert_close(sl.cross_entropy(labels), Float32(0.693147), tol=1e-3)
 
 
+def test_cross_entropy_strided_labels() raises:
+    var device = Device()
+    var logits = Tensor.full(device, (2, 2), Float32(0))
+    var labels_full = Tensor(device, [Float32(1), 0, 99, 99, 0, 1, 99, 99], (4, 2))
+    var sl_labels = labels_full[0:4:2]
+    assert_true(not sl_labels.is_contiguous())
+    assert_close(logits.cross_entropy(sl_labels), Float32(0.693147), tol=1e-3)
+
+
+def test_cross_entropy_transposed_labels() raises:
+    var device = Device()
+    var logits = Tensor.full(device, (2, 2), Float32(0))
+    var labels = Tensor(device, [Float32(1), 0, 0, 1], (2, 2))
+    var t_labels = labels.transpose()
+    assert_true(not t_labels.is_contiguous())
+    assert_close(logits.cross_entropy(t_labels), Float32(0.693147), tol=1e-3)
+
+
+def test_cross_entropy_grad_transposed_logits() raises:
+    var device = Device()
+    var labels = Tensor(device, [Float32(1), 0, 0, 1], (2, 2))
+    var a = Tensor(device, [Float32(1), 2, 3, 4], (2, 2), requires_grad=True)
+    var t = a.transpose()
+    assert_true(not t.is_contiguous())
+    var loss = t.cross_entropy(labels)
+    var grads = loss.gradient([a])
+    assert_allclose(grads[0], [Float32(-0.440398), 0.059601, 0.440398, -0.059601], tol=1e-3)
+
+
 def test_reshape_strided() raises:
     var device = Device()
     var a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], (6, 2))
-    var sa = a[0:6:2]  # [[1,2],[5,6],[9,10]]
+    var sa = a[0:6:2]
     assert_true(not sa.is_contiguous())
     var r = sa.reshape((1, 6))
     assert_allclose(r, [Float32(1), 2, 5, 6, 9, 10])

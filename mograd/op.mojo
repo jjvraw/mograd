@@ -409,7 +409,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def cross_entropy(self, labels: Self) -> Self:
-        return Self(Op(OpType.CROSS_ENTROPY, (1,), self.dtype(), [self.contiguous(), labels.contiguous()]))
+        return Self(Op(OpType.CROSS_ENTROPY, (1,), self.dtype(), [self, labels]))
 
     # ===-------------------------------------------------------------------===#
     # Trait methods

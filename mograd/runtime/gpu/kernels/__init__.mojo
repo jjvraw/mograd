@@ -1,4 +1,3 @@
-from std.gpu.primitives.warp import max as warp_max, sum as warp_sum
 from std.gpu import global_idx, thread_idx, block_idx, barrier
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
@@ -21,6 +20,7 @@ from mograd.runtime.gpu.kernels.elementwise import *
 from mograd.runtime.gpu.kernels.reduce import *
 from mograd.runtime.gpu.kernels.softmax import *
 from mograd.runtime.gpu.kernels.gather_scatter import *
+from mograd.runtime.gpu.kernels.cross_entropy import *
 from mograd.runtime.gpu.kernels.utils import (
     dispatch_binary_contiguous,
     dispatch_binary_map,
@@ -1018,187 +1018,92 @@ comptime CE_BLOCK = 256
 # ===-------------------------------------------------------------------===#
 
 
-def cross_entropy_kernel[
-    dtype: DType, BLOCK_SIZE: Int
-](
-    logits: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    labels: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    N: Int,
-    C: Int,
-) where dtype.is_floating_point():
-    from std.math import exp, log
-    from std.gpu import lane_id, WARP_SIZE
-
-    var smem = stack_allocation[BLOCK_SIZE // WARP_SIZE, Scalar[dtype], address_space=AddressSpace.SHARED]()
-    var row = block_idx.x
-    if row >= N:
-        return
-    var row_offset = row * C
-    var tid = thread_idx.x
-
-    var local_max = Scalar[dtype].MIN
-    for i in range(tid, C, BLOCK_SIZE):
-        var v = logits[row_offset + i]
-        if v > local_max:
-            local_max = v
-    local_max = warp_max(local_max)
-    if lane_id() == 0:
-        smem[tid // WARP_SIZE] = local_max
-    barrier()
-    if tid == 0:
-        for w in range(1, BLOCK_SIZE // WARP_SIZE):
-            if smem[w] > smem[0]:
-                smem[0] = smem[w]
-    barrier()
-    var global_max = smem[0]
-
-    var local_sum = Scalar[dtype](0)
-    for i in range(tid, C, BLOCK_SIZE):
-        local_sum += exp(logits[row_offset + i] - global_max)
-    local_sum = warp_sum(local_sum)
-    if lane_id() == 0:
-        smem[tid // WARP_SIZE] = local_sum
-    barrier()
-    if tid == 0:
-        for w in range(1, BLOCK_SIZE // WARP_SIZE):
-            smem[0] += smem[w]
-        smem[0] = log(smem[0])
-    barrier()
-    var log_sum_exp = smem[0]
-
-    var local_loss = Scalar[dtype](0)
-    for i in range(tid, C, BLOCK_SIZE):
-        local_loss += (logits[row_offset + i] - global_max - log_sum_exp) * labels[row_offset + i]
-    local_loss = warp_sum(local_loss)
-    if lane_id() == 0:
-        smem[tid // WARP_SIZE] = local_loss
-    barrier()
-    if tid == 0:
-        for w in range(1, BLOCK_SIZE // WARP_SIZE):
-            smem[0] += smem[w]
-        dst[row] = -smem[0] / Scalar[dtype](N)
-
-
-def sum_rows_kernel[
-    dtype: DType, BLOCK_SIZE: Int
-](
-    src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    N: Int,
-) where dtype.is_floating_point():
-    from std.gpu import lane_id, WARP_SIZE
-
-    var smem = stack_allocation[BLOCK_SIZE // WARP_SIZE, Scalar[dtype], address_space=AddressSpace.SHARED]()
-    var tid = thread_idx.x
-    var local = Scalar[dtype](0)
-    for i in range(tid, N, BLOCK_SIZE):
-        local += src[i]
-    local = warp_sum(local)
-    if lane_id() == 0:
-        smem[tid // WARP_SIZE] = local
-    barrier()
-    if tid == 0:
-        for w in range(1, BLOCK_SIZE // WARP_SIZE):
-            smem[0] += smem[w]
-        dst[0] = smem[0]
-
-
 @export
 def mograd_cross_entropy(
     logits: UnsafePointer[NoneType, ImmutAnyOrigin],
     labels: UnsafePointer[NoneType, ImmutAnyOrigin],
-    shape_ptr: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
+    read la: Layout,
+    read lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        comptime if d.is_floating_point():
-            if dtype == d:
-                var p = shape_ptr.bitcast[Float32]()
-                var N = Int(p[0])
-                var C = Int(p[1])
-                var row_buf = ctx.enqueue_create_buffer[d](N)
-                ctx.enqueue_function[cross_entropy_kernel[d, CE_BLOCK]](
-                    logits.bitcast[Scalar[d]](),
-                    labels.bitcast[Scalar[d]](),
-                    row_buf.unsafe_ptr().as_unsafe_any_origin(),
-                    N,
-                    C,
-                    grid_dim=(N,),
-                    block_dim=(CE_BLOCK,),
-                )
-                ctx.enqueue_function[sum_rows_kernel[d, CE_BLOCK]](
-                    row_buf.unsafe_ptr().as_unsafe_any_origin(),
-                    dst.bitcast[Scalar[d]](),
-                    N,
-                    grid_dim=(1,),
-                    block_dim=(CE_BLOCK,),
-                )
-                ctx.synchronize()
-                return
-    raise Error("unsupported dtype")
+    @always_inline
+    def body[d: DType]() capturing raises:
+        var N = la.numel() // la.shape(la.rank() - 1)
+        var C = la.shape(la.rank() - 1)
+        var row_buf = ctx.enqueue_create_buffer[d](N)
+        comptime assert d.is_floating_point()
+        ctx.enqueue_function[cross_entropy_kernel[d, CE_BLOCK]](
+            logits.bitcast[Scalar[d]](),
+            labels.bitcast[Scalar[d]](),
+            row_buf.unsafe_ptr().as_unsafe_any_origin(),
+            N,
+            C,
+            grid_dim=(N,),
+            block_dim=(CE_BLOCK,),
+        )
+        ctx.enqueue_function[sum_rows_kernel[d, CE_BLOCK]](
+            row_buf.unsafe_ptr().as_unsafe_any_origin(),
+            dst.bitcast[Scalar[d]](),
+            N,
+            grid_dim=(1,),
+            block_dim=(CE_BLOCK,),
+        )
+        ctx.synchronize()
+
+    dispatch_dtype[body, float_only=True](dtype)
 
 
-def cross_entropy_grad_kernel[
-    dtype: DType, BLOCK_SIZE: Int
-](
-    grad: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    logits: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    labels: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    N: Int,
-    C: Int,
-) where dtype.is_floating_point():
-    from std.math import exp as math_exp
-    from std.gpu import lane_id, WARP_SIZE
+@export
+def mograd_cross_entropy_strided(
+    logits: UnsafePointer[NoneType, ImmutAnyOrigin],
+    labels: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    read la: Layout,
+    read lb: Layout,
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    @always_inline
+    def body[d: DType]() capturing raises:
+        var N = la.numel() // la.shape(la.rank() - 1)
+        var C = la.shape(la.rank() - 1)
+        var la_inner_buf = la.inner_sizes_buffer(ctx)
+        var la_sa_buf = la.strides_buffer(ctx)
+        var lb_inner_buf = lb.inner_sizes_buffer(ctx)
+        var lb_sa_buf = lb.strides_buffer(ctx)
+        var row_buf = ctx.enqueue_create_buffer[d](N)
+        comptime assert d.is_floating_point()
+        ctx.enqueue_function[cross_entropy_kernel_strided[d, CE_BLOCK]](
+            logits.bitcast[Scalar[d]](),
+            labels.bitcast[Scalar[d]](),
+            row_buf.unsafe_ptr().as_unsafe_any_origin(),
+            N,
+            C,
+            la.rank(),
+            la_inner_buf.unsafe_ptr(),
+            la_sa_buf.unsafe_ptr(),
+            lb_inner_buf.unsafe_ptr(),
+            lb_sa_buf.unsafe_ptr(),
+            grid_dim=(N,),
+            block_dim=(CE_BLOCK,),
+        )
+        ctx.enqueue_function[sum_rows_kernel[d, CE_BLOCK]](
+            row_buf.unsafe_ptr().as_unsafe_any_origin(),
+            dst.bitcast[Scalar[d]](),
+            N,
+            grid_dim=(1,),
+            block_dim=(CE_BLOCK,),
+        )
+        ctx.synchronize()
 
-    var smem = stack_allocation[BLOCK_SIZE // WARP_SIZE, Scalar[dtype], address_space=AddressSpace.SHARED]()
-    var row = block_idx.x
-    if row >= N:
-        return
-    var row_offset = row * C
-    var tid = thread_idx.x
+    dispatch_dtype[body, float_only=True](dtype)
 
-    var local_max = Scalar[dtype].MIN
-    for i in range(tid, C, BLOCK_SIZE):
-        var v = logits[row_offset + i]
-        if v > local_max:
-            local_max = v
-    local_max = warp_max(local_max)
-    if lane_id() == 0:
-        smem[tid // WARP_SIZE] = local_max
-    barrier()
-    if tid == 0:
-        for w in range(1, BLOCK_SIZE // WARP_SIZE):
-            if smem[w] > smem[0]:
-                smem[0] = smem[w]
-    barrier()
-    var global_max = smem[0]
 
-    var local_sum = Scalar[dtype](0)
-    for i in range(tid, C, BLOCK_SIZE):
-        local_sum += math_exp(logits[row_offset + i] - global_max)
-    local_sum = warp_sum(local_sum)
-    if lane_id() == 0:
-        smem[tid // WARP_SIZE] = local_sum
-    barrier()
-    if tid == 0:
-        for w in range(1, BLOCK_SIZE // WARP_SIZE):
-            smem[0] += smem[w]
-    barrier()
-    var sm_scale = Scalar[dtype](1) / smem[0]
-    var d_by_nrows = grad[0] / Scalar[dtype](N)
-
-    for i in range(tid, C, BLOCK_SIZE):
-        dst[row_offset + i] = (
-            math_exp(logits[row_offset + i] - global_max) * sm_scale - labels[row_offset + i]
-        ) * d_by_nrows
+# ===-------------------------------------------------------------------===#
+# Cross Entropy grad
+# ===-------------------------------------------------------------------===#
 
 
 @export
@@ -1206,33 +1111,68 @@ def mograd_cross_entropy_grad(
     logits: UnsafePointer[NoneType, ImmutAnyOrigin],
     labels: UnsafePointer[NoneType, ImmutAnyOrigin],
     grad: UnsafePointer[NoneType, ImmutAnyOrigin],
-    shape_ptr: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
+    read la: Layout,
+    read lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime kd = T.node_dtype
-        comptime if kd.is_floating_point():
-            if dtype == kd:
-                var p = shape_ptr.bitcast[Float32]()
-                var N = Int(p[0])
-                var C = Int(p[1])
-                ctx.enqueue_function[cross_entropy_grad_kernel[kd, CE_BLOCK]](
-                    grad.bitcast[Scalar[kd]](),
-                    logits.bitcast[Scalar[kd]](),
-                    labels.bitcast[Scalar[kd]](),
-                    dst.bitcast[Scalar[kd]](),
-                    N,
-                    C,
-                    grid_dim=(N,),
-                    block_dim=(CE_BLOCK,),
-                )
-                return
-    raise Error("unsupported dtype")
+    @always_inline
+    def body[d: DType]() capturing raises:
+        var N = la.numel() // la.shape(la.rank() - 1)
+        var C = la.shape(la.rank() - 1)
+        comptime assert d.is_floating_point()
+        ctx.enqueue_function[cross_entropy_grad_kernel[d, CE_BLOCK]](
+            grad.bitcast[Scalar[d]](),
+            logits.bitcast[Scalar[d]](),
+            labels.bitcast[Scalar[d]](),
+            dst.bitcast[Scalar[d]](),
+            N,
+            C,
+            grid_dim=(N,),
+            block_dim=(CE_BLOCK,),
+        )
+
+    dispatch_dtype[body, float_only=True](dtype)
+
+
+@export
+def mograd_cross_entropy_grad_strided(
+    logits: UnsafePointer[NoneType, ImmutAnyOrigin],
+    labels: UnsafePointer[NoneType, ImmutAnyOrigin],
+    grad: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    read la: Layout,
+    read lb: Layout,
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    @always_inline
+    def body[d: DType]() capturing raises:
+        var N = la.numel() // la.shape(la.rank() - 1)
+        var C = la.shape(la.rank() - 1)
+        var la_inner_buf = la.inner_sizes_buffer(ctx)
+        var la_sa_buf = la.strides_buffer(ctx)
+        var lb_inner_buf = lb.inner_sizes_buffer(ctx)
+        var lb_sa_buf = lb.strides_buffer(ctx)
+        comptime assert d.is_floating_point()
+        ctx.enqueue_function[cross_entropy_grad_kernel_strided[d, CE_BLOCK]](
+            grad.bitcast[Scalar[d]](),
+            logits.bitcast[Scalar[d]](),
+            labels.bitcast[Scalar[d]](),
+            dst.bitcast[Scalar[d]](),
+            N,
+            C,
+            la.rank(),
+            la_inner_buf.unsafe_ptr(),
+            la_sa_buf.unsafe_ptr(),
+            lb_inner_buf.unsafe_ptr(),
+            lb_sa_buf.unsafe_ptr(),
+            grid_dim=(N,),
+            block_dim=(CE_BLOCK,),
+        )
+
+    dispatch_dtype[body, float_only=True](dtype)
 
 
 @export
