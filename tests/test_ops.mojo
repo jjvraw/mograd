@@ -638,6 +638,14 @@ def test_full_with_large_negative() raises:
     assert_allclose(mask, [Float32(0), -1e9, 0, 0])
 
 
+def test_full_like() raises:
+    var device = Device()
+    var x = Tensor.full(device, (2, 3, 4), Float32(1), dtype=DType.float16)
+    var y = Tensor.full_like(x, Float32(7))
+    assert_true(y.shape() == x.shape())
+    assert_true(y.dtype == x.dtype)
+
+
 def test_flatten_all() raises:
     var device = Device()
     var x = Tensor(device, [Float32(1), 2, 3, 4, 5, 6], (2, 3))

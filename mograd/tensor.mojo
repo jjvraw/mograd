@@ -66,23 +66,8 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         return Tensor(device, OpRef(Op(OpType.BUFFER, shape, dtype, [], b^)), requires_grad)
 
     @staticmethod
-    def ones[
-        dtype: DType = DType.float32, /
-    ](device: Device, shape: Layout, requires_grad: Bool = False,) raises -> Self:
-        return Self.full(device, Scalar[dtype](1.0), shape, requires_grad)
-
-    @staticmethod
-    def full[
-        dtype: DType = DType.float32, /
-    ](device: Device, value: Scalar[dtype], shape: Layout, requires_grad: Bool = False,) raises -> Self:
-        var b = AnyBuffer.create(dtype, device, shape.numel(), fill=Float64(value))
-        return Tensor(device, OpRef(Op(OpType.BUFFER, shape, dtype, [], b^)), requires_grad)
-
-    @staticmethod
-    def full[
-        dtype: DType = DType.float32, /
-    ](device: Device, value: Float32, shape: Layout, requires_grad: Bool = False,) raises -> Self:
-        return Self.full(device, Scalar[dtype](value), shape, requires_grad)
+    def ones(device: Device, shape: Layout, dtype: DType = DType.float32, requires_grad: Bool = False) -> Self:
+        return Self.full(device, shape, 1.0, dtype, requires_grad)
 
     @staticmethod
     def uniform(
@@ -125,8 +110,12 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         return Tensor(device, OpRef(Op(OpType.FULL, shape, dtype, [], {"value": fill_value})), requires_grad)
 
     @staticmethod
+    def full_like(other: Tensor, fill_value: Float32, requires_grad: Bool = False) raises -> Tensor:
+        return Tensor.full(other.device.value(), other.op.layout(), fill_value, other.dtype, requires_grad)
+
+    @staticmethod
     def ones_like(other: Tensor, requires_grad: Bool = False) raises -> Tensor:
-        return Tensor.ones(other.device.value(), other.op.layout(), requires_grad)
+        return Tensor.ones(other.device.value(), other.op.layout(), other.dtype, requires_grad)
 
     @staticmethod
     def from_buffer(device: Device, layout: Layout, var buf: AnyBuffer) raises -> Self:
