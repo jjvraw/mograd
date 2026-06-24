@@ -20,6 +20,7 @@ from mograd.runtime.gpu.kernels.factory import *
 from mograd.runtime.gpu.kernels.elementwise import *
 from mograd.runtime.gpu.kernels.reduce import *
 from mograd.runtime.gpu.kernels.softmax import *
+from mograd.runtime.gpu.kernels.gather_scatter import *
 from mograd.runtime.gpu.kernels.utils import (
     dispatch_binary_contiguous,
     dispatch_binary_map,
@@ -780,7 +781,7 @@ def mograd_softmax_grad(
     ctx: DeviceContext,
 ) abi("Mojo") raises:
     # TODO: both a and b are always contiguous and same-shaped by
-    # construction (softmax_grad forces upstream.contiguous()). 
+    # construction (softmax_grad forces upstream.contiguous()).
     # This should handle arbitrary layout.
     @always_inline
     def body[d: DType]() capturing raises:
