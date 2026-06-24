@@ -357,6 +357,38 @@ def test_squeeze_rejects_non_one_dim() raises:
         _ = l.squeeze(0)
 
 
+def test_expand_stretches_size_one_axis() raises:
+    var l = Layout(3, 1)
+    var e = l.expand(3, 4)
+    assert_equal(e.rank(), 2)
+    assert_equal(e.shape(), IntTuple(3, 4))
+    assert_equal(e.stride(), IntTuple(l.stride(0), 0))
+
+
+def test_expand_keeps_matching_axis() raises:
+    var l = Layout(3, 1)
+    var e = l.expand(3, 4)
+    assert_equal(e.stride(0), l.stride(0))
+
+
+def test_expand_negative_one_keeps_size() raises:
+    var l = Layout(3, 1)
+    var e = l.expand(-1, 4)
+    assert_equal(e.shape(), IntTuple(3, 4))
+
+
+def test_expand_rejects_rank_mismatch() raises:
+    var l = Layout(3, 1)
+    with assert_raises():
+        _ = l.expand(3, 4, 5)
+
+
+def test_expand_rejects_non_one_axis_mismatch() raises:
+    var l = Layout(3, 4)
+    with assert_raises():
+        _ = l.expand(3, 5)
+
+
 def test_flatten_all() raises:
     var l = Layout(2, 3, 4)
     var f = l.flatten()

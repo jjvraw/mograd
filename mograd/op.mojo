@@ -336,8 +336,13 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
             return self
         return Self(Op(OpType.CONTIGUOUS, self.layout().as_contiguous(), self.dtype(), [self]))
 
-    def expand(self, layout: Layout) -> Self:
-        return Self(Op(OpType.EXPAND, layout, self.dtype(), [self]))
+    def expand(self, *shape: Int) raises -> Self:
+        # Left-pad rank via unsqueeze first (each already has a correct grad
+        # rule), so EXPAND itself only ever stretches axes at matching rank.
+        var src = self
+        for _ in range(len(shape) - self.layout().rank()):
+            src = src.unsqueeze(0)
+        return Self(Op(OpType.EXPAND, src.layout().expand(IntTuple(*shape)), self.dtype(), [src]))
 
     def slice(self, start: Int, stop: Int, step: Int = 1) raises -> Self:
         return Self(Op(OpType.SLICE, self.layout()[start:stop:step], self.dtype(), [self], {}))

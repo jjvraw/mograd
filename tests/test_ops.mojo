@@ -1,11 +1,9 @@
 from std.sys import has_accelerator
-from std.sys.info import has_apple_gpu_accelerator 
+from std.sys.info import has_apple_gpu_accelerator
 from std.testing import TestSuite, assert_almost_equal, assert_raises, assert_true
 
 from mograd import Tensor, Device
 from mograd.testing import assert_allclose, assert_close
-
-# TODO: Uniform, reshape
 
 # ===-------------------------------------------------------------------===#
 # Elementwise operations
@@ -581,6 +579,22 @@ def test_unsqueeze_negative_dim() raises:
     var x = Tensor.ones(device, (3, 4))
     var y = x.unsqueeze(-1)
     assert_true(y.shape(0) == 3 and y.shape(1) == 4 and y.shape(2) == 1)
+
+
+def test_expand_shape_and_values() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3], (3, 1))
+    var y = x.expand(3, 4)
+    assert_true(y.shape(0) == 3 and y.shape(1) == 4)
+    assert_allclose(y, [Float32(1), 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3])
+
+
+def test_expand_pads_rank() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3], (3,))
+    var y = x.expand(4, -1)
+    assert_true(y.shape(0) == 4 and y.shape(1) == 3)
+    assert_allclose(y, [Float32(1), 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3])
 
 
 def test_triu_2d() raises:

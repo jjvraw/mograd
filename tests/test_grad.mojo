@@ -3,7 +3,7 @@ from std.testing import TestSuite, assert_almost_equal, assert_equal, assert_tru
 
 import mograd.nn as nn
 from mograd import Tensor, Device
-from mograd.layout import Layout 
+from mograd.layout import Layout
 from mograd.testing import assert_allclose, assert_close
 
 
@@ -504,6 +504,48 @@ def test_squeeze_unsqueeze_roundtrip_grad() raises:
     var grads = loss.gradient([x])
     assert_allclose(grads[0], num, tol=0.05)
     assert_allclose(grads[0], [Float32(1), 1, 1, 1])
+
+
+def test_expand_grad() raises:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
+        return x.expand(3, 4).sum()
+
+    var device = Device()
+    var data: List[Float32] = [1.0, 2.0, 3.0]
+    var num = numerical_grad[fwd](device, data, (3, 1))
+    var x = Tensor(device, data, (3, 1), requires_grad=True)
+    var loss = x.expand(3, 4).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], [Float32(4), 4, 4])
+
+
+def test_expand_grad_multi_axis() raises:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
+        return x.expand(2, 4, 3).sum()
+
+    var device = Device()
+    var data: List[Float32] = [1.0, 2.0, 3.0]
+    var num = numerical_grad[fwd](device, data, (1, 1, 3))
+    var x = Tensor(device, data, (1, 1, 3), requires_grad=True)
+    var loss = x.expand(2, 4, 3).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], [Float32(8), 8, 8])
+
+
+def test_expand_grad_pads_rank() raises:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
+        return x.expand(4, -1).sum()
+
+    var device = Device()
+    var data: List[Float32] = [1.0, 2.0, 3.0]
+    var num = numerical_grad[fwd](device, data, (3,))
+    var x = Tensor(device, data, (3,), requires_grad=True)
+    var loss = x.expand(4, -1).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], [Float32(4), 4, 4])
 
 
 def test_triu_grad() raises:

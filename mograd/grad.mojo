@@ -49,6 +49,7 @@ struct Grad:
                 Rule(Pat(OpType.SQUEEZE), squeeze_grad),
                 Rule(Pat(OpType.UNSQUEEZE), unsqueeze_grad),
                 Rule(Pat(OpType.TRIU), triu_grad),
+                Rule(Pat(OpType.EXPAND), expand_grad),
             ]
         )
 
@@ -215,3 +216,13 @@ def unsqueeze_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
 def triu_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     var diagonal = node.attr_int("diagonal")
     return [upstream.triu(diagonal)]
+
+
+def expand_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    var src_layout = node.src(0).layout()
+    var out_layout = node.layout()
+    var grad = upstream
+    for i in range(out_layout.rank()):
+        if src_layout.shape(i) != out_layout.shape(i):
+            grad = grad.sum(i, keepdim=True)
+    return [grad]

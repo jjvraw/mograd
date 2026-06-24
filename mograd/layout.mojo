@@ -260,6 +260,37 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Writable):
                 new_strides.append(IntTuple(self._strides.value(src)))
         return Self(self.rank() + 1, new_shape, new_strides, self.base_offset)
 
+    def expand(self, *shape: Int, out layout: Self) raises:
+        """Returns a layout that broadcasts size-1 axes out to `shape`."""
+        layout = self.expand(IntTuple(*shape))
+
+    def expand(self, shape: IntTuple) raises -> Self:
+        """Returns a layout that broadcasts size-1 axes out to `shape`.
+
+        `shape` must have the same rank as this layout; pad rank first (e.g.
+        via repeated `unsqueeze(0)`) if it doesn't. A `-1` entry in `shape`
+        means "keep this axis's current size". Every other axis must either
+        already match `shape`, or have size 1, in which case it is stretched
+        with stride 0.
+        """
+        if len(shape) != self.rank():
+            raise Error(t"expand: target rank {String(len(shape))} does not match source rank {String(self.rank())}")
+        var new_shape = IntTuple()
+        var new_strides = IntTuple()
+        for i in range(self.rank()):
+            var target = shape.value(i) if shape.value(i) != -1 else self.shape(i)
+            if self.shape(i) == target:
+                new_shape.append(IntTuple(target))
+                new_strides.append(IntTuple(self._strides.value(i)))
+            elif self.shape(i) == 1:
+                new_shape.append(IntTuple(target))
+                new_strides.append(IntTuple(0))
+            else:
+                raise Error(
+                    t"expand: axis {String(i)} has size {String(self.shape(i))}, cannot expand to {String(target)}"
+                )
+        return Self(self.rank(), new_shape, new_strides, self.base_offset)
+
     def reduce_output_shape(self, axis: Int, keepdim: Bool) raises -> Self:
         """Returns the output layout after reducing along axis.
 
