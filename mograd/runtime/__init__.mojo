@@ -94,6 +94,8 @@ struct NativeRuntime(Runtime):
             Rule(Pat(OpType.SLICE), view),
             Rule(Pat(OpType.RESHAPE), view),
             Rule(Pat(OpType.TRANSPOSE), view),
+            Rule(Pat(OpType.SQUEEZE), view),
+            Rule(Pat(OpType.UNSQUEEZE), view),
             # TODO: Make layout aware.
             Rule(Pat(OpType.SOFTMAX), softmax),
             Rule(Pat(OpType.CROSS_ENTROPY), cross_entropy),

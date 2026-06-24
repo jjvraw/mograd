@@ -219,6 +219,34 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         """
         return Self(self.device, self.op.transpose(dim0, dim1), self.requires_grad)
 
+    def squeeze(self, dim: Optional[Int] = None) raises -> Self:
+        """Remove a dimension of size 1.
+
+        Args:
+            dim: Dimension to squeeze. If None, removes all dimensions of size 1.
+
+        Returns:
+            Tensor with specified dimension(s) removed.
+
+        Raises:
+            If the dimension is not of size 1.
+        """
+        return Self(self.device, self.op.squeeze(dim), self.requires_grad)
+
+    def unsqueeze(self, dim: Int) raises -> Self:
+        """Insert a dimension of size 1 at the specified position.
+
+        Args:
+            dim: Position to insert the new dimension.
+
+        Returns:
+            Tensor with new dimension inserted.
+
+        Raises:
+            If dim is out of bounds.
+        """
+        return Self(self.device, self.op.unsqueeze(dim), self.requires_grad)
+
     def __getitem__(self, s: Slice) raises -> Self:
         var dim = self.op.layout().shape(0)
         var start, stop, step = s.indices(dim)

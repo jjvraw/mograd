@@ -69,6 +69,8 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime CAST = OpType("CAST")
     comptime GATHER = OpType("GATHER")
     comptime SCATTER_ADD = OpType("SCATTER_ADD")
+    comptime SQUEEZE = OpType("SQUEEZE")
+    comptime UNSQUEEZE = OpType("UNSQUEEZE")
 
     # ===-------------------------------------------------------------------===#
     # Contraction ops
@@ -333,6 +335,20 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
 
     def slice(self, start: Int, stop: Int, step: Int = 1) raises -> Self:
         return Self(Op(OpType.SLICE, self.layout()[start:stop:step], self.dtype(), [self], {}))
+
+    def squeeze(self, dim: Optional[Int] = None) raises -> Self:
+        if dim:
+            var d = self.layout().normalise_dim(dim.value())
+            var new_layout = self.layout().squeeze(d)
+            attrs: Attrs = {"dim": d}
+            return Self(Op(OpType.SQUEEZE, new_layout, self.dtype(), [self], attrs=attrs^))
+        else:
+            return Self(Op(OpType.SQUEEZE, self.layout().squeeze_all(), self.dtype(), [self]))
+
+    def unsqueeze(self, dim: Int) raises -> Self:
+        var new_layout = self.layout().unsqueeze(dim)
+        attrs: Attrs = {"dim": dim}
+        return Self(Op(OpType.UNSQUEEZE, new_layout, self.dtype(), [self], attrs=attrs^))
 
     # ===-------------------------------------------------------------------===#
     # Contraction operations

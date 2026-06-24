@@ -335,6 +335,56 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Writable):
         layout = self.permute(axes)
 
     # ===-------------------------------------------------------------------===#
+    # Squeeze / Unsqueeze
+    # ===-------------------------------------------------------------------===#
+
+    def squeeze(self, dim: Int) raises -> Self:
+        """Remove a dimension of size 1 at position `dim`."""
+        var d = self.normalise_dim(dim)
+        if self.shape(d) != 1:
+            raise Error(t"squeeze: dimension {String(d)} has size {String(self.shape(d))}, not 1")
+
+        var new_shape = IntTuple()
+        var new_strides = IntTuple()
+        for i in range(self.rank()):
+            if i != d:
+                new_shape.append(IntTuple(self.shape(i)))
+                new_strides.append(IntTuple(self._strides.value(i)))
+
+        return Self(self.rank() - 1, new_shape, new_strides, self.base_offset)
+
+    def squeeze_all(self) raises -> Self:
+        """Remove all dimensions of size 1."""
+        var new_shape = IntTuple()
+        var new_strides = IntTuple()
+        for i in range(self.rank()):
+            if self.shape(i) != 1:
+                new_shape.append(IntTuple(self.shape(i)))
+                new_strides.append(IntTuple(self._strides.value(i)))
+
+        return Self(len(new_shape), new_shape, new_strides, self.base_offset)
+
+    def unsqueeze(self, dim: Int) raises -> Self:
+        """Insert a dimension of size 1 at position `dim`."""
+        var d = self._handle_bounds(
+            dim, self.rank() + 1, t"unsqueeze: dimension {String(dim)} out of bounds for rank {String(self.rank() + 1)}"
+        )
+
+        var new_shape = IntTuple()
+        var new_strides = IntTuple()
+
+        for i in range(self.rank() + 1):
+            if i == d:
+                new_shape.append(IntTuple(1))
+                new_strides.append(IntTuple(0))
+            else:
+                var src_idx = i if i < d else i - 1
+                new_shape.append(IntTuple(self.shape(src_idx)))
+                new_strides.append(IntTuple(self._strides.value(src_idx)))
+
+        return Self(self.rank() + 1, new_shape, new_strides, self.base_offset)
+
+    # ===-------------------------------------------------------------------===#
     # Permutation detection
     # ===-------------------------------------------------------------------===#
 

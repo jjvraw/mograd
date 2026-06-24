@@ -436,6 +436,76 @@ def test_simple_mlp_grad() raises:
     assert_allclose(grads[2], numerical_grad[fwd_w3](device, w3_data, (3, 4)), tol=0.05)
 
 
+def test_unsqueeze_grad() raises:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
+        return x.unsqueeze(0).sum()
+
+    var device = Device()
+    var data: List[Float32] = [1.0, 2.0, 3.0, 4.0]
+    var num = numerical_grad[fwd](device, data, (4,))
+    var x = Tensor(device, data, (4,), requires_grad=True)
+    var loss = x.unsqueeze(0).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], [Float32(1), 1, 1, 1])
+
+
+def test_unsqueeze_grad_2d() raises:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
+        return x.unsqueeze(1).sum()
+
+    var device = Device()
+    var data: List[Float32] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    var num = numerical_grad[fwd](device, data, (2, 3))
+    var x = Tensor(device, data, (2, 3), requires_grad=True)
+    var loss = x.unsqueeze(1).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], Tensor.ones(device, (2, 3)))
+
+
+def test_squeeze_grad() raises:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
+        return x.squeeze(0).sum()
+
+    var device = Device()
+    var data: List[Float32] = [1.0, 2.0, 3.0, 4.0]
+    var num = numerical_grad[fwd](device, data, (1, 4))
+    var x = Tensor(device, data, (1, 4), requires_grad=True)
+    var loss = x.squeeze(0).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], [Float32(1), 1, 1, 1])
+
+
+def test_squeeze_grad_2d() raises:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
+        return x.squeeze(1).sum()
+
+    var device = Device()
+    var data: List[Float32] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    var num = numerical_grad[fwd](device, data, (2, 1, 3))
+    var x = Tensor(device, data, (2, 1, 3), requires_grad=True)
+    var loss = x.squeeze(1).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], Tensor.ones(device, (2, 1, 3)))
+
+
+def test_squeeze_unsqueeze_roundtrip_grad() raises:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
+        return x.unsqueeze(0).squeeze(0).sum()
+
+    var device = Device()
+    var data: List[Float32] = [1.0, 2.0, 3.0, 4.0]
+    var num = numerical_grad[fwd](device, data, (4,))
+    var x = Tensor(device, data, (4,), requires_grad=True)
+    var loss = x.unsqueeze(0).squeeze(0).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], [Float32(1), 1, 1, 1])
+
+
 def main() raises:
     comptime assert has_accelerator(), "GPU required to run gradient tests"
     TestSuite.discover_tests[__functions_in_module()]().run()

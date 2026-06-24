@@ -46,6 +46,8 @@ struct Grad:
                 Rule(Pat(OpType.TRANSPOSE), transpose_grad),
                 Rule(Pat(OpType.GATHER), gather_grad),
                 Rule(Pat(OpType.SCATTER_ADD), scatter_add_grad),
+                Rule(Pat(OpType.SQUEEZE), squeeze_grad),
+                Rule(Pat(OpType.UNSQUEEZE), unsqueeze_grad),
             ]
         )
 
@@ -188,3 +190,22 @@ def scatter_add_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     var dummy = OpRef(Op(OpType.EXPAND, indices.layout(), indices.dtype(), [upstream]))
     var grad_values = upstream.gather(indices)
     return [dummy, grad_values]
+
+
+def squeeze_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    if "dim" in node.attrs():
+        var dim = node.attr_int("dim")
+        return [upstream.unsqueeze(dim)]
+    else:
+        # squeeze_all: reconstruct original shape by finding where dims were size 1
+        var in_layout = node.src(0).layout()
+        var expanded = upstream
+        for i in range(in_layout.rank()):
+            if in_layout.shape(i) == 1:
+                expanded = expanded.unsqueeze(i)
+        return [expanded]
+
+
+def unsqueeze_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    var dim = node.attr_int("dim")
+    return [upstream.squeeze(dim)]

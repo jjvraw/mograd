@@ -1,4 +1,4 @@
-from std.testing import TestSuite, assert_equal, assert_true, assert_false
+from std.testing import TestSuite, assert_equal, assert_true, assert_false, assert_raises
 
 from layout.int_tuple import IntTuple, crd2idx 
 
@@ -292,6 +292,69 @@ def test_view_rejects_multiple_inferred_dims() raises:
         assert_true(False)
     except:
         assert_true(True)
+
+
+def test_unsqueeze_at_0() raises:
+    var l = Layout(3, 4)
+    var u = l.unsqueeze(0)
+    assert_equal(u.rank(), 3)
+    assert_equal(u.shape(), IntTuple(1, 3, 4))
+    assert_equal(u.stride(), IntTuple(0, 4, 1))
+
+
+def test_unsqueeze_at_end() raises:
+    var l = Layout(3, 4)
+    var u = l.unsqueeze(2)
+    assert_equal(u.rank(), 3)
+    assert_equal(u.shape(), IntTuple(3, 4, 1))
+    assert_equal(u.stride(), IntTuple(4, 1, 0))
+
+
+def test_unsqueeze_negative_index() raises:
+    var l = Layout(3, 4)
+    var u = l.unsqueeze(-1)
+    assert_equal(u.shape(), IntTuple(3, 4, 1))
+
+
+def test_squeeze_at_0() raises:
+    var l = Layout(1, 3, 4)
+    var s = l.squeeze(0)
+    assert_equal(s.rank(), 2)
+    assert_equal(s.shape(), IntTuple(3, 4))
+    assert_equal(s.stride(), IntTuple(4, 1))
+
+
+def test_squeeze_negative_index() raises:
+    var l = Layout(3, 4, 1)
+    var s = l.squeeze(-1)
+    assert_equal(s.shape(), IntTuple(3, 4))
+
+
+def test_squeeze_all() raises:
+    var l = Layout(1, 3, 1, 4, 1)
+    var s = l.squeeze_all()
+    assert_equal(s.rank(), 2)
+    assert_equal(s.shape(), IntTuple(3, 4))
+
+
+def test_squeeze_all_preserves_non_ones() raises:
+    var l = Layout(2, 1, 3, 1, 4)
+    var s = l.squeeze_all()
+    assert_equal(s.shape(), IntTuple(2, 3, 4))
+
+
+def test_unsqueeze_squeeze_roundtrip() raises:
+    var l = Layout(3, 4)
+    var u = l.unsqueeze(1)
+    var s = u.squeeze(1)
+    assert_equal(s.shape(), l.shape())
+    assert_equal(s.stride(), l.stride())
+
+
+def test_squeeze_rejects_non_one_dim() raises:
+    var l = Layout(3, 4)
+    with assert_raises():
+        _ = l.squeeze(0)
 
 
 def main() raises:

@@ -527,6 +527,62 @@ def test_scatter_add_is_gather_inverse() raises:
     assert_allclose(gathered.scatter_add(indices, 4), [Float32(0), 1, 2, 0, 0, 0, 6, 7, 8, 9, 10, 11])
 
 
+def test_unsqueeze_shape() raises:
+    var device = Device()
+    var x = Tensor.ones(device, (3, 4))
+    var y = x.unsqueeze(0)
+    assert_true(y.shape(0) == 1 and y.shape(1) == 3 and y.shape(2) == 4)
+
+
+def test_unsqueeze_values() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4], (2, 2))
+    var y = x.unsqueeze(0)
+    assert_allclose(y, [Float32(1), 2, 3, 4])
+
+
+def test_unsqueeze_middle() raises:
+    var device = Device()
+    var x = Tensor.ones(device, (2, 3))
+    var y = x.unsqueeze(1)
+    assert_true(y.shape(0) == 2 and y.shape(1) == 1 and y.shape(2) == 3)
+
+
+def test_squeeze_shape() raises:
+    var device = Device()
+    var x = Tensor.ones(device, (1, 3, 4))
+    var y = x.squeeze(0)
+    assert_true(y.shape(0) == 3 and y.shape(1) == 4)
+
+
+def test_squeeze_values() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4, 5, 6], (1, 2, 3))
+    var y = x.squeeze(0)
+    assert_allclose(y, [Float32(1), 2, 3, 4, 5, 6])
+
+
+def test_squeeze_middle() raises:
+    var device = Device()
+    var x = Tensor.ones(device, (2, 1, 3))
+    var y = x.squeeze(1)
+    assert_true(y.shape(0) == 2 and y.shape(1) == 3)
+
+
+def test_squeeze_unsqueeze_roundtrip() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4], (2, 2))
+    var y = x.unsqueeze(1).squeeze(1)
+    assert_allclose(y, x)
+
+
+def test_unsqueeze_negative_dim() raises:
+    var device = Device()
+    var x = Tensor.ones(device, (3, 4))
+    var y = x.unsqueeze(-1)
+    assert_true(y.shape(0) == 3 and y.shape(1) == 4 and y.shape(2) == 1)
+
+
 def main() raises:
     comptime assert has_accelerator(), "GPU required to run tensor op tests"
     TestSuite.discover_tests[__functions_in_module()]().run()
