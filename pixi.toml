@@ -41,13 +41,13 @@ mojo = ">=1.0.0b2.dev2026050306,<2"
 # ===-------------------------------------------------------------------===#
 
 [feature.lint.tasks]
-format-check            = { cmd = "mojo format -l 120 mograd/ examples/ benches/ && git diff --exit-code" }
+format-check            = { cmd = "mojo format -l 120 mograd/ tests/ examples/ benches/ && git diff --exit-code" }
 
 [tasks]
 ensure-gpu              = { cmd = "bash scripts/build_gpu.sh" }
 build-gpu               = { cmd = "MOGRAD_FORCE_BUILD=1 bash scripts/build_gpu.sh" }
 
-format                  = { cmd = "mojo format -l 120 mograd/ examples/ benches/"}
+format                  = { cmd = "mojo format -l 120 mograd/ tests/ examples/ benches/"}
 
 # Test GPU
 test-grad               = { cmd = "mojo -I . tests/test_grad.mojo",             depends-on = ["ensure-gpu"] }

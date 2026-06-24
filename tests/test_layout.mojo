@@ -1,16 +1,18 @@
 from std.testing import TestSuite, assert_equal, assert_true, assert_false, assert_raises
 
-from layout.int_tuple import IntTuple, crd2idx 
+from layout.int_tuple import IntTuple, crd2idx
 
 from mograd.layout import Layout
 
 # TODO: Negative tests
+
 
 def test_row_major_contiguous_1d() raises:
     var l = Layout(3)
     assert_equal(l.rank(), 1)
     assert_equal(l.shape(), IntTuple(3))
     assert_equal(l.stride(), IntTuple(1))
+
 
 def test_row_major_contiguous_2d() raises:
     var l = Layout(3, 4)
@@ -26,6 +28,7 @@ def test_stride_1d() raises:
     for i in range(l.numel()):
         assert_equal(i, crd2idx(i, l.shape(), l.stride()))
 
+
 def test_stride_2d() raises:
     var l = Layout(64, 102)
 
@@ -36,6 +39,7 @@ def test_stride_2d() raises:
             var actual = crd2idx(IntTuple(row, col), l.shape(), l.stride())
             assert_equal(expected, actual)
 
+
 def test_bounds() raises:
     var l = Layout(64, 102)
 
@@ -43,6 +47,7 @@ def test_bounds() raises:
     assert_equal(l.stride(-2), 102)
 
     assert_equal(l.stride(1), 1)
+
 
 def test_permute_2d() raises:
     var l = Layout(3, 4)
@@ -54,6 +59,7 @@ def test_permute_2d() raises:
     assert_equal(l.stride(), IntTuple(1, 4))
     assert_equal(l.base_offset, 0)
     assert_false(l.is_contiguous())
+
 
 def test_permute_2d_offsets() raises:
     var original = Layout(3, 4)
@@ -79,6 +85,7 @@ def test_permute_2d_offsets() raises:
 
     assert_false(permuted.is_contiguous())
 
+
 def test_permute_negative_axes_2d() raises:
     var l = Layout(3, 4)
 
@@ -88,6 +95,7 @@ def test_permute_negative_axes_2d() raises:
     assert_equal(l.stride(), IntTuple(1, 4))
     assert_false(l.is_contiguous())
 
+
 def test_permutation_of_contiguous_identity() raises:
     var l = Layout(3, 4)
 
@@ -95,6 +103,7 @@ def test_permutation_of_contiguous_identity() raises:
 
     assert_true(order)
     assert_equal(order.value(), IntTuple(0, 1))
+
 
 def test_permutation_of_contiguous_2d_transpose() raises:
     var l = Layout(3, 4).permute(1, 0)
@@ -104,6 +113,7 @@ def test_permutation_of_contiguous_2d_transpose() raises:
     assert_true(order)
     assert_equal(order.value(), IntTuple(1, 0))
 
+
 def test_permutation_of_contiguous_swaps_last_two_axes_only() raises:
     var l = Layout(2, 3, 4).permute(0, 2, 1)
 
@@ -111,6 +121,7 @@ def test_permutation_of_contiguous_swaps_last_two_axes_only() raises:
 
     assert_true(order)
     assert_equal(order.value(), IntTuple(0, 2, 1))
+
 
 def test_permutation_of_contiguous_via_transpose_2d() raises:
     var l = Layout(3, 4).transpose()
@@ -120,6 +131,7 @@ def test_permutation_of_contiguous_via_transpose_2d() raises:
     assert_true(order)
     assert_equal(order.value(), IntTuple(1, 0))
 
+
 def test_permutation_of_contiguous_via_transpose_3d_batched() raises:
     var l = Layout(2, 3, 4).transpose()
 
@@ -127,6 +139,7 @@ def test_permutation_of_contiguous_via_transpose_3d_batched() raises:
 
     assert_true(order)
     assert_equal(order.value(), IntTuple(0, 2, 1))
+
 
 def test_permutation_of_contiguous_via_transpose_3d_explicit_dims() raises:
     # Explicit, non-default dims: swap the first two axes, leave the last untouched.
@@ -137,6 +150,7 @@ def test_permutation_of_contiguous_via_transpose_3d_explicit_dims() raises:
     assert_true(order)
     assert_equal(order.value(), IntTuple(1, 0, 2))
 
+
 def test_permutation_of_contiguous_via_transpose_negative_dims() raises:
     var l = Layout(2, 3, 4).transpose(-3, -1)
 
@@ -145,15 +159,18 @@ def test_permutation_of_contiguous_via_transpose_negative_dims() raises:
     assert_true(order)
     assert_equal(order.value(), IntTuple(2, 1, 0))
 
+
 def test_permutation_of_contiguous_rejects_broadcast() raises:
     var l = Layout(3, 4).expand_axis(0, 5)
 
     assert_false(l.permutation_of_contiguous())
 
+
 def test_permutation_of_contiguous_rejects_slice() raises:
     var l = Layout(10)[0:10:2]
 
     assert_false(l.permutation_of_contiguous())
+
 
 def test_view_1d_to_2d() raises:
     var l = Layout(12)
@@ -167,6 +184,7 @@ def test_view_1d_to_2d() raises:
     assert_equal(v.numel(), l.numel())
     assert_true(v.is_contiguous())
 
+
 def test_view_2d_to_1d() raises:
     var l = Layout(3, 4)
 
@@ -178,6 +196,7 @@ def test_view_2d_to_1d() raises:
     assert_equal(v.base_offset, l.base_offset)
     assert_equal(v.numel(), l.numel())
     assert_true(v.is_contiguous())
+
 
 def test_view_2d_to_2d() raises:
     var l = Layout(3, 4)
@@ -191,6 +210,7 @@ def test_view_2d_to_2d() raises:
     assert_equal(v.numel(), l.numel())
     assert_true(v.is_contiguous())
 
+
 def test_view_preserves_linear_offsets() raises:
     var l = Layout(3, 4)
     var v = l.view(2, 6)
@@ -203,6 +223,7 @@ def test_view_preserves_linear_offsets() raises:
         var new_offset = crd2idx(new_coord, v.shape(), v.stride())
 
         assert_equal(old_offset, new_offset)
+
 
 def test_slice_1d_simple() raises:
     var l = Layout(10)
@@ -247,6 +268,7 @@ def test_slice_1d_reverse() raises:
     assert_equal(s.stride(), IntTuple(-1))
     assert_equal(s.base_offset, 9)
 
+
 def test_view_infers_last_dim() raises:
     var l = Layout(25088)
 
@@ -258,6 +280,7 @@ def test_view_infers_last_dim() raises:
     assert_equal(v.base_offset, l.base_offset)
     assert_equal(v.numel(), l.numel())
     assert_true(v.is_contiguous())
+
 
 def test_view_infers_first_dim() raises:
     var l = Layout(25088)
@@ -271,6 +294,7 @@ def test_view_infers_first_dim() raises:
     assert_equal(v.numel(), l.numel())
     assert_true(v.is_contiguous())
 
+
 def test_view_inferred_shape_preserves_linear_offsets() raises:
     var l = Layout(25088)
     var v = l.view(32, -1)
@@ -283,6 +307,7 @@ def test_view_inferred_shape_preserves_linear_offsets() raises:
         var new_offset = crd2idx(new_coord, v.shape(), v.stride())
 
         assert_equal(old_offset, new_offset)
+
 
 def test_view_rejects_multiple_inferred_dims() raises:
     var l = Layout(12)

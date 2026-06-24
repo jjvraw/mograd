@@ -8,6 +8,7 @@ from mograd.scheduler import BoundExecFn, SchedulerRules
 from mograd.simplify import Simplifier, RewriteFn
 from mograd.testing import leaf, assert_graph
 
+
 # Shared dummy kernel, only IR-level tests here.
 def dummy(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     raise Error("dummy")
@@ -54,9 +55,7 @@ def test_compound_rule_preserves_dtype() raises:
     var y = leaf((2, 3), DType.float32)
 
     var extra = SchedulerRules()
-    var result = Simplifier(NO_REWRITES()).run(
-        x + y, [Rule(Pat(OpType.ADD, [Pat(), Pat()]), dummy)], extra
-    )
+    var result = Simplifier(NO_REWRITES()).run(x + y, [Rule(Pat(OpType.ADD, [Pat(), Pat()]), dummy)], extra)
 
     assert_true(result.dtype() == DType.float32)
 
@@ -107,9 +106,7 @@ def test_same_rule_matched_twice_registers_exec_once() raises:
     var z = leaf((2, 3))
 
     var extra = SchedulerRules()
-    _ = Simplifier(NO_REWRITES()).run(
-        (x + y) + z, [Rule(Pat(OpType.ADD, [Pat(), Pat()]), dummy)], extra
-    )
+    _ = Simplifier(NO_REWRITES()).run((x + y) + z, [Rule(Pat(OpType.ADD, [Pat(), Pat()]), dummy)], extra)
 
     assert_equal(len(extra), 1)
 

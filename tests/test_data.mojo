@@ -14,6 +14,7 @@ def _fresh_cache_dir() raises -> String:
     var tempfile = Python.import_module("tempfile")
     return String(tempfile.mkdtemp())
 
+
 def test_mnist_shapes() raises:
     var device = Device()
     var data = mnist(device)

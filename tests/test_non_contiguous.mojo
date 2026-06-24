@@ -44,12 +44,14 @@ def test_add_both_strided_different_offsets() raises:
     c = a[0:6:2] + b[1:6:2]
     assert_allclose(c, [Float32(21), 21, 43, 43, 65, 65])
 
+
 def test_sub_strided() raises:
     var device = Device()
     var a = Tensor(device, [Float32(10), 20, 30, 40, 50, 60], (3, 2))
     var b = Tensor.full(device, (2, 2), Float32(1))
     var c = a[0:3:2] - b
     assert_allclose(c, [Float32(9), 19, 49, 59])
+
 
 def test_log_strided() raises:
     var device = Device()

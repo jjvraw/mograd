@@ -40,6 +40,7 @@ def test_plain_matmul_not_rewritten() raises:
         Pat(OpType.MATMUL, [Pat(), Pat()]),
     )
 
+
 def test_rewrite_preserves_shape() raises:
     var a = leaf((5, 7))
     var b = leaf((3, 7))

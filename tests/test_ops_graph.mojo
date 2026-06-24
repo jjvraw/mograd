@@ -3,6 +3,7 @@ from std.testing import TestSuite, assert_true, assert_false, assert_equal
 from mograd.op import OpType
 from mograd.testing import leaf
 
+
 def test_matmul_materializes_noncollapsible_batch_dims() raises:
     # transpose(1, 2) scrambles B/H's relative order, so it must be wrapped in CONTIGUOUS.
     var a = leaf((2, 2, 2, 2)).transpose(1, 2)
@@ -23,4 +24,3 @@ def test_matmul_does_not_materialize_collapsible_transpose() raises:
 
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
-

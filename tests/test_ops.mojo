@@ -57,9 +57,7 @@ def test_batched_matmul_transpose_b_rank3() raises:
 def test_batched_matmul_rank4() raises:
     var device = Device()
     var a = Tensor(device, [Float32(i) for i in range(16)], (2, 2, 2, 2))
-    var identity = Tensor(
-        device, [Float32(1), 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1], (2, 2, 2, 2)
-    )
+    var identity = Tensor(device, [Float32(1), 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1], (2, 2, 2, 2))
     assert_allclose(a @ identity, [Float32(i) for i in range(16)])
 
 
@@ -94,9 +92,7 @@ def test_transpose_single_batch_axis_then_matmul() raises:
 def test_attention_style_middle_transpose_matmul() raises:
     var device = Device()
     var a = Tensor(device, [Float32(i) for i in range(16)], (2, 2, 2, 2)).transpose(1, 2)
-    var identity = Tensor(
-        device, [Float32(1), 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1], (2, 2, 2, 2)
-    )
+    var identity = Tensor(device, [Float32(1), 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1], (2, 2, 2, 2))
     assert_allclose(a @ identity, a.contiguous())
 
 
@@ -164,11 +160,24 @@ def test_argmax() raises:
 
 def test_argmax_axis1() raises:
     var device = Device()
-    var x = Tensor(device, [
-        Float32(1), 3, 2, 0,
-        Float32(4), 0, 1, 2,
-        Float32(0), 2, 3, 1,
-    ], (3, 4))
+    var x = Tensor(
+        device,
+        [
+            Float32(1),
+            3,
+            2,
+            0,
+            Float32(4),
+            0,
+            1,
+            2,
+            Float32(0),
+            2,
+            3,
+            1,
+        ],
+        (3, 4),
+    )
     var out = x.argmax(axis=1)
     assert_true(out.shape(0) == 3)
     assert_allclose(out, [Float32(1), 0, 2])
@@ -176,11 +185,24 @@ def test_argmax_axis1() raises:
 
 def test_argmax_axis0() raises:
     var device = Device()
-    var x = Tensor(device, [
-        Float32(1), 3, 2, 0,
-        Float32(4), 0, 1, 2,
-        Float32(0), 2, 3, 1,
-    ], (3, 4))
+    var x = Tensor(
+        device,
+        [
+            Float32(1),
+            3,
+            2,
+            0,
+            Float32(4),
+            0,
+            1,
+            2,
+            Float32(0),
+            2,
+            3,
+            1,
+        ],
+        (3, 4),
+    )
     var out = x.argmax(axis=0)
     assert_true(out.shape(0) == 4)
     assert_allclose(out, [Float32(1), 0, 2, 1])
@@ -188,11 +210,24 @@ def test_argmax_axis0() raises:
 
 def test_argmax_keepdim() raises:
     var device = Device()
-    var x = Tensor(device, [
-        Float32(1), 3, 2, 0,
-        Float32(4), 0, 1, 2,
-        Float32(0), 2, 3, 1,
-    ], (3, 4))
+    var x = Tensor(
+        device,
+        [
+            Float32(1),
+            3,
+            2,
+            0,
+            Float32(4),
+            0,
+            1,
+            2,
+            Float32(0),
+            2,
+            3,
+            1,
+        ],
+        (3, 4),
+    )
     var out = x.argmax(axis=1, keepdim=True)
     assert_true(out.shape(0) == 3 and out.shape(1) == 1)
     assert_allclose(out, [Float32(1), 0, 2])
@@ -200,14 +235,36 @@ def test_argmax_keepdim() raises:
 
 def test_argmax_axis1_3d() raises:
     var device = Device()
-    var x = Tensor(device, [
-        Float32(4), 3, 2, 1,
-        Float32(1), 4, 3, 2,
-        Float32(2), 1, 4, 3,
-        Float32(1), 2, 3, 4,
-        Float32(4), 1, 2, 3,
-        Float32(3), 4, 1, 2,
-    ], (2, 3, 4))
+    var x = Tensor(
+        device,
+        [
+            Float32(4),
+            3,
+            2,
+            1,
+            Float32(1),
+            4,
+            3,
+            2,
+            Float32(2),
+            1,
+            4,
+            3,
+            Float32(1),
+            2,
+            3,
+            4,
+            Float32(4),
+            1,
+            2,
+            3,
+            Float32(3),
+            4,
+            1,
+            2,
+        ],
+        (2, 3, 4),
+    )
     var out = x.argmax(axis=1)
     assert_true(out.shape(0) == 2 and out.shape(1) == 4)
     assert_allclose(out, [Float32(0), 1, 2, 2, 1, 2, 0, 0])
@@ -215,11 +272,24 @@ def test_argmax_axis1_3d() raises:
 
 def test_argmax_negative_axis() raises:
     var device = Device()
-    var x = Tensor(device, [
-        Float32(1), 3, 2, 0,
-        Float32(4), 0, 1, 2,
-        Float32(0), 2, 3, 1,
-    ], (3, 4))
+    var x = Tensor(
+        device,
+        [
+            Float32(1),
+            3,
+            2,
+            0,
+            Float32(4),
+            0,
+            1,
+            2,
+            Float32(0),
+            2,
+            3,
+            1,
+        ],
+        (3, 4),
+    )
     var out_neg = x.argmax(axis=-1)
     var out_pos = x.argmax(axis=1)
     assert_allclose(out_neg, out_pos)
@@ -255,6 +325,7 @@ def test_sum() raises:
     var device = Device()
     var x = Tensor(device, [Float32(1), 2, 3, 4], (4,))
     assert_close(x.sum(), Float32(10.0))
+
 
 def test_sum_axis0() raises:
     var device = Device()
@@ -400,6 +471,7 @@ def test_contiguous_transpose_is_not_contiguous() raises:
     var x = Tensor.ones(device, (3, 4))
     var t = x.transpose()
     assert_true(not t.is_contiguous())
+
 
 def test_contiguous_transpose_after_contiguous_is_contiguous() raises:
     var device = Device()
