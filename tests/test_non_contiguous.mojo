@@ -5,6 +5,23 @@ from mograd import Tensor, Device
 from mograd.layout import Layout
 from mograd.testing import assert_allclose, assert_close
 
+comptime FwdFn = def(x: Tensor) thin raises -> Tensor
+
+
+def numerical_grad[
+    fwd: FwdFn
+](device: Device, data: List[Float32], shape: Layout, eps: Float32 = 1e-3,) raises -> List[Float32]:
+    var grads = List[Float32]()
+    for i in range(len(data)):
+        var d_plus = data.copy()
+        var d_minus = data.copy()
+        d_plus[i] += eps
+        d_minus[i] -= eps
+        var f_plus = fwd(Tensor(device, d_plus, shape)).item()
+        var f_minus = fwd(Tensor(device, d_minus, shape)).item()
+        grads.append((f_plus - f_minus) / (Float32(2.0) * eps))
+    return grads^
+
 
 def test_add_strided_step2() raises:
     device = Device()
@@ -291,6 +308,51 @@ def test_cross_entropy_grad_transposed_logits() raises:
     var loss = t.cross_entropy(labels)
     var grads = loss.gradient([a])
     assert_allclose(grads[0], [Float32(-0.440398), 0.059601, 0.440398, -0.059601], tol=1e-3)
+
+
+def test_cross_entropy_grad_transposed_labels() raises:
+    def fwd(x: Tensor) raises -> Tensor:
+        var labels_base = Tensor(x.device.value(), [Float32(0.3), 0.9, 0.7, 0.1], (2, 2))
+        return x.cross_entropy(labels_base.transpose())
+
+    var device = Device()
+    var data: List[Float32] = [1.0, 2.0, 3.0, 4.0]
+    var num = numerical_grad[fwd](device, data, (2, 2))
+    var logits = Tensor(device, data, (2, 2), requires_grad=True)
+    var labels_base = Tensor(device, [Float32(0.3), 0.9, 0.7, 0.1], (2, 2))
+    var t_labels = labels_base.transpose()
+    assert_true(not t_labels.is_contiguous())
+    var loss = logits.cross_entropy(t_labels)
+    var grads = loss.gradient([logits])
+    assert_allclose(grads[0], num, tol=0.05)
+
+
+def test_cross_entropy_both_strided_independently() raises:
+    var device = Device()
+    var logits_full = Tensor.randn(device, (8, 3))
+    var sl = logits_full[0:8:2]
+    assert_true(not sl.is_contiguous())
+
+    var labels_data: List[Float32] = [1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0]
+    var labels_base = Tensor(device, labels_data, (3, 4))
+    var t_labels = labels_base.transpose()
+    assert_true(not t_labels.is_contiguous())
+
+    var loss_strided = sl.cross_entropy(t_labels)
+    var loss_contig = sl.contiguous().cross_entropy(t_labels.contiguous())
+    assert_close(loss_strided, loss_contig.item(), tol=1e-4)
+
+
+def test_cross_entropy_strided_larger_shape() raises:
+    var device = Device()
+    var logits_full = Tensor.randn(device, (16, 5))
+    var sl = logits_full[0:16:2]
+    assert_true(not sl.is_contiguous())
+    var label_ids = Tensor(device, [Int64(0), 1, 2, 3, 4, 0, 1, 2], (8,))
+    var labels = label_ids.one_hot(5).cast(DType.float32)
+    var loss_strided = sl.cross_entropy(labels)
+    var loss_contig = sl.contiguous().cross_entropy(labels)
+    assert_close(loss_strided, loss_contig.item(), tol=1e-4)
 
 
 def test_reshape_strided() raises:

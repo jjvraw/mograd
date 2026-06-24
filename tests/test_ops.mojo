@@ -175,6 +175,16 @@ def test_cross_entropy_certain_prediction() raises:
     assert_close(logits.cross_entropy(labels.cast(DType.float32)), Float32(0.0), tol=1e-3)
 
 
+def test_cross_entropy_rank3_matches_reshape() raises:
+    var device = Device()
+    var logits = Tensor.randn(device, (2, 3, 4))
+    var label_ids = Tensor(device, [Int64(0), 2, 1, 3, 0, 1], (6,))
+    var labels = label_ids.one_hot(4).cast(DType.float32).reshape((2, 3, 4))
+    var loss_rank3 = logits.cross_entropy(labels)
+    var loss_reshaped = logits.reshape((6, 4)).cross_entropy(labels.reshape((6, 4)))
+    assert_close(loss_rank3, loss_reshaped.item(), tol=1e-4)
+
+
 def test_slice_rows() raises:
     var device = Device()
     var data: List[Float32] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]

@@ -7,7 +7,7 @@ from mograd.layout import Layout
 from mograd.testing import assert_allclose, assert_close
 
 
-comptime FwdFn = def(x: Tensor) thin raises -> Tensor[]
+comptime FwdFn = def(x: Tensor) thin raises -> Tensor
 
 
 def numerical_grad[
@@ -26,7 +26,7 @@ def numerical_grad[
 
 
 def test_scale_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return (x * Float32(3.0)).sum()
 
     var device = Device()
@@ -40,7 +40,7 @@ def test_scale_grad() raises:
 
 
 def test_sum_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.sum()
 
     var device = Device()
@@ -54,7 +54,7 @@ def test_sum_grad() raises:
 
 
 def test_sum_axis0_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.sum(axis=0).sum()
 
     var device = Device()
@@ -68,7 +68,7 @@ def test_sum_axis0_grad() raises:
 
 
 def test_sum_axis1_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.sum(axis=1).sum()
 
     var device = Device()
@@ -82,7 +82,7 @@ def test_sum_axis1_grad() raises:
 
 
 def test_mean_axis1_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.mean(axis=1).sum()
 
     var device = Device()
@@ -96,7 +96,7 @@ def test_mean_axis1_grad() raises:
 
 
 def test_sum_axis_keepdim_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.sum(axis=1, keepdim=True).sum()
 
     var device = Device()
@@ -110,7 +110,7 @@ def test_sum_axis_keepdim_grad() raises:
 
 
 def test_sum_axis_3d_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.sum(axis=1).sum()
 
     var device = Device()
@@ -126,7 +126,7 @@ def test_sum_axis_3d_grad() raises:
 
 
 def test_relu_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.relu().sum()
 
     var device = Device()
@@ -165,7 +165,7 @@ def test_relu_zero_boundary() raises:
 
 
 def test_log_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.log().sum()
 
     var device = Device()
@@ -179,7 +179,7 @@ def test_log_grad() raises:
 
 
 def test_neg_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return (-x).sum()
 
     var device = Device()
@@ -193,7 +193,7 @@ def test_neg_grad() raises:
 
 
 def test_exp_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.exp().sum()
 
     var device = Device()
@@ -208,7 +208,7 @@ def test_exp_grad() raises:
 
 
 def test_sqrt_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.sqrt().sum()
 
     var device = Device()
@@ -222,7 +222,7 @@ def test_sqrt_grad() raises:
 
 
 def test_div_grad_numerator() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         var b = Tensor(x.device.value(), [Float32(2.0), 4.0, 8.0], (3,))
         return (x / b).sum()
 
@@ -238,7 +238,7 @@ def test_div_grad_numerator() raises:
 
 
 def test_div_grad_denominator() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         var a = Tensor(x.device.value(), [Float32(4.0), 8.0, 16.0], (3,))
         return (a / x).sum()
 
@@ -255,7 +255,7 @@ def test_div_grad_denominator() raises:
 
 
 def test_reshape_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.reshape((2, 2)).sum()
 
     var device = Device()
@@ -269,7 +269,7 @@ def test_reshape_grad() raises:
 
 
 def test_transpose_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.transpose().sum()
 
     var device = Device()
@@ -283,7 +283,7 @@ def test_transpose_grad() raises:
 
 
 def test_matmul_grad() raises:
-    def fwd(a: Tensor[]) raises -> Tensor[]:
+    def fwd(a: Tensor) raises -> Tensor:
         var b = Tensor(a.device.value(), [Float32(1.0), 2.0, 3.0, 4.0, 5.0, 6.0], (3, 2))
         return (a @ b).sum()
 
@@ -298,7 +298,7 @@ def test_matmul_grad() raises:
 
 
 def test_matmul_grad_b() raises:
-    def fwd(b: Tensor[]) raises -> Tensor[]:
+    def fwd(b: Tensor) raises -> Tensor:
         var a = Tensor(b.device.value(), [Float32(1.0), 2.0, 3.0, 4.0, 5.0, 6.0], (2, 3))
         return (a @ b).sum()
 
@@ -313,7 +313,7 @@ def test_matmul_grad_b() raises:
 
 
 def test_batched_matmul_grad() raises:
-    def fwd(a: Tensor[]) raises -> Tensor[]:
+    def fwd(a: Tensor) raises -> Tensor:
         var b = Tensor(a.device.value(), [Float32(1), 2, 3, 4, 5, 6, 7, 8], (2, 2, 2))
         return (a @ b).sum()
 
@@ -328,7 +328,7 @@ def test_batched_matmul_grad() raises:
 
 
 def test_softmax_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         var e0 = Tensor(x.device.value(), [Float32(1), 0, 0, 0], (4,))
         return (x.softmax() * e0).sum()
 
@@ -343,7 +343,7 @@ def test_softmax_grad() raises:
 
 
 def test_softmax_axis0_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         var e0 = Tensor(x.device.value(), [Float32(1), 0, 0, 0], (2, 2))
         return (x.softmax(axis=0) * e0).sum()
 
@@ -358,7 +358,7 @@ def test_softmax_axis0_grad() raises:
 
 
 def test_softmax_middle_axis_rank3_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.softmax(axis=1).sum()
 
     var device = Device()
@@ -390,7 +390,7 @@ def test_cross_entropy_grad_row_sums() raises:
 
 
 def test_cross_entropy_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         var labels = Tensor(x.device.value(), [Float32(0), 1, 2, 3], (4,)).cast(DType.float32)
         return x.cross_entropy(labels.one_hot(10).cast(DType.float32))
 
@@ -407,8 +407,27 @@ def test_cross_entropy_grad() raises:
     assert_allclose(grads[0], num, tol=0.05)
 
 
+def test_cross_entropy_grad_rank3_matches_reshape() raises:
+    var device = Device()
+    var logits_data = List[Float32]()
+    for i in range(24):
+        logits_data.append(Float32(i) * 0.1)
+    var label_ids = Tensor(device, [Int64(0), 2, 1, 3, 0, 1], (6,))
+    var labels = label_ids.one_hot(4).cast(DType.float32).reshape((2, 3, 4))
+
+    var x_rank3 = Tensor(device, logits_data, (2, 3, 4), requires_grad=True)
+    var loss_rank3 = x_rank3.cross_entropy(labels)
+    var grads_rank3 = loss_rank3.gradient([x_rank3])
+
+    var x_reshaped = Tensor(device, logits_data, (6, 4), requires_grad=True)
+    var loss_reshaped = x_reshaped.cross_entropy(labels.reshape((6, 4)))
+    var grads_reshaped = loss_reshaped.gradient([x_reshaped])
+
+    assert_allclose(grads_rank3[0], grads_reshaped[0], tol=1e-4)
+
+
 def test_gather_grad_scatter_adds_repeated_indices() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         var indices = Tensor(x.device.value(), [Int64(1), 3, 1, 0], (4,))
         return x.gather(indices).sum()
 
@@ -424,7 +443,7 @@ def test_gather_grad_scatter_adds_repeated_indices() raises:
 
 
 def test_scatter_add_grad_is_gather() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         var indices = Tensor(x.device.value(), [Int64(1), 3, 1, 0], (4,))
         var weights = Tensor(x.device.value(), [Float32(i) for i in range(15)], (5, 3))
         return (x.scatter_add(indices, 5) * weights).sum()
@@ -443,7 +462,7 @@ def test_scatter_add_grad_is_gather() raises:
 
 
 def test_simple_mlp_grad() raises:
-    def fwd_w1(w1: Tensor[]) raises -> Tensor[]:
+    def fwd_w1(w1: Tensor) raises -> Tensor:
         var device = w1.device.value()
         var x = Tensor(device, [Float32(0.1), 0.2, 0.3, 0.4], (1, 4))
         var labels = Tensor(device, [Float32(0)], (1,)).cast(DType.float32)
@@ -452,7 +471,7 @@ def test_simple_mlp_grad() raises:
         var l3 = nn.Linear(4, 3)
         return l3(l2(h1).relu()).cross_entropy(labels.one_hot(3).cast(DType.float32))
 
-    def fwd_w2(w2: Tensor[]) raises -> Tensor[]:
+    def fwd_w2(w2: Tensor) raises -> Tensor:
         var device = w2.device.value()
         var x = Tensor(device, [Float32(0.1), 0.2, 0.3, 0.4], (1, 4))
         var labels = Tensor(device, [Float32(0)], (1,)).cast(DType.float32)
@@ -461,7 +480,7 @@ def test_simple_mlp_grad() raises:
         var l3 = nn.Linear(4, 3)
         return l3(h2).cross_entropy(labels.one_hot(3).cast(DType.float32))
 
-    def fwd_w3(w3: Tensor[]) raises -> Tensor[]:
+    def fwd_w3(w3: Tensor) raises -> Tensor:
         var device = w3.device.value()
         var x = Tensor(device, [Float32(0.1), 0.2, 0.3, 0.4], (1, 4))
         var labels = Tensor(device, [Float32(0)], (1,))
@@ -495,7 +514,7 @@ def test_simple_mlp_grad() raises:
 
 
 def test_unsqueeze_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.unsqueeze(0).sum()
 
     var device = Device()
@@ -509,7 +528,7 @@ def test_unsqueeze_grad() raises:
 
 
 def test_unsqueeze_grad_2d() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.unsqueeze(1).sum()
 
     var device = Device()
@@ -523,7 +542,7 @@ def test_unsqueeze_grad_2d() raises:
 
 
 def test_squeeze_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.squeeze(0).sum()
 
     var device = Device()
@@ -537,7 +556,7 @@ def test_squeeze_grad() raises:
 
 
 def test_squeeze_grad_2d() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.squeeze(1).sum()
 
     var device = Device()
@@ -551,7 +570,7 @@ def test_squeeze_grad_2d() raises:
 
 
 def test_squeeze_unsqueeze_roundtrip_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.unsqueeze(0).squeeze(0).sum()
 
     var device = Device()
@@ -565,7 +584,7 @@ def test_squeeze_unsqueeze_roundtrip_grad() raises:
 
 
 def test_expand_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.expand(3, 4).sum()
 
     var device = Device()
@@ -579,7 +598,7 @@ def test_expand_grad() raises:
 
 
 def test_expand_grad_multi_axis() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.expand(2, 4, 3).sum()
 
     var device = Device()
@@ -593,7 +612,7 @@ def test_expand_grad_multi_axis() raises:
 
 
 def test_expand_grad_pads_rank() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.expand(4, -1).sum()
 
     var device = Device()
@@ -607,7 +626,7 @@ def test_expand_grad_pads_rank() raises:
 
 
 def test_triu_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.triu(0).sum()
 
     var device = Device()
@@ -620,7 +639,7 @@ def test_triu_grad() raises:
 
 
 def test_triu_diagonal_grad() raises:
-    def fwd(x: Tensor[]) raises -> Tensor[]:
+    def fwd(x: Tensor) raises -> Tensor:
         return x.triu(1).sum()
 
     var device = Device()
