@@ -382,8 +382,12 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         """
         return Self(self.device, self.op.sum(axis, keepdim), self.requires_grad)
 
-    def mean(self) raises -> Self:
-        return self.sum() * (1.0 / Float32(self.op.layout().numel()))
+    def mean(self, axis: Optional[Int] = None, keepdim: Bool = False) raises -> Self:
+        if not axis:
+            return self.sum() * (1.0 / Float32(self.op.layout().numel()))
+        var ax = self.op.layout().normalise_dim(axis.value())
+        var denom = Float32(self.op.layout().shape(ax))
+        return self.sum(ax, keepdim) * (1.0 / denom)
 
     def argmax(self, axis: Optional[Int] = None, keepdim: Bool = False) raises -> Self:
         """Returns the indices of the maximum values of a tensor across a dimension.

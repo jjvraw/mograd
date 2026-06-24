@@ -12,7 +12,7 @@ from mograd.buffer import AnyBuffer, Buffer, BufferArm
 from mograd.pattern_matcher import Rule, Pat
 from mograd.scheduler import Scheduler, BoundExecFn, SchedulerRules
 from mograd.simplify import Simplifier
-from mograd.runtime.gpu.rewrites import MATMUL_T, GPU_REWRITES
+from mograd.runtime.gpu.rewrites import MATMUL_T, MEAN, GPU_REWRITES
 from mograd.runtime.gpu.kernels.utils import (
     FactoryKernel,
     UnaryStrided,
@@ -80,6 +80,7 @@ struct NativeRuntime(Runtime):
             Rule(Pat(OpType.SLICE_GRAD), slice_grad),
             # Reduce
             Rule(Pat(OpType.SUM), sum),
+            Rule(Pat(MEAN), mean),
             Rule(Pat(OpType.ARGMAX), argmax),
             # Linalg
             Rule(Pat(OpType.MATMUL), matmul),
@@ -364,6 +365,12 @@ def sum(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffe
     if "axis" in node.attrs():
         return axis_reduce_strided("mograd_sum_axis", node, inputs, device)
     return unary_strided("mograd_sum", node, inputs, device)
+
+
+def mean(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+    if "axis" in node.attrs():
+        return axis_reduce_strided("mograd_mean_axis", node, inputs, device)
+    return unary_strided("mograd_mean", node, inputs, device)
 
 
 def argmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:

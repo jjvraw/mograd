@@ -46,6 +46,88 @@ def sum[
 
 
 # ===-------------------------------------------------------------------===#
+# Mean (fused sum + scale, see runtime/gpu/rewrites.mojo)
+# ===-------------------------------------------------------------------===#
+
+
+def mean[
+    dtype: DType
+](
+    a: UnsafePointer[mut=False, Scalar[dtype], _],
+    dst: UnsafePointer[mut=True, Scalar[dtype], _],
+    rank: Int,
+    inner: UnsafePointer[mut=False, Int64, _],
+    sa: UnsafePointer[mut=False, Int64, _],
+    n: Int,
+    scale: Scalar[dtype],
+    ctx: DeviceContext,
+) raises:
+    @always_inline
+    def input_fn[_d: DType, w: Int, r: Int](coords: IndexList[r]) capturing -> SIMD[_d, w]:
+        return a.load(strided_offset(coords[0], rank, inner, sa))._refine[_d]()
+
+    @always_inline
+    def output_fn[_d: DType, w: SIMDSize, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
+        dst.store[width=w](coords[0], val[0]._refine[dtype]() * scale)
+
+    @always_inline
+    def reduce_fn[ty: DType, w: SIMDSize, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
+        return v1 + v2
+
+    comptime kernel = reduce_kernel[1, 0, 1, CE_BLOCK, input_fn, output_fn, reduce_fn, dtype, 1]
+    ctx.enqueue_function[kernel](
+        IndexList[1](n),
+        StaticTuple[Scalar[dtype], 1](0),
+        grid_dim=(1,),
+        block_dim=(CE_BLOCK,),
+    )
+    ctx.synchronize()
+
+
+# ===-------------------------------------------------------------------===#
+# Mean axis (fused sum_axis + scale)
+# ===-------------------------------------------------------------------===#
+
+
+def mean_axis[
+    dtype: DType
+](
+    a: UnsafePointer[mut=False, Scalar[dtype], _],
+    dst: UnsafePointer[mut=True, Scalar[dtype], _],
+    outer: Int,
+    reduce_size: Int,
+    inner: Int,
+    rank: Int,
+    inner_sizes: UnsafePointer[mut=False, Int64, _],
+    sa: UnsafePointer[mut=False, Int64, _],
+    scale: Scalar[dtype],
+    ctx: DeviceContext,
+) raises:
+    @always_inline
+    def input_fn[_d: DType, w: Int, r: Int](coords: IndexList[r]) capturing -> SIMD[_d, w]:
+        var flat = coords[0] * reduce_size * inner + coords[1] * inner + coords[2]
+        return a.load(strided_offset(flat, rank, inner_sizes, sa))._refine[_d]()
+
+    @always_inline
+    def output_fn[_d: DType, w: SIMDSize, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
+        var flat = coords[0] * inner + coords[2]
+        dst.store[width=w](flat, val[0]._refine[dtype]() * scale)
+
+    @always_inline
+    def reduce_fn[ty: DType, w: SIMDSize, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
+        return v1 + v2
+
+    comptime kernel = reduce_kernel[3, 1, 1, CE_BLOCK, input_fn, output_fn, reduce_fn, dtype, 1]
+    ctx.enqueue_function[kernel](
+        IndexList[3](outer, reduce_size, inner),
+        StaticTuple[Scalar[dtype], 1](0),
+        grid_dim=(outer * inner,),
+        block_dim=(CE_BLOCK,),
+    )
+    ctx.synchronize()
+
+
+# ===-------------------------------------------------------------------===#
 # Sum axis
 # ===-------------------------------------------------------------------===#
 

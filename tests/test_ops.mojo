@@ -357,6 +357,28 @@ def test_sum_axis_keepdim() raises:
     assert_allclose(out, [Float32(4), 4, 4])
 
 
+def test_mean_axis1() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4, 5, 6], (2, 3))
+    var out = x.mean(axis=1)
+    assert_true(out.shape(0) == 2)
+    assert_allclose(out, [Float32(2), 5])
+
+
+def test_mean_axis_keepdim() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4, 5, 6], (2, 3))
+    var out = x.mean(axis=1, keepdim=True)
+    assert_true(out.shape(0) == 2 and out.shape(1) == 1)
+    assert_allclose(out, [Float32(2), 5])
+
+
+def test_mean_negative_axis() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4, 5, 6], (2, 3))
+    assert_allclose(x.mean(axis=-1), [Float32(2), 5])
+
+
 def test_sum_axis_3d() raises:
     var device = Device()
     var x = Tensor.full(device, (2, 3, 4), Float32(1))

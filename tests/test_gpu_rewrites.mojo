@@ -2,7 +2,7 @@ from std.testing import TestSuite, assert_true, assert_false, assert_equal
 
 from mograd.op import OpType, OpRef
 from mograd.pattern_matcher import Rule, Pat
-from mograd.runtime.gpu.rewrites import GPU_REWRITES, fuse_matmul_transpose, MATMUL_T
+from mograd.runtime.gpu.rewrites import GPU_REWRITES, fuse_matmul_transpose, MATMUL_T, MEAN
 from mograd.simplify import RewriteFn
 from mograd.testing import leaf, assert_rewrites_to
 from mograd.simplify import Simplifier
@@ -54,6 +54,76 @@ def test_rewrite_preserves_dtype() raises:
     var b = leaf((6, 4), DType.float32)
     var result = Simplifier(GPU_REWRITES()).run(a.matmul(b.transpose()))
     assert_true(result.dtype() == DType.float32)
+
+
+# ===-------------------------------------------------------------------===#
+# MEAN rewrite (fused sum + scale)
+# ===-------------------------------------------------------------------===#
+
+
+def test_fuse_sum_scale_full_reduce() raises:
+    var a = leaf((4,))
+    # SCALE(SUM(a), 1/4) -> MEAN(a)
+    assert_rewrites_to(
+        GPU_REWRITES(),
+        a.sum().scale(0.25),
+        Pat(MEAN, [Pat()]),
+    )
+
+
+def test_fuse_sum_scale_axis() raises:
+    var a = leaf((2, 3))
+    # SCALE(SUM(a, axis=1), 1/3) -> MEAN(a)
+    assert_rewrites_to(
+        GPU_REWRITES(),
+        a.sum(1).scale(1.0 / 3.0),
+        Pat(MEAN, [Pat()]),
+    )
+
+
+def test_fuse_sum_scale_removes_sum_node() raises:
+    var a = leaf((4,))
+    var rewritten = Simplifier(GPU_REWRITES()).run(a.sum().scale(0.25))
+    assert_false(rewritten.src(0).op_type() == OpType.SUM)
+
+
+def test_non_reciprocal_scale_not_rewritten() raises:
+    var a = leaf((4,))
+    # 5.0 != 1/4, this is not a mean - must not fuse into MEAN
+    assert_rewrites_to(
+        GPU_REWRITES(),
+        a.sum().scale(5.0),
+        Pat(OpType.SCALE, [Pat(OpType.SUM)]),
+    )
+
+
+def test_plain_sum_not_rewritten() raises:
+    var a = leaf((4,))
+    # SUM with no surrounding SCALE must not be touched
+    assert_rewrites_to(
+        GPU_REWRITES(),
+        a.sum(),
+        Pat(OpType.SUM, [Pat()]),
+    )
+
+
+def test_mean_rewrite_preserves_shape() raises:
+    var a = leaf((2, 3))
+    var result = Simplifier(GPU_REWRITES()).run(a.sum(1).scale(1.0 / 3.0))
+    assert_equal(result.shape(0), 2)
+
+
+def test_mean_rewrite_preserves_dtype() raises:
+    var a = leaf((4,), DType.float32)
+    var result = Simplifier(GPU_REWRITES()).run(a.sum().scale(0.25))
+    assert_true(result.dtype() == DType.float32)
+
+
+def test_mean_rewrite_carries_axis_attr() raises:
+    var a = leaf((2, 3))
+    var result = Simplifier(GPU_REWRITES()).run(a.sum(1).scale(1.0 / 3.0))
+    assert_true("axis" in result.attrs())
+    assert_equal(result.attr_int("axis"), 1)
 
 
 def main() raises:

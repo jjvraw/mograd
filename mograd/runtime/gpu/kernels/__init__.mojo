@@ -915,6 +915,62 @@ def mograd_sum_axis(
     dispatch_dtype[body](dtype)
 
 
+@export
+def mograd_mean(
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    read layout: Layout,
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    @always_inline
+    def body[d: DType]() capturing raises:
+        var inner_buf = layout.inner_sizes_buffer(ctx)
+        var sa_buf = layout.strides_buffer(ctx)
+        mean[d](
+            a.bitcast[Scalar[d]](),
+            dst.bitcast[Scalar[d]](),
+            layout.rank(),
+            inner_buf.unsafe_ptr(),
+            sa_buf.unsafe_ptr(),
+            layout.numel(),
+            Scalar[d](1) / Scalar[d](layout.numel()),
+            ctx,
+        )
+
+    dispatch_dtype[body](dtype)
+
+
+@export
+def mograd_mean_axis(
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    read layout: Layout,
+    axis: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    @always_inline
+    def body[d: DType]() capturing raises:
+        var outer, reduce_size, inner = layout.reduce_dims(axis)
+        var inner_buf = layout.inner_sizes_buffer(ctx)
+        var sa_buf = layout.strides_buffer(ctx)
+        mean_axis[d](
+            a.bitcast[Scalar[d]](),
+            dst.bitcast[Scalar[d]](),
+            outer,
+            reduce_size,
+            inner,
+            layout.rank(),
+            inner_buf.unsafe_ptr(),
+            sa_buf.unsafe_ptr(),
+            Scalar[d](1) / Scalar[d](reduce_size),
+            ctx,
+        )
+
+    dispatch_dtype[body](dtype)
+
+
 # ===-------------------------------------------------------------------===#
 # Argmax
 # ===-------------------------------------------------------------------===#
