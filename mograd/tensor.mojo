@@ -383,6 +383,20 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         return Self(self.device, self.op.sum(axis, keepdim), self.requires_grad)
 
     def mean(self, axis: Optional[Int] = None, keepdim: Bool = False) raises -> Self:
+        """Reduces the tensor by averaging elements along a specified axis.
+
+        Args:
+            axis: The axis to average over. If `None`, averages all elements and
+                  returns a scalar tensor.
+            keepdim: If `True`, the reduced axis is retained as a dimension of size 1.
+                     If `False`, the axis is squeezed away, reducing the tensor's rank by one.
+
+        Returns:
+            A tensor containing the mean. If `axis` is `None`, a scalar tensor.
+
+        Raises:
+            If axis is out of bounds for the tensor's rank.
+        """
         if not axis:
             return self.sum() * (1.0 / Float32(self.op.layout().numel()))
         var ax = self.op.layout().normalise_dim(axis.value())
