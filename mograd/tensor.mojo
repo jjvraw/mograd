@@ -359,8 +359,22 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
     def log(self) -> Self:
         return Self(self.device, self.op.log(), self.requires_grad)
 
-    def softmax(self) -> Self:
-        return Self(self.device, self.op.softmax(), self.requires_grad)
+    def softmax(self, axis: Int = -1) raises -> Self:
+        """Applies softmax along `axis`.
+
+        Rescales elements along `axis` to lie in [0, 1] and sum to 1.
+
+        Args:
+            axis: The axis to normalise over. Defaults to the last axis.
+
+        Returns:
+            A tensor of the same shape, with `axis` summing to 1.
+        """
+        var ax = self.op.layout().normalise_dim(axis)
+        var last = self.op.layout().rank() - 1
+        if ax == last:
+            return Self(self.device, self.op.softmax(), self.requires_grad)
+        return self.transpose(ax, last).softmax().transpose(ax, last)
 
     # ===-------------------------------------------------------------------===#
     # Reduction operations

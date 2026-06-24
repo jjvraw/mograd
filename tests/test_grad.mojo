@@ -342,6 +342,36 @@ def test_softmax_grad() raises:
     assert_allclose(grads[0], num, tol=0.05)
 
 
+def test_softmax_axis0_grad() raises:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
+        var e0 = Tensor(x.device.value(), [Float32(1), 0, 0, 0], (2, 2))
+        return (x.softmax(axis=0) * e0).sum()
+
+    var device = Device()
+    var data: List[Float32] = [1.0, 2.0, 3.0, 4.0]
+    var num = numerical_grad[fwd](device, data, (2, 2))
+    var x = Tensor(device, data, (2, 2), requires_grad=True)
+    var e0 = Tensor(device, [Float32(1), 0, 0, 0], (2, 2))
+    var loss = (x.softmax(axis=0) * e0).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+
+
+def test_softmax_middle_axis_rank3_grad() raises:
+    def fwd(x: Tensor[]) raises -> Tensor[]:
+        return x.softmax(axis=1).sum()
+
+    var device = Device()
+    var data = List[Float32]()
+    for i in range(24):
+        data.append(Float32(i + 1))
+    var num = numerical_grad[fwd](device, data, (2, 3, 4))
+    var x = Tensor(device, data, (2, 3, 4), requires_grad=True)
+    var loss = x.softmax(axis=1).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+
+
 def test_cross_entropy_grad_row_sums() raises:
     var device = Device()
     var logits_data = List[Float32]()

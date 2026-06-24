@@ -102,6 +102,36 @@ def test_softmax_sums_to_one() raises:
     assert_close(x.softmax().sum(), Float32(1.0))
 
 
+def test_softmax_rank3_sums_to_one_per_row() raises:
+    # Regression test: rows used to be computed as just shape(0), which is
+    # wrong for rank >= 3 (e.g. 2 instead of 2*3=6 independent rows here).
+    var device = Device()
+    var x = Tensor.randn(device, (2, 3, 4), seed=7)
+    var sums = x.softmax().sum(axis=-1)
+    assert_allclose(sums, Tensor.ones(device, (2, 3)), tol=1e-4)
+
+
+def test_softmax_axis0() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4], (2, 2))
+    var out = x.softmax(axis=0)
+    assert_allclose(out.sum(axis=0), [Float32(1), 1], tol=1e-5)
+
+
+def test_softmax_axis0_matches_transpose_compose() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4, 5, 6], (2, 3))
+    assert_allclose(x.softmax(axis=0), x.transpose().softmax().transpose())
+
+
+def test_softmax_middle_axis_rank3() raises:
+    var device = Device()
+    var x = Tensor.randn(device, (2, 3, 4), seed=11)
+    var out = x.softmax(axis=1)
+    assert_allclose(out.sum(axis=1), Tensor.ones(device, (2, 4)), tol=1e-4)
+    assert_allclose(out, x.transpose(1, 2).softmax().transpose(1, 2))
+
+
 def test_one_hot_identity() raises:
     var device = Device()
     var labels = Tensor(device, [Int64(0), 1, 2], (3,))

@@ -1,10 +1,10 @@
 from std.gpu.primitives.warp import max as warp_max, sum as warp_sum
 from std.gpu import global_idx, thread_idx, block_idx, barrier
-from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.math import ceildiv
 from std.memory import stack_allocation
-from std.sys.info import simd_width_of, has_apple_gpu_accelerator
+from std.sys.info import has_apple_gpu_accelerator
 from std.utils.index import IndexList
 
 from layout import Coord, Idx, MixedLayout, TensorLayout, TileTensor, row_major
@@ -13,13 +13,13 @@ from layout import stack_allocation as tile_stack_allocation
 from linalg.bmm import batched_matmul, naive_batched_matmul_kernel
 
 from nn.argmaxmin_gpu import argmax_gpu
-from nn.softmax import softmax as nn_softmax
 
 from mograd.buffer import AnyBuffer, BufferArm
 from mograd.layout import Layout
 from mograd.runtime.gpu.kernels.factory import *
 from mograd.runtime.gpu.kernels.elementwise import *
 from mograd.runtime.gpu.kernels.reduce import *
+from mograd.runtime.gpu.kernels.softmax import *
 from mograd.runtime.gpu.kernels.utils import (
     dispatch_binary_contiguous,
     dispatch_binary_map,
@@ -725,97 +725,80 @@ def mograd_matmul_t(
 @export
 def mograd_softmax(
     a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    shape_ptr: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
+    read layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        comptime if d.is_floating_point():
-            if dtype == d:
-                var p = shape_ptr.bitcast[Float32]()
-                var rows = Int(p[0])
-                var cols = Int(p[1])
-                softmax[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rows, cols, ctx)
-                return
-    raise Error("unsupported dtype")
+    @always_inline
+    def body[d: DType]() capturing raises:
+        var rows = layout.numel() // layout.shape(layout.rank() - 1)
+        var cols = layout.shape(layout.rank() - 1)
+
+        softmax[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rows, cols, ctx)
+
+    dispatch_dtype[body, float_only=True](dtype)
 
 
-def softmax[
-    dtype: DType
-](
-    a: UnsafePointer[mut=False, Scalar[dtype], _],
-    dst: UnsafePointer[mut=True, Scalar[dtype], _],
-    rows: Int,
-    cols: Int,
+@export
+def mograd_softmax_strided(
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    read layout: Layout,
+    dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    var out = TileTensor(dst.as_unsafe_any_origin(), row_major(Coord(rows, cols)))
+    @always_inline
+    def body[d: DType]() capturing raises:
+        var rows = layout.numel() // layout.shape(layout.rank() - 1)
+        var cols = layout.shape(layout.rank() - 1)
+        var inner_buf = layout.inner_sizes_buffer(ctx)
+        var sa_buf = layout.strides_buffer(ctx)
 
-    def input_fn[width: Int](coords: Coord) capturing -> SIMD[dtype, width]:
-        return a.load[width=width](Int(coords[0].value()) * cols + Int(coords[1].value()))
+        softmax_strided[d](
+            a.bitcast[Scalar[d]](),
+            dst.bitcast[Scalar[d]](),
+            rows,
+            cols,
+            layout.rank(),
+            inner_buf.unsafe_ptr(),
+            sa_buf.unsafe_ptr(),
+            ctx,
+        )
 
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
-    nn_softmax[dtype, simd_width, 2, input_fn, "gpu"](Coord(rows, cols), out, axis=1, context=ctx)
-    ctx.synchronize()
-
-
-def softmax_grad_kernel[
-    dtype: DType, BLOCK_SIZE: Int
-](
-    y: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    upstream: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    N: Int,
-    size: Int,
-):
-    var row = block_idx.x
-    if row >= N:
-        return
-    var row_offset = row * size
-    var dot = Scalar[dtype](0.0)
-    for i in range(thread_idx.x, size, BLOCK_SIZE):
-        dot += y[row_offset + i] * upstream[row_offset + i]
-    dot = warp_sum(dot)
-    for i in range(thread_idx.x, size, BLOCK_SIZE):
-        dst[row_offset + i] = y[row_offset + i] * (upstream[row_offset + i] - dot)
+    dispatch_dtype[body, float_only=True](dtype)
 
 
 @export
 def mograd_softmax_grad(
     a: UnsafePointer[NoneType, ImmutAnyOrigin],
     b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    c: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    n: Int,
+    read la: Layout,
+    read lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
-        comptime T = AnyBuffer.BufVariant.Ts[k]
-        comptime assert conforms_to(T, BufferArm)
-        comptime d = T.node_dtype
-        comptime if d.is_floating_point():
-            if dtype == d:
-                var p = c.bitcast[Float32]()
-                var N = Int(p[0])
-                var size = Int(p[1])
-                comptime BLOCK_SIZE = 32
-                ctx.enqueue_function[softmax_grad_kernel[d, BLOCK_SIZE]](
-                    a.bitcast[Scalar[d]](),
-                    b.bitcast[Scalar[d]](),
-                    dst.bitcast[Scalar[d]](),
-                    N,
-                    size,
-                    grid_dim=(N,),
-                    block_dim=(BLOCK_SIZE,),
-                )
-                return
-    raise Error("unsupported dtype")
+    # TODO: both a and b are always contiguous and same-shaped by
+    # construction (softmax_grad forces upstream.contiguous()). 
+    # This should handle arbitrary layout.
+    @always_inline
+    def body[d: DType]() capturing raises:
+        var N = la.numel() // la.shape(la.rank() - 1)
+        var size = la.shape(la.rank() - 1)
+
+        comptime BLOCK_SIZE = 32
+        ctx.enqueue_function[softmax_grad_kernel[d, BLOCK_SIZE]](
+            a.bitcast[Scalar[d]](),
+            b.bitcast[Scalar[d]](),
+            dst.bitcast[Scalar[d]](),
+            N,
+            size,
+            grid_dim=(N,),
+            block_dim=(BLOCK_SIZE,),
+        )
+
+    dispatch_dtype[body, float_only=True](dtype)
 
 
 # ===-------------------------------------------------------------------===#

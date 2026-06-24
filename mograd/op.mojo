@@ -264,7 +264,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return Self(Op(OpType.RELU, self.layout().as_contiguous(), self.dtype(), [self]))
 
     def softmax(self) -> Self:
-        return Self(Op(OpType.SOFTMAX, self.layout().as_contiguous(), self.dtype(), [self.contiguous()]))
+        return Self(Op(OpType.SOFTMAX, self.layout().as_contiguous(), self.dtype(), [self]))
 
     def eq(self, other: OpRef) -> Self:
         return Self(Op(OpType.EQ, self.layout().as_contiguous(), self.dtype(), [self, other]))

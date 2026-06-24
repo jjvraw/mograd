@@ -439,22 +439,9 @@ def triu(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
 
 
 def softmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var layout = node.layout()
-    var rank = layout.rank()
-    var params = alloc[Float32](2)
-    params[0] = Float32(layout.shape(0) if rank > 1 else 1)
-    params[1] = Float32(layout.shape(rank - 1))
-    var out = AnyBuffer.create(node.dtype(), device, layout.numel())
-    device.handle[].get_function[BinaryOp]("mograd_softmax")(
-        inputs[0].data_ptr(),
-        params.bitcast[NoneType]().as_unsafe_any_origin(),
-        out.data_ptr(),
-        layout.numel(),
-        node.dtype(),
-        device.ctx,
-    )
-    params.free()
-    return out^
+    if node.src(0).layout().is_contiguous():
+        return unary_strided("mograd_softmax", node, inputs, device)
+    return unary_strided("mograd_softmax_strided", node, inputs, device)
 
 
 # ===-------------------------------------------------------------------===#
@@ -545,25 +532,7 @@ def disk(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
 
 
 def softmax_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    var layout = node.layout()
-    var rank = layout.rank()
-    var N = 1 if rank == 1 else layout.shape(0)
-    var size = layout.shape(rank - 1)
-    var p = alloc[Float32](2)
-    p[0] = Float32(N)
-    p[1] = Float32(size)
-    var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[TernaryOp]("mograd_softmax_grad")(
-        inputs[0].data_ptr(),
-        inputs[1].data_ptr(),
-        p.bitcast[NoneType]().as_unsafe_any_origin(),
-        out.data_ptr(),
-        layout.numel(),
-        node.dtype(),
-        device.ctx,
-    )
-    p.free()
-    return out^
+    return binary_strided("mograd_softmax_grad", node, inputs, device)
 
 
 comptime QuaternaryOp = def(
