@@ -625,6 +625,47 @@ def test_gather_sliced_indices_is_stride_aware() raises:
     assert_allclose(table.gather(indices), [Float32(3), 4, 5, 9, 10, 11])
 
 
+def test_getitem_tensor_is_gather_sugar() raises:
+    var device = Device()
+    var table = Tensor(device, [Float32(i) for i in range(12)], (4, 3))
+    var indices = Tensor(device, [Int64(1), 3, 1, 0], (4,))
+    assert_allclose(table[indices], table.gather(indices))
+
+
+def test_getitem_tensor_2d_indices() raises:
+    var device = Device()
+    var table = Tensor(device, [Float32(i) for i in range(8)], (4, 2))
+    var indices = Tensor(device, [Int64(0), 1, 2, 3], (2, 2))
+    assert_allclose(table[indices], [Float32(0), 1, 2, 3, 4, 5, 6, 7])
+
+
+def test_randint_shape() raises:
+    var device = Device()
+    var idx = Tensor.randint(device, (5, 3), 0, 100)
+    assert_true(idx.shape(0) == 5 and idx.shape(1) == 3)
+
+
+def test_randint_in_range() raises:
+    var device = Device()
+    var idx = Tensor.randint(device, (200,), 10, 20)
+    for v in idx.to_list[DType.int64]():
+        assert_true(v >= 10 and v < 20)
+
+
+def test_randint_default_dtype_is_int64() raises:
+    var device = Device()
+    var idx = Tensor.randint(device, (4,), 0, 10)
+    assert_true(idx.dtype == DType.int64)
+
+
+def test_randint_usable_as_gather_indices() raises:
+    var device = Device()
+    var table = Tensor(device, [Float32(i) for i in range(10)], (10, 1))
+    var idx = Tensor.randint(device, (6,), 0, 10)
+    var gathered = table[idx]
+    assert_true(gathered.shape(0) == 6 and gathered.shape(1) == 1)
+
+
 def test_scatter_add_rows() raises:
     var device = Device()
     var values = Tensor(device, [Float32(1) for _ in range(12)], (4, 3))

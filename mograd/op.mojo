@@ -28,6 +28,7 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime FULL = OpType("FULL")
     comptime UNIFORM = OpType("UNIFORM")
     comptime RANDN = OpType("RANDN")
+    comptime RANDINT = OpType("RANDINT")
     comptime DISK = OpType("DISK")
 
     # ===-------------------------------------------------------------------===#

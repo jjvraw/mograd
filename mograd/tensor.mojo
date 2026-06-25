@@ -97,6 +97,18 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         return Tensor(device, OpRef(Op(OpType.RANDN, shape, dtype, [], attrs^)), requires_grad)
 
     @staticmethod
+    def randint(
+        device: Device,
+        shape: Layout,
+        low: Int,
+        high: Int,
+        seed: Int = 42,
+    ) -> Self:
+        """Returns random integers uniformly drawn from `[low, high)`."""
+        attrs: Dict[String, AttrVal] = {"low": low, "high": high, "seed": seed}
+        return Tensor(device, OpRef(Op(OpType.RANDINT, shape, DType.int64, [], attrs^)), requires_grad=False)
+
+    @staticmethod
     def disk(device: Device, path: String, shape: Layout, dtype: DType = DType.float32) -> Self:
         return Tensor(device, OpRef(Op(OpType.DISK, shape, dtype, [], {"path": path})))
 
@@ -298,6 +310,9 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         var dim = self.op.layout().shape(0)
         var start, stop, step = s.indices(dim)
         return Self(self.device, self.op.slice(start, stop, step), self.requires_grad)
+
+    def __getitem__(self, indices: Tensor) raises -> Self:
+        return self.gather(indices)
 
     @staticmethod
     def concat(tensors: List[Tensor], axis: Int = 0) raises -> Self:

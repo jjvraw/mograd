@@ -2,6 +2,7 @@ from std.gpu.host import DeviceContext
 from std.ffi import OwnedDLHandle
 from std.pathlib.path import Path
 from std.os.env import getenv
+from std.random import randint as host_randint, seed as host_seed
 
 from layout.int_tuple import IntTuple
 
@@ -63,6 +64,7 @@ struct NativeRuntime(Runtime):
             # Factory
             Rule(Pat(OpType.RANDN), randn),
             Rule(Pat(OpType.UNIFORM), uniform),
+            Rule(Pat(OpType.RANDINT), randint),
             Rule(Pat(OpType.FULL), full),
             Rule(Pat(OpType.DISK), disk),
             # Unary Elementwise
@@ -196,6 +198,18 @@ def uniform(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyB
         params.bitcast[NoneType]().as_unsafe_any_origin(), out.data_ptr(), node.numel(), node.dtype(), device.ctx
     )
     params.free()
+    return out^
+
+
+def randint(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+    if node.dtype() != DType.int64:
+        raise Error("randint: only int64 output is supported")
+    var low = node.attr_int("low")
+    var high = node.attr_int("high")
+    host_seed(node.attr_int("seed"))
+    var out = AnyBuffer.create(node.dtype(), device, node.numel())
+    with out.unsafe_get[DType.int64]().buf().map_to_host() as host:
+        host_randint(host.as_span(), low, high - 1)
     return out^
 
 
