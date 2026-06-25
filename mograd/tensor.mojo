@@ -67,6 +67,10 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         return Tensor(device, OpRef(Op(OpType.BUFFER, shape, dtype, [], b^)), requires_grad)
 
     @staticmethod
+    def zeros(device: Device, shape: Layout, dtype: DType = DType.float32, requires_grad: Bool = False) -> Self:
+        return Self.full(device, shape, 0.0, dtype, requires_grad)
+
+    @staticmethod
     def ones(device: Device, shape: Layout, dtype: DType = DType.float32, requires_grad: Bool = False) -> Self:
         return Self.full(device, shape, 1.0, dtype, requires_grad)
 
@@ -175,6 +179,9 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
 
     def shape(self, idx: Int) -> Int:
         return self.op.shape(idx)
+
+    def rank(self) -> Int:
+        return self.op.layout().rank()
 
     def numel(self) -> Int:
         return self.op.layout().numel()
