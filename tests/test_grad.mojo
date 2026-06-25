@@ -662,6 +662,42 @@ def test_triu_diagonal_grad() raises:
     assert_allclose(grads[0], num, tol=0.05)
 
 
+def test_concat_grad_axis0() raises:
+    def fwd(a: Tensor) raises -> Tensor:
+        var device = a.device.value()
+        var b = Tensor(device, [Float32(7), 8, 9, 10, 11, 12], (2, 3))
+        return Tensor.concat([a, b], 0).sum()
+
+    var device = Device()
+    var a_data: List[Float32] = [1, 2, 3, 4, 5, 6]
+    var num = numerical_grad[fwd](device, a_data, (2, 3))
+    var a = Tensor(device, a_data, (2, 3), requires_grad=True)
+    var b = Tensor(device, [Float32(7), 8, 9, 10, 11, 12], (2, 3))
+    var loss = Tensor.concat([a, b], 0).sum()
+    var grads = loss.gradient([a])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], [Float32(1), 1, 1, 1, 1, 1])
+
+
+def test_concat_grad_axis1() raises:
+    def fwd(a: Tensor) raises -> Tensor:
+        var device = a.device.value()
+        var b = Tensor(device, [Float32(5), 6, 7, 8, 9, 10], (2, 3))
+        var c = Tensor.concat([a, b], 1)
+        return (c * c).sum()
+
+    var device = Device()
+    var a_data: List[Float32] = [1, 2, 3, 4]
+    var num = numerical_grad[fwd](device, a_data, (2, 2))
+    var a = Tensor(device, a_data, (2, 2), requires_grad=True)
+    var b = Tensor(device, [Float32(5), 6, 7, 8, 9, 10], (2, 3))
+    var c = Tensor.concat([a, b], 1)
+    var loss = (c * c).sum()
+    var grads = loss.gradient([a])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], [Float32(2), 4, 6, 8])
+
+
 def main() raises:
     comptime assert has_accelerator(), "GPU required to run gradient tests"
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -414,6 +414,57 @@ def test_expand_rejects_non_one_axis_mismatch() raises:
         _ = l.expand(3, 5)
 
 
+def test_slice_axis_middle_of_rank3() raises:
+    var l = Layout(2, 10, 4)
+    var s = l.slice_axis(1, 3, 7)
+    assert_equal(s.rank(), 3)
+    assert_equal(s.shape(), IntTuple(2, 4, 4))
+    assert_equal(s.stride(), l.stride())
+    assert_equal(s.base_offset, 3 * l.stride(1))
+
+
+def test_slice_axis_negative_axis() raises:
+    var l = Layout(2, 3, 10)
+    var s = l.slice_axis(-1, 2, 6)
+    assert_equal(s.shape(), IntTuple(2, 3, 4))
+
+
+def test_slice_axis_other_axes_untouched() raises:
+    var l = Layout(5, 10)
+    var s = l.slice_axis(1, 2, 5)
+    assert_equal(s.shape(0), 5)
+    assert_equal(s.stride(0), l.stride(0))
+
+
+def test_layout_concat_axis0() raises:
+    var a = Layout(2, 3)
+    var b = Layout(4, 3)
+    var c = Layout.concat([a, b], 0)
+    assert_equal(c.shape(), IntTuple(6, 3))
+    assert_equal(c.stride(), Layout.row_major_strides(IntTuple(6, 3)))
+
+
+def test_layout_concat_axis1() raises:
+    var a = Layout(2, 3)
+    var b = Layout(2, 5)
+    var c = Layout.concat([a, b], 1)
+    assert_equal(c.shape(), IntTuple(2, 8))
+
+
+def test_layout_concat_rejects_rank_mismatch() raises:
+    var a = Layout(2, 3)
+    var b = Layout(2, 3, 1)
+    with assert_raises():
+        _ = Layout.concat([a, b], 0)
+
+
+def test_layout_concat_rejects_other_axis_mismatch() raises:
+    var a = Layout(2, 3)
+    var b = Layout(4, 5)
+    with assert_raises():
+        _ = Layout.concat([a, b], 0)
+
+
 def test_flatten_all() raises:
     var l = Layout(2, 3, 4)
     var f = l.flatten()

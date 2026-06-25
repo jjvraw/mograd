@@ -28,6 +28,7 @@ from mograd.runtime.gpu.kernels.utils import (
     dispatch_dtype,
     dispatch_unary,
     dispatch_unary_map,
+    strided_copy_map,
 )
 
 # ===-------------------------------------------------------------------===#
@@ -340,6 +341,34 @@ def mograd_contiguous(
     dispatch_unary_map[identity_op](
         a, dst, layout.numel(), layout.rank(), inner_buf.unsafe_ptr(), sa_buf.unsafe_ptr(), dtype, ctx
     )
+
+
+@export
+def mograd_strided_copy(
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    read la: Layout,
+    read ld: Layout,
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    @always_inline
+    def body[d: DType]() capturing raises:
+        var inner_buf = la.inner_sizes_buffer(ctx)
+        var sa_buf = la.strides_buffer(ctx)
+        var sd_buf = ld.strides_buffer(ctx)
+        strided_copy_map[d](
+            a.bitcast[Scalar[d]](),
+            dst.bitcast[Scalar[d]](),
+            la.rank(),
+            inner_buf.unsafe_ptr(),
+            sa_buf.unsafe_ptr(),
+            sd_buf.unsafe_ptr(),
+            la.numel(),
+            ctx,
+        )
+
+    dispatch_dtype[body](dtype)
 
 
 # ===-------------------------------------------------------------------===#

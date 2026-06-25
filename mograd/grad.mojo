@@ -51,6 +51,7 @@ struct Grad:
                 Rule(Pat(OpType.UNSQUEEZE), unsqueeze_grad),
                 Rule(Pat(OpType.TRIU), triu_grad),
                 Rule(Pat(OpType.EXPAND), expand_grad),
+                Rule(Pat(OpType.CONCAT), concat_grad),
             ]
         )
 
@@ -163,6 +164,17 @@ def slice_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     return [
         OpRef(Op(OpType.SLICE_GRAD, node.src(0).layout().as_contiguous(), node.dtype(), [upstream.contiguous(), node]))
     ]
+
+
+def concat_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    var ax = node.attr_int("axis")
+    var grads = List[OpRef]()
+    var offset = 0
+    for i in range(len(node.srcs())):
+        var size = node.src(i).layout().shape(ax)
+        grads.append(upstream.slice_axis(ax, offset, offset + size))
+        offset += size
+    return grads^
 
 
 def scale_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:

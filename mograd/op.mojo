@@ -64,6 +64,7 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime TRANSPOSE = OpType("TRANSPOSE")
     comptime SLICE = OpType("SLICE")
     comptime SLICE_GRAD = OpType("SLICE_GRAD")
+    comptime CONCAT = OpType("CONCAT")
     comptime CONTIGUOUS = OpType("CONTIGUOUS")
     comptime EXPAND = OpType("EXPAND")
     comptime ONE_HOT = OpType("ONE_HOT")
@@ -347,7 +348,10 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return Self(Op(OpType.EXPAND, self.layout().expand(shape), self.dtype(), [self]))
 
     def slice(self, start: Int, stop: Int, step: Int = 1) raises -> Self:
-        return Self(Op(OpType.SLICE, self.layout()[start:stop:step], self.dtype(), [self], {}))
+        return self.slice_axis(0, start, stop, step)
+
+    def slice_axis(self, axis: Int, start: Int, stop: Int, step: Int = 1) raises -> Self:
+        return Self(Op(OpType.SLICE, self.layout().slice_axis(axis, start, stop, step), self.dtype(), [self], {}))
 
     def squeeze(self, dim: Optional[Int] = None) raises -> Self:
         if dim:
@@ -472,6 +476,17 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
             writer.write("\n")
             self.src(i)._render(writer, indent + 1, cache, next_alias)
         writer.write("\n", pad, "))")
+
+
+def concat(var tensors: List[OpRef], axis: Int) raises -> OpRef:
+    var layouts = List[Layout]()
+    for i in range(len(tensors)):
+        layouts.append(tensors[i].layout())
+    var out_layout = Layout.concat(layouts, axis)
+    var ax = tensors[0].layout().normalise_dim(axis)
+    var dtype = tensors[0].dtype()
+    attrs: Attrs = {"axis": ax}
+    return OpRef(Op(OpType.CONCAT, out_layout, dtype, tensors^, attrs^))
 
 
 @fieldwise_init

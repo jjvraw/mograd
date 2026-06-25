@@ -66,6 +66,44 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Writable):
         """Returns strides provided a shape in row major contiguous layout."""
         return reverse(prefix_product(reverse(shape)))
 
+    @staticmethod
+    def _slice_extent(start: Int, stop: Int, step: Int) -> Int:
+        """Returns the number of elements selected by slicing `[start:stop:step]`."""
+        if step > 0:
+            return 0 if stop <= start else (stop - start + step - 1) // step
+        var neg_step = -step
+        return 0 if start <= stop else (start - stop + neg_step - 1) // neg_step
+
+    @staticmethod
+    def concat(layouts: List[Layout], axis: Int) raises -> Self:
+        """Returns the (contiguous) layout produced by concatenating `layouts` along `axis`.
+
+        All layouts must share the same rank and agree on every other axis.
+        """
+        if len(layouts) == 0:
+            raise Error("concat: requires at least one layout")
+        var first = layouts[0]
+        var ax = first.normalise_dim(axis)
+        var rank = first.rank()
+        var total = 0
+        for i in range(len(layouts)):
+            var l = layouts[i]
+            if l.rank() != rank:
+                raise Error(t"concat: layout {String(i)} has rank {String(l.rank())}, expected {String(rank)}")
+            for d in range(rank):
+                if d == ax:
+                    continue
+                if l.shape(d) != first.shape(d):
+                    raise Error(
+                        t"concat: layout {String(i)} has size {String(l.shape(d))} on axis {String(d)}, expected"
+                        t" {String(first.shape(d))}"
+                    )
+            total += l.shape(ax)
+        var out_shape = IntTuple()
+        for d in range(rank):
+            out_shape.append(IntTuple(total if d == ax else first.shape(d)))
+        return Self(rank, out_shape, Self.row_major_strides(out_shape), 0)
+
     def _handle_bounds(self, idx: Int, bound: Int, error_msg: TString) raises -> Int:
         """Normalises a possibly-negative index against `bound`."""
         var i = idx
@@ -260,6 +298,27 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Writable):
                 new_strides.append(IntTuple(self._strides.value(src)))
         return Self(self.rank() + 1, new_shape, new_strides, self.base_offset)
 
+    def slice_axis(self, axis: Int, start: Int, stop: Int, step: Int = 1) raises -> Self:
+        """Returns a layout slicing a single `axis`, leaving all other axes untouched.
+
+        Unlike `__getitem__`, which slices axes left-to-right by position,
+        this targets one axis directly regardless of rank, which `concat`'s
+        backward needs since the concatenated axis isn't necessarily axis 0.
+        """
+        var ax = self.normalise_dim(axis)
+        var new_shape = IntTuple()
+        var new_strides = IntTuple()
+        var new_base_offset = self.base_offset
+        for i in range(self.rank()):
+            if i == ax:
+                new_base_offset += start * self.stride(i)
+                new_shape.append(IntTuple(Self._slice_extent(start, stop, step)))
+                new_strides.append(IntTuple(self.stride(i) * step))
+            else:
+                new_shape.append(IntTuple(self.shape(i)))
+                new_strides.append(IntTuple(self.stride(i)))
+        return Self(self.rank(), new_shape, new_strides, new_base_offset)
+
     def expand(self, *shape: Int, out layout: Self) raises:
         """Returns a layout that broadcasts size-1 axes out to `shape`."""
         layout = self.expand(IntTuple(*shape))
@@ -400,23 +459,7 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Writable):
 
     def unsqueeze(self, dim: Int) raises -> Self:
         """Insert a dimension of size 1 at position `dim`."""
-        var d = self._handle_bounds(
-            dim, self.rank() + 1, t"unsqueeze: dimension {String(dim)} out of bounds for rank {String(self.rank() + 1)}"
-        )
-
-        var new_shape = IntTuple()
-        var new_strides = IntTuple()
-
-        for i in range(self.rank() + 1):
-            if i == d:
-                new_shape.append(IntTuple(1))
-                new_strides.append(IntTuple(0))
-            else:
-                var src_idx = i if i < d else i - 1
-                new_shape.append(IntTuple(self.shape(src_idx)))
-                new_strides.append(IntTuple(self._strides.value(src_idx)))
-
-        return Self(self.rank() + 1, new_shape, new_strides, self.base_offset)
+        return self.expand_axis(dim, 1)
 
     # ===-------------------------------------------------------------------===#
     # Permutation detection
@@ -641,23 +684,8 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Writable):
                 stop = dim_size
                 step = 1
 
-            var size: Int
-
-            if step > 0:
-                if stop <= start:
-                    size = 0
-                else:
-                    size = (stop - start + step - 1) // step
-            else:
-                var neg_step = -step
-
-                if start <= stop:
-                    size = 0
-                else:
-                    size = (start - stop + neg_step - 1) // neg_step
-
             new_base_offset += start * self.stride(dim)
-            new_shape.append(IntTuple(size))
+            new_shape.append(IntTuple(Self._slice_extent(start, stop, step)))
             new_strides.append(IntTuple(self.stride(dim) * step))
 
         layout = Self(self.rank(), new_shape, new_strides, new_base_offset)

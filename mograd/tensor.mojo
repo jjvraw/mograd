@@ -5,6 +5,7 @@ from layout import IntTuple
 
 from mograd import Device
 from mograd.op import AttrVal, Op, OpRef, OpType
+from mograd.op import concat as op_concat
 from mograd.layout import Layout
 from mograd.buffer import AnyBuffer
 from mograd.runtime import NativeRuntime
@@ -297,6 +298,27 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         var dim = self.op.layout().shape(0)
         var start, stop, step = s.indices(dim)
         return Self(self.device, self.op.slice(start, stop, step), self.requires_grad)
+
+    @staticmethod
+    def concat(tensors: List[Tensor], axis: Int = 0) raises -> Self:
+        """Concatenates `tensors` along `axis`.
+
+        Args:
+            tensors: Tensors to concatenate; must share rank, dtype, and every axis but `axis`.
+            axis: Axis to concatenate along.
+
+        Returns:
+            A new tensor with `axis` summed across `tensors`.
+
+        Raises:
+            If `tensors` is empty, or shapes disagree on any axis other than `axis`.
+        """
+        var refs = List[OpRef]()
+        var requires_grad = False
+        for i in range(len(tensors)):
+            refs.append(tensors[i].op)
+            requires_grad = requires_grad or tensors[i].requires_grad
+        return Self(tensors[0].device, op_concat(refs^, axis), requires_grad)
 
     def cast(self, dtype: DType) -> Tensor:
         return Tensor(self.device, self.op.cast(dtype), self.requires_grad)

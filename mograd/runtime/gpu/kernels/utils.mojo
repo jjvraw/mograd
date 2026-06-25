@@ -114,6 +114,26 @@ def binary_strided_map[
     elementwise[simd_width=1, target="gpu"](apply_strided, Coord(n), ctx)
 
 
+def strided_copy_map[
+    dtype: DType,
+](
+    a: UnsafePointer[mut=False, Scalar[dtype], _],
+    dst: UnsafePointer[mut=True, Scalar[dtype], _],
+    rank: Int,
+    inner: UnsafePointer[mut=False, Int64, _],
+    sa: UnsafePointer[mut=False, Int64, _],
+    sd: UnsafePointer[mut=False, Int64, _],
+    n: Int,
+    ctx: DeviceContext,
+) raises:
+    def apply_strided[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+        var flat = Int(coord[0].value())
+        var offs = strided_offsets(flat, rank, inner, sa, sd)
+        dst.store(offs[1], a.load(offs[0]))
+
+    elementwise[simd_width=1, target="gpu"](apply_strided, Coord(n), ctx)
+
+
 # ===-------------------------------------------------------------------===#
 # Dtype dispatch
 # ===-------------------------------------------------------------------===#
@@ -330,6 +350,36 @@ def unary_strided(
         device.ctx,
     )
     return out^
+
+
+comptime StridedCopy = def(
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    read la: Layout,
+    read ld: Layout,
+    dtype: DType,
+    ctx: DeviceContext,
+) thin abi("Mojo") raises -> None
+
+
+@always_inline
+def strided_copy(
+    read name: String,
+    read src_layout: Layout,
+    read dst_layout: Layout,
+    read src: AnyBuffer,
+    read dst: AnyBuffer,
+    read dtype: DType,
+    read device: Device,
+) raises:
+    device.handle[].get_function[StridedCopy](name)(
+        src.data_ptr(),
+        dst.data_ptr(),
+        src_layout,
+        dst_layout,
+        dtype,
+        device.ctx,
+    )
 
 
 comptime AxisReduceKernel = def(

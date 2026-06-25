@@ -22,6 +22,7 @@ from mograd.runtime.gpu.kernels.utils import (
     axis_reduce_strided,
     matmul_strided,
     matmul_bias_strided,
+    strided_copy,
 )
 
 # ===-------------------------------------------------------------------===#
@@ -101,6 +102,7 @@ struct NativeRuntime(Runtime):
             Rule(Pat(OpType.SQUEEZE), view),
             Rule(Pat(OpType.UNSQUEEZE), view),
             Rule(Pat(OpType.TRIU), triu),
+            Rule(Pat(OpType.CONCAT), concat),
             # TODO: Make layout aware.
             Rule(Pat(OpType.SOFTMAX), softmax),
             Rule(Pat(OpType.CROSS_ENTROPY), cross_entropy),
@@ -423,6 +425,21 @@ def contiguous(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> A
 
 def view(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     return inputs[0].view(node.layout())
+
+
+def concat(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+    var ax = node.attr_int("axis")
+    var out_layout = node.layout()
+    var out = AnyBuffer.create(node.dtype(), device, node.numel())
+    var offset = 0
+    for i in range(len(node.srcs())):
+        var src_layout = node.src(i).layout()
+        var size = src_layout.shape(ax)
+        var dst_layout = out_layout.slice_axis(ax, offset, offset + size)
+        var dst_view = out.view(dst_layout)
+        strided_copy("mograd_strided_copy", src_layout, dst_layout, inputs[i], dst_view, node.dtype(), device)
+        offset += size
+    return out^
 
 
 def triu(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
