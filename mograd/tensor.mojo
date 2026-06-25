@@ -169,20 +169,25 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         return Self(self.device, self.op.contiguous(), self.requires_grad)
 
     def expand(self, *shape: Int) raises -> Self:
-        """Broadcasts size-1 axes out to `shape`.
+        """Broadcasts this tensor out to `shape`.
 
-        `shape` must have the same rank as this tensor.
+        If `shape` has greater rank than this tensor, extra leading axes are
+        inserted with size 1 first.
 
         Args:
-            shape: Target shape, same rank as this tensor.
+            shape: Target shape, rank >= this tensor's rank.
 
         Returns:
-            Tensor viewing the same data with size-1 axes stretched to `shape`.
+            Tensor viewing the same data with size-1 (or padded) axes stretched to `shape`.
 
         Raises:
-            If rank doesn't match, or a non-size-1 axis disagrees with `shape`.
+            If a non-size-1 axis disagrees with `shape`.
         """
         return Self(self.device, self.op.expand(*shape), self.requires_grad)
+
+    def expand(self, shape: IntTuple) raises -> Self:
+        """Broadcasts this tensor out to `shape`. See `expand(*shape: Int)`."""
+        return Self(self.device, self.op.expand(shape), self.requires_grad)
 
     def reshape(self, shape: Layout) raises -> Self:
         """Returns a new tensor with the given shape, copying the underlying data.

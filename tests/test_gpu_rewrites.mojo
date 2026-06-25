@@ -2,7 +2,7 @@ from std.testing import TestSuite, assert_true, assert_false, assert_equal
 
 from mograd.op import OpType, OpRef
 from mograd.pattern_matcher import Rule, Pat
-from mograd.runtime.gpu.rewrites import GPU_REWRITES, fuse_matmul_transpose, MATMUL_T, MEAN
+from mograd.runtime.gpu.rewrites import GPU_REWRITES, fuse_matmul_transpose, MATMUL_T, MATMUL_BIAS_T, MEAN
 from mograd.simplify import RewriteFn
 from mograd.testing import leaf, assert_rewrites_to
 from mograd.simplify import Simplifier
@@ -54,6 +54,82 @@ def test_rewrite_preserves_dtype() raises:
     var b = leaf((6, 4), DType.float32)
     var result = Simplifier(GPU_REWRITES()).run(a.matmul(b.transpose()))
     assert_true(result.dtype() == DType.float32)
+
+
+# ===-------------------------------------------------------------------===#
+# MATMUL_BIAS_T rewrite (fused matmul_t + broadcast bias add)
+# ===-------------------------------------------------------------------===#
+
+
+def test_fuse_matmul_bias() raises:
+    var a = leaf((2, 4))
+    var w = leaf((3, 4))
+    var bias = leaf((3,))
+    # ADD(MATMUL_T(A, W), EXPAND(bias)) -> MATMUL_BIAS_T(A, W, bias)
+    assert_rewrites_to(
+        GPU_REWRITES(),
+        a.matmul(w.transpose()) + bias.expand(2, 3),
+        Pat(MATMUL_BIAS_T, [Pat(), Pat(), Pat()]),
+    )
+
+
+def test_fuse_matmul_bias_keeps_original_leaves() raises:
+    var a = leaf((2, 4))
+    var w = leaf((3, 4))
+    var bias = leaf((3,))
+    var rewritten = Simplifier(GPU_REWRITES()).run(a.matmul(w.transpose()) + bias.expand(2, 3))
+    assert_true(rewritten.src(0) == a)
+    assert_true(rewritten.src(1) == w)
+    assert_true(rewritten.src(2) == bias)
+
+
+def test_fuse_matmul_bias_removes_add_expand_nodes() raises:
+    var a = leaf((2, 4))
+    var w = leaf((3, 4))
+    var bias = leaf((3,))
+    var rewritten = Simplifier(GPU_REWRITES()).run(a.matmul(w.transpose()) + bias.expand(2, 3))
+    assert_true(rewritten.op_type() == MATMUL_BIAS_T)
+    assert_false(rewritten.op_type() == OpType.ADD)
+
+
+def test_fuse_matmul_bias_preserves_shape() raises:
+    var a = leaf((2, 4))
+    var w = leaf((3, 4))
+    var bias = leaf((3,))
+    var result = Simplifier(GPU_REWRITES()).run(a.matmul(w.transpose()) + bias.expand(2, 3))
+    assert_equal(result.shape(0), 2)
+    assert_equal(result.shape(1), 3)
+
+
+def test_fuse_matmul_bias_preserves_dtype() raises:
+    var a = leaf((2, 4), DType.float32)
+    var w = leaf((3, 4), DType.float32)
+    var bias = leaf((3,), DType.float32)
+    var result = Simplifier(GPU_REWRITES()).run(a.matmul(w.transpose()) + bias.expand(2, 3))
+    assert_true(result.dtype() == DType.float32)
+
+
+def test_matmul_t_plus_non_expand_not_rewritten() raises:
+    var a = leaf((2, 4))
+    var w = leaf((3, 4))
+    var other = leaf((2, 3))
+    # ADD(MATMUL_T(A, W), other) with no EXPAND must not fuse into MATMUL_BIAS_T
+    assert_rewrites_to(
+        GPU_REWRITES(),
+        a.matmul(w.transpose()) + other,
+        Pat(OpType.ADD, [Pat(MATMUL_T), Pat()]),
+    )
+
+
+def test_plain_add_not_rewritten() raises:
+    var a = leaf((4,))
+    var b = leaf((4,))
+    # ADD with no MATMUL_T operand must not be touched
+    assert_rewrites_to(
+        GPU_REWRITES(),
+        a + b,
+        Pat(OpType.ADD, [Pat(), Pat()]),
+    )
 
 
 # ===-------------------------------------------------------------------===#

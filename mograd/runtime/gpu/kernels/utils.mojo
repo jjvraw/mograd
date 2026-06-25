@@ -392,6 +392,40 @@ def matmul_strided(
     return out^
 
 
+comptime MatmulBiasStrided = def(
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
+    b: UnsafePointer[NoneType, ImmutAnyOrigin],
+    bias: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    read la: Layout,
+    read lb: Layout,
+    N: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) thin abi("Mojo") raises -> None
+
+
+@always_inline
+def matmul_bias_strided(
+    read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+) raises -> AnyBuffer:
+    var la = node.src(0).layout()
+    var lb = node.src(1).layout()
+    var out = AnyBuffer.create(node.dtype(), device, node.numel())
+    device.handle[].get_function[MatmulBiasStrided](name)(
+        inputs[0].data_ptr(),
+        inputs[1].data_ptr(),
+        inputs[2].data_ptr(),
+        out.data_ptr(),
+        la,
+        lb,
+        node.shape(node.layout().rank() - 1),
+        node.dtype(),
+        device.ctx,
+    )
+    return out^
+
+
 comptime BinaryStrided = def(
     a: UnsafePointer[NoneType, ImmutAnyOrigin],
     b: UnsafePointer[NoneType, ImmutAnyOrigin],

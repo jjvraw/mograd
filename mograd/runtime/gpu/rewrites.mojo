@@ -12,6 +12,7 @@ def GPU_REWRITES() -> List[Rule[RewriteFn]]:
     return [
         Rule(Pat(OpType.MATMUL, [Pat(), Pat(OpType.TRANSPOSE)]), fuse_matmul_transpose),
         Rule(Pat(OpType.SCALE, [Pat(OpType.SUM)]), fuse_sum_scale),
+        Rule(Pat(OpType.ADD, [Pat(MATMUL_T), Pat(OpType.EXPAND)]), fuse_matmul_bias),
     ]
 
 
@@ -20,6 +21,7 @@ def GPU_REWRITES() -> List[Rule[RewriteFn]]:
 # ===-------------------------------------------------------------------===#
 
 comptime MATMUL_T = OpType("MATMUL_T")
+comptime MATMUL_BIAS_T = OpType("MATMUL_BIAS_T")
 comptime MEAN = OpType("MEAN")
 
 # ===-------------------------------------------------------------------===#
@@ -31,6 +33,14 @@ def fuse_matmul_transpose(node: OpRef) raises -> Optional[OpRef]:
     var A = node.src(0)
     var B = node.src(1).src(0)
     return OpRef(Op(MATMUL_T, node.layout(), node.dtype(), [A, B]))
+
+
+def fuse_matmul_bias(node: OpRef) raises -> Optional[OpRef]:
+    var mm = node.src(0)
+    var A = mm.src(0)
+    var B = mm.src(1)
+    var bias = node.src(1).src(0)
+    return OpRef(Op(MATMUL_BIAS_T, node.layout(), node.dtype(), [A, B, bias]))
 
 
 def fuse_sum_scale(node: OpRef) raises -> Optional[OpRef]:

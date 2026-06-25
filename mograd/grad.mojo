@@ -226,8 +226,11 @@ def triu_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
 def expand_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     var src_layout = node.src(0).layout()
     var out_layout = node.layout()
+    var rank_diff = out_layout.rank() - src_layout.rank()
     var grad = upstream
-    for i in range(out_layout.rank()):
-        if src_layout.shape(i) != out_layout.shape(i):
+    for _ in range(rank_diff):
+        grad = grad.sum(0)
+    for i in range(src_layout.rank()):
+        if src_layout.shape(i) != out_layout.shape(i + rank_diff):
             grad = grad.sum(i, keepdim=True)
     return [grad]

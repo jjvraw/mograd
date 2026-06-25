@@ -1,3 +1,4 @@
+from std.math import sqrt
 from std.sys import has_accelerator
 from std.testing import TestSuite, assert_almost_equal, assert_equal, assert_true
 
@@ -462,11 +463,17 @@ def test_scatter_add_grad_is_gather() raises:
 
 
 def test_simple_mlp_grad() raises:
+    def linear_bias(device: Device, in_features: Int, out_features: Int) raises -> Tensor:
+        var bound = Float32(sqrt(Float32(6) / Float32(in_features)))
+        var seed = UInt32(out_features * in_features) + 1
+        return Tensor.uniform(device, (out_features,), low=-bound, high=bound, seed=seed)
+
     def fwd_w1(w1: Tensor) raises -> Tensor:
         var device = w1.device.value()
         var x = Tensor(device, [Float32(0.1), 0.2, 0.3, 0.4], (1, 4))
         var labels = Tensor(device, [Float32(0)], (1,)).cast(DType.float32)
-        var h1 = (x @ w1.transpose()).relu()
+        var b1 = linear_bias(device, 4, 8)
+        var h1 = (x @ w1.transpose() + b1.expand(1, 8)).relu()
         var l2 = nn.Linear(8, 4)
         var l3 = nn.Linear(4, 3)
         return l3(l2(h1).relu()).cross_entropy(labels.one_hot(3).cast(DType.float32))
@@ -476,7 +483,8 @@ def test_simple_mlp_grad() raises:
         var x = Tensor(device, [Float32(0.1), 0.2, 0.3, 0.4], (1, 4))
         var labels = Tensor(device, [Float32(0)], (1,)).cast(DType.float32)
         var l1 = nn.Linear(4, 8)
-        var h2 = (l1(x).relu() @ w2.transpose()).relu()
+        var b2 = linear_bias(device, 8, 4)
+        var h2 = (l1(x).relu() @ w2.transpose() + b2.expand(1, 4)).relu()
         var l3 = nn.Linear(4, 3)
         return l3(h2).cross_entropy(labels.one_hot(3).cast(DType.float32))
 
@@ -486,12 +494,13 @@ def test_simple_mlp_grad() raises:
         var labels = Tensor(device, [Float32(0)], (1,))
         var l1 = nn.Linear(4, 8)
         var l2 = nn.Linear(8, 4)
-        return (l2(l1(x).relu()).relu() @ w3.transpose()).cross_entropy(labels.one_hot(3).cast(DType.float32))
+        var b3 = linear_bias(device, 4, 3)
+        return (l2(l1(x).relu()).relu() @ w3.transpose() + b3.expand(1, 3)).cross_entropy(
+            labels.one_hot(3).cast(DType.float32)
+        )
 
     var device = Device()
 
-    # Linear seeds are deterministic (UInt32(out * in)), so the same weights
-    # are produced every call: numerical and analytical grads see the same network
     var l1 = nn.Linear(4, 8)
     var l2 = nn.Linear(8, 4)
     var l3 = nn.Linear(4, 3)
@@ -508,9 +517,11 @@ def test_simple_mlp_grad() raises:
     var w1_data = l1._weight[].value().to_list()
     var w2_data = l2._weight[].value().to_list()
     var w3_data = l3._weight[].value().to_list()
+    # opt.params() interleaves each layer's bias after its weight:
+    # [w1, b1, w2, b2, w3, b3], so the weight grads sit at indices 0, 2, 4.
     assert_allclose(grads[0], numerical_grad[fwd_w1](device, w1_data, (8, 4)), tol=0.05)
-    assert_allclose(grads[1], numerical_grad[fwd_w2](device, w2_data, (4, 8)), tol=0.05)
-    assert_allclose(grads[2], numerical_grad[fwd_w3](device, w3_data, (3, 4)), tol=0.05)
+    assert_allclose(grads[2], numerical_grad[fwd_w2](device, w2_data, (4, 8)), tol=0.05)
+    assert_allclose(grads[4], numerical_grad[fwd_w3](device, w3_data, (3, 4)), tol=0.05)
 
 
 def test_unsqueeze_grad() raises:

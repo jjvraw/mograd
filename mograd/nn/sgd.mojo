@@ -17,6 +17,8 @@ struct SGD(Copyable, Movable):
         self._weights = []
         for layer in layers:
             self._weights.append(layer._weight)
+            if layer.use_bias:
+                self._weights.append(layer._bias)
 
     def params(self) -> List[Tensor]:
         var ps = List[Tensor]()

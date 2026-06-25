@@ -265,31 +265,34 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Writable):
         layout = self.expand(IntTuple(*shape))
 
     def expand(self, shape: IntTuple) raises -> Self:
-        """Returns a layout that broadcasts size-1 axes out to `shape`.
+        """Returns a layout that broadcasts out to `shape`.
 
-        `shape` must have the same rank as this layout; pad rank first (e.g.
-        via repeated `unsqueeze(0)`) if it doesn't. A `-1` entry in `shape`
-        means "keep this axis's current size". Every other axis must either
-        already match `shape`, or have size 1, in which case it is stretched
-        with stride 0.
+        If `shape` has greater rank than this layout, extra leading axes are
+        inserted with size 1 first. A `-1` entry in `shape` means "keep this
+        (possibly newly inserted) axis's current size". Every other axis must
+        either already match `shape`, or have size 1, in which case it is
+        stretched with stride 0.
         """
-        if len(shape) != self.rank():
-            raise Error(t"expand: target rank {String(len(shape))} does not match source rank {String(self.rank())}")
+        if len(shape) < self.rank():
+            raise Error(t"expand: target rank {String(len(shape))} is smaller than source rank {String(self.rank())}")
+        var src = self
+        for _ in range(len(shape) - src.rank()):
+            src = src.expand_axis(0, 1)
         var new_shape = IntTuple()
         var new_strides = IntTuple()
-        for i in range(self.rank()):
-            var target = shape.value(i) if shape.value(i) != -1 else self.shape(i)
-            if self.shape(i) == target:
+        for i in range(src.rank()):
+            var target = shape.value(i) if shape.value(i) != -1 else src.shape(i)
+            if src.shape(i) == target:
                 new_shape.append(IntTuple(target))
-                new_strides.append(IntTuple(self._strides.value(i)))
-            elif self.shape(i) == 1:
+                new_strides.append(IntTuple(src._strides.value(i)))
+            elif src.shape(i) == 1:
                 new_shape.append(IntTuple(target))
                 new_strides.append(IntTuple(0))
             else:
                 raise Error(
-                    t"expand: axis {String(i)} has size {String(self.shape(i))}, cannot expand to {String(target)}"
+                    t"expand: axis {String(i)} has size {String(src.shape(i))}, cannot expand to {String(target)}"
                 )
-        return Self(self.rank(), new_shape, new_strides, self.base_offset)
+        return Self(src.rank(), new_shape, new_strides, src.base_offset)
 
     def reduce_output_shape(self, axis: Int, keepdim: Bool) raises -> Self:
         """Returns the output layout after reducing along axis.

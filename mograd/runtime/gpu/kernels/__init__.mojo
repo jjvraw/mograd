@@ -9,7 +9,7 @@ from std.utils.index import IndexList
 from layout import Coord, Idx, MixedLayout, TensorLayout, TileTensor, row_major
 from layout import stack_allocation as tile_stack_allocation
 
-from linalg.bmm import batched_matmul, naive_batched_matmul_kernel
+from linalg.bmm import batched_matmul, elementwise_epilogue_type, naive_batched_matmul_kernel
 
 from nn.argmaxmin_gpu import argmax_gpu
 
@@ -705,6 +705,91 @@ def mograd_matmul_t(
             comptime BLOCK = 16
             comptime naive = naive_batched_matmul_kernel[
                 3, d, d, d, type_of(tc).LayoutType, type_of(ta).LayoutType, type_of(tb).LayoutType, transpose_b=True
+            ]
+            ctx.enqueue_function[naive](
+                tc,
+                ta,
+                tb,
+                IndexList[3](batch, M, N),
+                grid_dim=(ceildiv(N, BLOCK), ceildiv(M, BLOCK), batch),
+                block_dim=(BLOCK, BLOCK),
+            )
+
+    dispatch_dtype[body](dtype)
+
+
+@export
+def mograd_matmul_bias_t(
+    a: UnsafePointer[NoneType, ImmutAnyOrigin],
+    b: UnsafePointer[NoneType, ImmutAnyOrigin],
+    bias: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    read la: Layout,
+    read lb: Layout,
+    N: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    # Fused `(a @ b.T) + bias` (bias broadcast along the last axis).
+
+    @always_inline
+    def body[d: DType]() capturing raises:
+        var rank = la.rank()
+        if not (la.batch_dims_collapsible() and lb.batch_dims_collapsible()):
+            raise Error("matmul_bias: received non-collapsible batch dims, expected op.mojo to materialise these first")
+
+        var M = la.shape(rank - 2)
+        var K = la.shape(rank - 1)
+        var lda0 = la.stride(rank - 2)
+        var lda1 = la.stride(rank - 1)
+        var ldb0 = lb.stride(rank - 2)
+        var ldb1 = lb.stride(rank - 1)
+        var batch = la.numel() // (M * K)
+        var batch_stride_a = la.stride(rank - 3) if rank >= 3 else M * K
+        var batch_stride_b = lb.stride(rank - 3) if rank >= 3 else N * K
+
+        var bias_d = bias.bitcast[Scalar[d]]().as_unsafe_any_origin()
+        var dst_d = dst.bitcast[Scalar[d]]().as_unsafe_any_origin()
+
+        @always_inline
+        @__copy_capture(bias_d, dst_d, M, N)
+        def epilogue[
+            c_type: DType, width: SIMDSize, erank: Int, *, alignment: Int = 1
+        ](coord: IndexList[erank], val: SIMD[c_type, width]) capturing -> None:
+            var n = coord[erank - 1]
+            var flat = coord[0] * M * N + coord[1] * N + n
+            var result = val._refine[d]() + bias_d.load[width=width, alignment=1](n)
+            dst_d.store[width=width, alignment=1](flat, result)
+
+        if lda0 == K and lda1 == 1 and ldb0 == K and ldb1 == 1:
+            var ta = TileTensor(a.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, K)))
+            var tb = TileTensor(b.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, N, K)))
+            var tc = TileTensor(dst_d, row_major(Coord(batch, M, N)))
+            batched_matmul[
+                target="gpu",
+                transpose_b=True,
+                elementwise_epilogue_fn=Optional[elementwise_epilogue_type](epilogue),
+            ](tc, ta, tb, context=ctx)
+        else:
+            # Strided fallback
+            var ta = TileTensor(
+                a.bitcast[Scalar[d]](), MixedLayout(Coord(batch, M, K), Coord(batch_stride_a, lda0, lda1))
+            )
+            var tb = TileTensor(
+                b.bitcast[Scalar[d]](), MixedLayout(Coord(batch, N, K), Coord(batch_stride_b, ldb0, ldb1))
+            )
+            var tc = TileTensor(dst_d, row_major(Coord(batch, M, N)))
+            comptime BLOCK = 16
+            comptime naive = naive_batched_matmul_kernel[
+                3,
+                d,
+                d,
+                d,
+                type_of(tc).LayoutType,
+                type_of(ta).LayoutType,
+                type_of(tb).LayoutType,
+                transpose_b=True,
+                elementwise_lambda_fn=Optional[elementwise_epilogue_type](epilogue),
             ]
             ctx.enqueue_function[naive](
                 tc,

@@ -11,12 +11,16 @@ from mograd.tensor import Tensor, Device
 struct Linear(Copyable, ImplicitlyCopyable, Movable):
     var in_features: Int
     var out_features: Int
+    var use_bias: Bool
     var _weight: ArcPointer[Optional[Tensor]]
+    var _bias: ArcPointer[Optional[Tensor]]
 
-    def __init__(out self, in_features: Int, out_features: Int):
+    def __init__(out self, in_features: Int, out_features: Int, bias: Bool = True):
         self.in_features = in_features
         self.out_features = out_features
+        self.use_bias = bias
         self._weight = ArcPointer(Optional[Tensor](None))
+        self._bias = ArcPointer(Optional[Tensor](None))
 
     def __call__(mut self, x: Tensor) raises -> Tensor:
         if not self._weight[]:
@@ -32,4 +36,16 @@ struct Linear(Copyable, ImplicitlyCopyable, Movable):
                 seed=seed,
                 requires_grad=True,
             )
-        return x @ self._weight[].value().transpose()
+            if self.use_bias:
+                self._bias[] = Tensor.uniform(
+                    x.device.value(),
+                    (self.out_features,),
+                    low=-bound,
+                    high=bound,
+                    seed=seed + 1,
+                    requires_grad=True,
+                )
+        var out = x @ self._weight[].value().transpose()
+        if self.use_bias:
+            out = out + self._bias[].value().expand(out.shape())
+        return out
