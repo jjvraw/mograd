@@ -153,7 +153,7 @@ def transpose_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
 
 
 def reshape_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    return [OpRef(Op(OpType.RESHAPE, upstream.layout().view(node.src(0).layout().shape()), node.dtype(), [upstream]))]
+    return [upstream.reshape(node.src(0).layout())]
 
 
 def view_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
