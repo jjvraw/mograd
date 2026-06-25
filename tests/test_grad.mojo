@@ -504,7 +504,10 @@ def test_simple_mlp_grad() raises:
     var l1 = nn.Linear(4, 8)
     var l2 = nn.Linear(8, 4)
     var l3 = nn.Linear(4, 3)
-    var opt = nn.SGD([l1, l2, l3], lr=Float32(0.1))
+    var ps = l1.parameters()
+    ps += l2.parameters()
+    ps += l3.parameters()
+    var opt = nn.SGD(ps^, lr=Float32(0.1))
 
     var x = Tensor(device, [Float32(0.1), 0.2, 0.3, 0.4], (1, 4))
     var labels = Tensor(device, [Float32(0)], (1,))
