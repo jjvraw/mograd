@@ -30,7 +30,7 @@ def test_linear_lazy_init() raises:
 def test_sgd_updates_weights() raises:
     var device = Device()
     var l = nn.Linear(4, 2)
-    var opt = nn.SGD([l], lr=Float32(0.1))
+    var opt = nn.SGD(l.parameters(), lr=Float32(0.1))
     var x = Tensor(device, [Float32(1), 2, 3, 4], (1, 4))
     var logits = l(x)
     var params = opt.params()
@@ -93,7 +93,7 @@ def test_embedding_grad_accumulates_repeated_indices() raises:
 def test_sgd_arc_sharing() raises:
     var device = Device()
     var l = nn.Linear(4, 2)
-    var opt = nn.SGD([l], lr=Float32(0.1))
+    var opt = nn.SGD(l.parameters(), lr=Float32(0.1))
     var x = Tensor(device, [Float32(1), 2, 3, 4], (1, 4))
     _ = l(x)
     var params = opt.params()

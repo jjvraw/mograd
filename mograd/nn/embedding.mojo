@@ -1,13 +1,14 @@
 from std.memory import ArcPointer
 
 from mograd.tensor import Tensor, Device
+from mograd.nn.module import Module, ModuleParam
 
 # ===-------------------------------------------------------------------===#
 # Embedding
 # ===-------------------------------------------------------------------===#
 
 
-struct Embedding(Copyable, ImplicitlyCopyable, Movable):
+struct Embedding(Copyable, ImplicitlyCopyable, Module, Movable):
     var num_embeddings: Int
     var embedding_dim: Int
     var _weight: ArcPointer[Optional[Tensor]]
@@ -29,3 +30,8 @@ struct Embedding(Copyable, ImplicitlyCopyable, Movable):
                 requires_grad=True,
             )
         return self._weight[].value().gather(indices)
+
+    def parameters(mut self) -> List[ModuleParam]:
+        var ps = List[ModuleParam]()
+        ps.append(self._weight)
+        return ps^

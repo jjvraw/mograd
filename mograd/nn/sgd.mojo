@@ -1,24 +1,14 @@
-from std.memory import ArcPointer
-
 from mograd.tensor import Tensor
-from mograd.nn.linear import Linear
-
-# ===-------------------------------------------------------------------===#
-# SGD
-# ===-------------------------------------------------------------------===#
+from mograd.nn.module import ModuleParam
 
 
 struct SGD(Copyable, Movable):
     var lr: Float32
-    var _weights: List[ArcPointer[Optional[Tensor]]]
+    var _weights: List[ModuleParam]
 
-    def __init__(out self, layers: List[Linear], lr: Float32):
+    def __init__(out self, var params: List[ModuleParam], lr: Float32):
         self.lr = lr
-        self._weights = []
-        for layer in layers:
-            self._weights.append(layer._weight)
-            if layer.use_bias:
-                self._weights.append(layer._bias)
+        self._weights = params^
 
     def params(self) -> List[Tensor]:
         var ps = List[Tensor]()

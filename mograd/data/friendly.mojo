@@ -68,6 +68,34 @@ struct TinyShakespeareData(Copyable, Movable):
     var train_size: Int
     var val_size: Int
 
+    def get_batch(self, seq_len: Int, batch_size: Int, seed: Int = 42) raises -> Tuple[Tensor, Tensor]:
+        """Samples a random batch of (x, y) windows from the training split.
+
+        x[b, t] = data[offset[b] + t]
+        y[b, t] = data[offset[b] + t + 1]   (next-token targets)
+        """
+        var device = self.data.device.value()
+
+        var offsets = Tensor.randint(device, (batch_size,), 0, self.train_size - seq_len, seed=seed)
+
+        var off = offsets.to_list[DType.int64]()
+        var x_idx = List[Int64]()
+        var y_idx = List[Int64]()
+        for b in range(batch_size):
+            for t in range(seq_len):
+                x_idx.append(off[b] + Int64(t))
+                y_idx.append(off[b] + Int64(t) + 1)
+
+        var x_t = Tensor(device, x_idx, (batch_size, seq_len))
+        var y_t = Tensor(device, y_idx, (batch_size, seq_len))
+
+        # gather requires a rank-2 source: reshape (n,) → (n, 1), gather to
+        # (batch_size, seq_len, 1), then squeeze the trailing dim.
+        var data2d = self.data.reshape((self.data.shape(0), 1))
+        var x = data2d[x_t].squeeze(2)
+        var y = data2d[y_t].squeeze(2)
+        return (x^, y^)
+
 
 comptime SHAKESPEARE_URL = "https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt"
 

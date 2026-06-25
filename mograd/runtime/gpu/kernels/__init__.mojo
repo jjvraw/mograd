@@ -153,7 +153,7 @@ def mograd_gather(
             ctx,
         )
 
-    dispatch_dtype[body, float_only=True](dtype)
+    dispatch_dtype[body](dtype)
 
 
 @export

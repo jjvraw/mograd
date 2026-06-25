@@ -21,7 +21,7 @@ def main() raises:
     var data = mnist(device)
 
     var model = MLP()
-    var opt = nn.SGD([model.l1, model.l2, model.l3], lr=Float32(0.01))
+    var opt = nn.SGD(model.parameters(), lr=Float32(0.01))
 
     var batch_size = 32
     var n_steps = 60000 // batch_size

@@ -2,13 +2,14 @@ from std.math import sqrt
 from std.memory import ArcPointer
 
 from mograd.tensor import Tensor, Device
+from mograd.nn.module import Module, ModuleParam
 
 # ===-------------------------------------------------------------------===#
 # Linear
 # ===-------------------------------------------------------------------===#
 
 
-struct Linear(Copyable, ImplicitlyCopyable, Movable):
+struct Linear(Copyable, ImplicitlyCopyable, Module, Movable):
     var in_features: Int
     var out_features: Int
     var use_bias: Bool
@@ -49,3 +50,10 @@ struct Linear(Copyable, ImplicitlyCopyable, Movable):
         if self.use_bias:
             out = out + self._bias[].value().expand(out.shape())
         return out
+
+    def parameters(mut self) -> List[ModuleParam]:
+        var ps = List[ModuleParam]()
+        ps.append(self._weight)
+        if self.use_bias:
+            ps.append(self._bias)
+        return ps^
