@@ -75,6 +75,10 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime SQUEEZE = OpType("SQUEEZE")
     comptime UNSQUEEZE = OpType("UNSQUEEZE")
     comptime TRIU = OpType("TRIU")
+    # Void bundling node for evaluating multiple targets in one
+    # simplify/schedule pass, so the host doesn't pay separate
+    # bookkeeping/sync per target. Never itself executed.
+    comptime SINK = OpType("SINK")
 
     # ===-------------------------------------------------------------------===#
     # Contraction ops
@@ -488,6 +492,14 @@ def concat(var tensors: List[OpRef], axis: Int) raises -> OpRef:
     var dtype = tensors[0].dtype()
     attrs: Attrs = {"axis": ax}
     return OpRef(Op(OpType.CONCAT, out_layout, dtype, tensors^, attrs^))
+
+
+def sink(var targets: List[OpRef]) -> OpRef:
+    """Bundles `targets` into one void SINK node so they can be simplified
+    and scheduled together. The SINK's own layout/dtype are never used;
+    after running, read back `result.srcs()[i]` for each target's outcome.
+    """
+    return OpRef(Op(OpType.SINK, Layout(1), DType.float32, targets^))
 
 
 @fieldwise_init

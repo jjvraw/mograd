@@ -1,7 +1,7 @@
 from std.gpu.host import DeviceContext
 
 from mograd import Device
-from mograd.op import OpRef, OpType
+from mograd.op import OpRef, OpType, sink
 from mograd.buffer import Buffer, AnyBuffer, BufferArm
 from mograd.pattern_matcher import Rule, PatternMatcher, GraphUtils, Pat
 
@@ -21,13 +21,30 @@ struct Scheduler:
         self.rules = rules^
 
     def run(self, root: OpRef, device: Device) raises -> AnyBuffer:
+        var bufs = self._compute(root, device)
+        return bufs[root].copy()
+
+    def run_many(self, var targets: List[OpRef], device: Device) raises -> List[AnyBuffer]:
+        """Computes all `targets` in one pass: one toposort, one bufs dict,
+        one synchronize - instead of one of each per separate `run` call.
+        """
+        var bundle = sink(targets^)
+        var bufs = self._compute(bundle, device)
+        var results = List[AnyBuffer]()
+        for i in range(len(bundle.srcs())):
+            results.append(bufs[bundle.src(i)].copy())
+        return results^
+
+    def _compute(self, root: OpRef, device: Device) raises -> Dict[OpRef, AnyBuffer]:
         var pm = PatternMatcher[BoundExecFn](self.rules)
         var bufs = Dict[OpRef, AnyBuffer]()
         var topo = GraphUtils.toposort(root)
 
         for i in range(len(topo)):
             var node = topo[i]
-            if node.op().buf:
+            if node.op_type() == OpType.SINK:
+                continue
+            elif node.op().buf:
                 bufs[node] = node.op().buf.value().copy()
             elif node.op_type() == OpType.BUFFER:
                 raise Error("uninitialized BUFFER node")
@@ -43,4 +60,4 @@ struct Scheduler:
                 bufs[node] = result^
 
         device.ctx.synchronize()
-        return bufs[root].copy()
+        return bufs^

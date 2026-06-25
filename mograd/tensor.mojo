@@ -142,6 +142,17 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
     def value(self, rules: Optional[SchedulerRules] = None) raises -> AnyBuffer:
         return NativeRuntime.run(self.op, self.device, rules.copy())
 
+    @staticmethod
+    def values(tensors: List[Tensor], rules: Optional[SchedulerRules] = None) raises -> List[AnyBuffer]:
+        """Evaluates all `tensors` in one simplify/schedule pass, so the
+        bookkeeping and final sync happen once instead of once per tensor
+        (see `value` for the single-tensor equivalent).
+        """
+        var ops = List[OpRef]()
+        for i in range(len(tensors)):
+            ops.append(tensors[i].op)
+        return NativeRuntime.run_many(ops^, tensors[0].device, rules.copy())
+
     def item[T: DType = DType.float32](self, rules: Optional[SchedulerRules] = None) raises -> Scalar[T]:
         if T != self.dtype:
             raise Error("Tensor.item: requested dtype does not match tensor dtype")

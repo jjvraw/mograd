@@ -8,7 +8,7 @@ from layout.int_tuple import IntTuple
 
 from mograd import Device
 from mograd.layout import Layout
-from mograd.op import Op, OpRef, OpType
+from mograd.op import Op, OpRef, OpType, sink
 from mograd.buffer import AnyBuffer, Buffer, BufferArm
 from mograd.pattern_matcher import Rule, Pat
 from mograd.scheduler import Scheduler, BoundExecFn, SchedulerRules
@@ -48,6 +48,34 @@ struct NativeRuntime(Runtime):
         if not device:
             raise Error("NativeRuntime requires a Device")
 
+        var prepared = Self._prepare(extern_rules^)
+        ref compound = prepared[0]
+        ref extra_sched = prepared[1]
+        var simplified = Simplifier(GPU_REWRITES()).run(root, compound.copy(), extra_sched)
+        return Scheduler(extra_sched.copy()).run(simplified, device.value())
+
+    @staticmethod
+    def run_many(
+        var targets: List[OpRef], device: Optional[Device], var extern_rules: Optional[SchedulerRules] = None
+    ) raises -> List[AnyBuffer]:
+        """Evaluates all `targets` in one simplify/schedule pass, so shared
+        bookkeeping (toposort, substitution, scheduling) and the final sync
+        happen once instead of once per target.
+        """
+        if not device:
+            raise Error("NativeRuntime requires a Device")
+
+        var prepared = Self._prepare(extern_rules^)
+        ref compound = prepared[0]
+        ref extra_sched = prepared[1]
+        var simplified_bundle = Simplifier(GPU_REWRITES()).run(sink(targets^), compound.copy(), extra_sched)
+        var simplified_targets = List[OpRef]()
+        for i in range(len(simplified_bundle.srcs())):
+            simplified_targets.append(simplified_bundle.src(i))
+        return Scheduler(extra_sched.copy()).run_many(simplified_targets^, device.value())
+
+    @staticmethod
+    def _prepare(var extern_rules: Optional[SchedulerRules]) raises -> Tuple[SchedulerRules, SchedulerRules]:
         var extra_sched = SchedulerRules()
         var compound = SchedulerRules()
 
@@ -57,8 +85,6 @@ struct NativeRuntime(Runtime):
                     compound.append(extern_rules.value()[j].copy())
                 else:
                     extra_sched.append(extern_rules.value()[j].copy())
-
-        var simplified = Simplifier(GPU_REWRITES()).run(root, compound^, extra_sched)
 
         var scheduler_rules: List[Rule[BoundExecFn]] = [
             # Factory
@@ -113,7 +139,7 @@ struct NativeRuntime(Runtime):
         ]
 
         extra_sched += scheduler_rules^
-        return Scheduler(extra_sched^).run(simplified, device.value())
+        return (compound^, extra_sched^)
 
 
 # ===-------------------------------------------------------------------===#

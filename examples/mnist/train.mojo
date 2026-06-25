@@ -25,10 +25,12 @@ def main() raises:
 
     var batch_size = 32
     var n_steps = 60000 // batch_size
+    var y_train_col = data.y_train.reshape((60000, 1))
 
     for step in range(n_steps):
-        var x = data.x_train[step * batch_size : (step + 1) * batch_size]
-        var y = data.y_train[step * batch_size : (step + 1) * batch_size]
+        var idx = Tensor.randint(device, (batch_size,), 0, 60000, seed=step)
+        var x = data.x_train[idx]
+        var y = y_train_col[idx].squeeze(1)
 
         var logits = model(x)
         var loss = logits.cross_entropy(y.one_hot(10).cast(DType.float32))
