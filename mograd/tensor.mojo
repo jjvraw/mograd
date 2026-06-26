@@ -71,6 +71,10 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         return Self.full(device, shape, 0.0, dtype, requires_grad)
 
     @staticmethod
+    def zeros_like(other: Self, requires_grad: Bool = False) -> Self:
+        return Self.full(other.device.value(), other.op.layout(), 0.0, other.dtype, requires_grad)
+
+    @staticmethod
     def ones(device: Device, shape: Layout, dtype: DType = DType.float32, requires_grad: Bool = False) -> Self:
         return Self.full(device, shape, 1.0, dtype, requires_grad)
 
