@@ -67,11 +67,11 @@ PLATFORM="$(uname -s)"
 if [[ "$PLATFORM" == "Darwin" ]]; then
     CC="xcrun clang"
 
-    if ! xcrun --find metal >/dev/null 2>&1; then
-        die "Metal toolchain not found."
+    if ! xcrun metal --version >/dev/null 2>&1; then
+        die "Metal toolchain not installed. Install with: xcodebuild -downloadComponent MetalToolchain"
     fi
 
-    METAL_VERSION="$(xcrun metal --version 2>&1 | head -1 || true)"
+    METAL_VERSION="$(xcrun metal --version 2>&1 | head -1)"
     log "Metal toolchain OK: $METAL_VERSION"
 else
     CC="${CC:-gcc}"
