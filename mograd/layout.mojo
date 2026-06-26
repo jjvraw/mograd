@@ -655,6 +655,14 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Writable):
 
         return self.view(new_shape)
 
+    def with_last_dim(self, n: Int) -> Self:
+        """Returns a row-major layout with the same leading dimensions but last dimension replaced by `n`."""
+        var new_shape = IntTuple()
+        for i in range(self.rank() - 1):
+            new_shape.append(self.shape(i))
+        new_shape.append(n)
+        return Self(self.rank(), new_shape, Self.row_major_strides(new_shape), 0)
+
     # ===-------------------------------------------------------------------===#
     # Slice
     # ===-------------------------------------------------------------------===#

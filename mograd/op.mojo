@@ -300,17 +300,24 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def reshape(self, shape: Layout) raises -> Self:
-        var src = self.contiguous()
-        return Self(Op(OpType.RESHAPE, src.layout().view(shape.shape()), self.dtype(), [src]))
+        try:
+            return Self(Op(OpType.RESHAPE, self.layout().view(shape.shape()), self.dtype(), [self]))
+        except:
+            var src = self.contiguous()
+            return Self(Op(OpType.RESHAPE, src.layout().view(shape.shape()), self.dtype(), [src]))
 
     def view(self, shape: Layout) raises -> Self:
         assert self.layout().is_contiguous(), "Tensor.view requires contiguous layout."
         return Self(Op(OpType.VIEW, self.layout().view(shape.shape()), self.dtype(), [self]))
 
     def flatten(self, start_dim: Int = 0, end_dim: Int = -1) raises -> Self:
-        var src = self.contiguous()
-        var flattened_layout = src.layout().flatten(start_dim, end_dim)
-        return Self(Op(OpType.RESHAPE, flattened_layout, self.dtype(), [src]))
+        try:
+            var flattened_layout = self.layout().flatten(start_dim, end_dim)
+            return Self(Op(OpType.RESHAPE, flattened_layout, self.dtype(), [self]))
+        except:
+            var src = self.contiguous()
+            var flattened_layout = src.layout().flatten(start_dim, end_dim)
+            return Self(Op(OpType.RESHAPE, flattened_layout, self.dtype(), [src]))
 
     def one_hot(self, var num_classes: Int, out_dtype: DType) -> OpRef:
         n = Float32(num_classes)
@@ -339,7 +346,11 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return OpRef(Op(OpType.SCATTER_ADD, Layout(num_rows, row_size), self.dtype(), [indices, self]))
 
     def transpose(self, dim0: Int = -2, dim1: Int = -1) raises -> Self:
-        return Self(Op(OpType.TRANSPOSE, self.layout().transpose(dim0, dim1), self.dtype(), [self]))
+        var rank = self.layout().rank()
+        var d0 = dim0 if dim0 >= 0 else rank + dim0
+        var d1 = dim1 if dim1 >= 0 else rank + dim1
+        attrs: Attrs = {"dim0": d0, "dim1": d1}
+        return Self(Op(OpType.TRANSPOSE, self.layout().transpose(dim0, dim1), self.dtype(), [self], attrs^))
 
     def contiguous(self) -> Self:
         if self.layout().is_contiguous():

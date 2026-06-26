@@ -38,6 +38,7 @@ struct Grad:
                 Rule(Pat(OpType.NEG), neg_grad),
                 Rule(Pat(OpType.DIV), div_grad),
                 Rule(Pat(OpType.SUM), sum_grad),
+                Rule(Pat(OpType.CONTIGUOUS), contiguous_grad),
                 Rule(Pat(OpType.RESHAPE), reshape_grad),
                 Rule(Pat(OpType.VIEW), view_grad),
                 Rule(Pat(OpType.SLICE), slice_grad),
@@ -149,7 +150,11 @@ def matmul_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
 
 
 def transpose_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    return [upstream.transpose()]
+    return [upstream.transpose(node.attr_int("dim0"), node.attr_int("dim1"))]
+
+
+def contiguous_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    return [upstream]
 
 
 def reshape_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:

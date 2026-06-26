@@ -46,7 +46,10 @@ struct Linear(Copyable, ImplicitlyCopyable, Module, Movable):
                     seed=seed + 1,
                     requires_grad=True,
                 )
-        var out = x @ self._weight[].value().transpose()
+        var rank = x.rank()
+        var x2d = x.reshape(x.op.layout().flatten(0, rank - 2))
+        var out2d = x2d @ self._weight[].value().transpose()
+        var out = out2d.reshape(x.op.layout().with_last_dim(self.out_features))
         if self.use_bias:
             out = out + self._bias[].value().expand(out.shape())
         return out
