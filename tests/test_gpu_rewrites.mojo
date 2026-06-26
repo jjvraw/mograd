@@ -2,24 +2,24 @@ from std.testing import TestSuite, assert_true, assert_false, assert_equal
 
 from mograd.op import OpType, OpRef
 from mograd.pattern_matcher import Rule, Pat
-from mograd.runtime.gpu.rewrites import GPU_REWRITES, fuse_matmul_transpose, MATMUL_T, MATMUL_BIAS_T, MEAN
+from mograd.runtime.gpu.rewrites import GPU_REWRITES, fuse_matmul_transpose, MATMUL_BT, MATMUL_BIAS_BT, MEAN
 from mograd.simplify import RewriteFn
 from mograd.testing import leaf, assert_rewrites_to
 from mograd.simplify import Simplifier
 
 # ===-------------------------------------------------------------------===#
-# MATMUL_T rewrite
+# MATMUL_BT rewrite
 # ===-------------------------------------------------------------------===#
 
 
 def test_fuse_matmul_transpose() raises:
     var a = leaf((2, 3))
     var b = leaf((4, 3))
-    # MATMUL(A, TRANSPOSE(B)) -> MATMUL_T(A, B)
+    # MATMUL(A, TRANSPOSE(B)) -> MATMUL_BT(A, B)
     assert_rewrites_to(
         GPU_REWRITES(),
         a.matmul(b.transpose()),
-        Pat(MATMUL_T, [Pat(), Pat()]),
+        Pat(MATMUL_BT, [Pat(), Pat()]),
     )
 
 
@@ -57,7 +57,7 @@ def test_rewrite_preserves_dtype() raises:
 
 
 # ===-------------------------------------------------------------------===#
-# MATMUL_BIAS_T rewrite (fused matmul_t + broadcast bias add)
+# MATMUL_BIAS_BT rewrite (fused matmul_bt + broadcast bias add)
 # ===-------------------------------------------------------------------===#
 
 
@@ -65,11 +65,11 @@ def test_fuse_matmul_bias() raises:
     var a = leaf((2, 4))
     var w = leaf((3, 4))
     var bias = leaf((3,))
-    # ADD(MATMUL_T(A, W), EXPAND(bias)) -> MATMUL_BIAS_T(A, W, bias)
+    # ADD(MATMUL_BT(A, W), EXPAND(bias)) -> MATMUL_BIAS_BT(A, W, bias)
     assert_rewrites_to(
         GPU_REWRITES(),
         a.matmul(w.transpose()) + bias.expand(2, 3),
-        Pat(MATMUL_BIAS_T, [Pat(), Pat(), Pat()]),
+        Pat(MATMUL_BIAS_BT, [Pat(), Pat(), Pat()]),
     )
 
 
@@ -88,7 +88,7 @@ def test_fuse_matmul_bias_removes_add_expand_nodes() raises:
     var w = leaf((3, 4))
     var bias = leaf((3,))
     var rewritten = Simplifier(GPU_REWRITES()).run(a.matmul(w.transpose()) + bias.expand(2, 3))
-    assert_true(rewritten.op_type() == MATMUL_BIAS_T)
+    assert_true(rewritten.op_type() == MATMUL_BIAS_BT)
     assert_false(rewritten.op_type() == OpType.ADD)
 
 
@@ -113,18 +113,18 @@ def test_matmul_t_plus_non_expand_not_rewritten() raises:
     var a = leaf((2, 4))
     var w = leaf((3, 4))
     var other = leaf((2, 3))
-    # ADD(MATMUL_T(A, W), other) with no EXPAND must not fuse into MATMUL_BIAS_T
+    # ADD(MATMUL_BT(A, W), other) with no EXPAND must not fuse into MATMUL_BIAS_BT
     assert_rewrites_to(
         GPU_REWRITES(),
         a.matmul(w.transpose()) + other,
-        Pat(OpType.ADD, [Pat(MATMUL_T), Pat()]),
+        Pat(OpType.ADD, [Pat(MATMUL_BT), Pat()]),
     )
 
 
 def test_plain_add_not_rewritten() raises:
     var a = leaf((4,))
     var b = leaf((4,))
-    # ADD with no MATMUL_T operand must not be touched
+    # ADD with no MATMUL_BT operand must not be touched
     assert_rewrites_to(
         GPU_REWRITES(),
         a + b,

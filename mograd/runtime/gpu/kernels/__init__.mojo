@@ -677,7 +677,7 @@ def mograd_matmul(
 
 
 @export
-def mograd_matmul_t(
+def mograd_matmul_bt(
     a: UnsafePointer[NoneType, ImmutAnyOrigin],
     b: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
@@ -748,7 +748,7 @@ def mograd_matmul_t(
 
 
 @export
-def mograd_matmul_bias_t(
+def mograd_matmul_bias_bt(
     a: UnsafePointer[NoneType, ImmutAnyOrigin],
     b: UnsafePointer[NoneType, ImmutAnyOrigin],
     bias: UnsafePointer[NoneType, ImmutAnyOrigin],
