@@ -93,7 +93,7 @@ def bench_matmul[
 def bench_matmul_t[
     dtype: DType, batch: Int, M: Int, K: Int, N: Int, pad: Int
 ](mut m: Bench, *, lib: OwnedDLHandle, ctx: DeviceContext, symbol: String) raises:
-    # mograd_matmul_t computes A @ B^T, so B is stored (N, K) rather than (K, N).
+    # mograd_matmul_bt computes A @ B^T, so B is stored (N, K) rather than (K, N).
     comptime dtype_str = "f32" if dtype == DType.float32 else "f16" if dtype == DType.float16 else "bf16"
     comptime flops = 2 * batch * M * N * K
     comptime bytes_moved = batch * (M * K + N * K + M * N) * size_of[dtype]()
@@ -178,8 +178,8 @@ def main() raises:
                 comptime N = sizes_n[si]
                 bench_matmul[dtype, B, M, K, N, 0](m, lib=lib, ctx=ctx, symbol="mograd_matmul")
                 bench_matmul[dtype, B, M, K, N, PAD](m, lib=lib, ctx=ctx, symbol="mograd_matmul")
-                bench_matmul_t[dtype, B, M, K, N, 0](m, lib=lib, ctx=ctx, symbol="mograd_matmul_t")
-                bench_matmul_t[dtype, B, M, K, N, PAD](m, lib=lib, ctx=ctx, symbol="mograd_matmul_t")
+                bench_matmul_t[dtype, B, M, K, N, 0](m, lib=lib, ctx=ctx, symbol="mograd_matmul_bt")
+                bench_matmul_t[dtype, B, M, K, N, PAD](m, lib=lib, ctx=ctx, symbol="mograd_matmul_bt")
 
             comptime for si in range(len(sweep_square)):
                 comptime S = sweep_square[si]
