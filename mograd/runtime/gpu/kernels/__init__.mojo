@@ -677,7 +677,7 @@ def mograd_matmul(
 
 
 @export
-def mograd_matmul_bt(
+def mograd_matmul_t(
     a: UnsafePointer[NoneType, ImmutAnyOrigin],
     b: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
@@ -685,6 +685,7 @@ def mograd_matmul_bt(
     read lb: Layout,
     N: Int,
     dtype: DType,
+    transpose_a: Bool,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
     @always_inline
@@ -696,44 +697,30 @@ def mograd_matmul_bt(
         if not (la.batch_dims_collapsible() and lb.batch_dims_collapsible()):
             raise Error("matmul: received non-collapsible batch dims, expected op.mojo to materialise these first")
 
-        var M = la.shape(rank - 2)
-        var K = la.shape(rank - 1)
         var lda0 = la.stride(rank - 2)
         var lda1 = la.stride(rank - 1)
         var ldb0 = lb.stride(rank - 2)
         var ldb1 = lb.stride(rank - 1)
-        var batch = la.numel() // (M * K)
-        var batch_stride_a = la.stride(rank - 3) if rank >= 3 else M * K
-        var batch_stride_b = lb.stride(rank - 3) if rank >= 3 else N * K
 
-        if lda0 == K and lda1 == 1 and ldb0 == K and ldb1 == 1:
-            comptime if d.is_floating_point():
-                if _try_static_square_batched_matmul[d, True](
-                    a.bitcast[Scalar[d]]().as_unsafe_any_origin(),
-                    b.bitcast[Scalar[d]]().as_unsafe_any_origin(),
-                    dst.bitcast[Scalar[d]]().as_unsafe_any_origin(),
-                    batch,
-                    M,
-                    K,
-                    N,
-                    ctx,
-                ):
-                    return
-            var ta = TileTensor(a.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, K)))
-            var tb = TileTensor(b.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, N, K)))
-            var tc = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, N)))
-            batched_matmul[target="gpu", transpose_b=True](tc, ta, tb, context=ctx)
-        else:
+        if transpose_a:
+            # MATMUL_AT: C = A^T @ B.  la stores A (shape [..., K, M]).
+            # batched_matmul/naive_batched_matmul_kernel don't yet support transpose_a,
+            # so represent A^T by swapping shape and strides on the TileTensor.
+            var K = la.shape(rank - 2)
+            var M = la.shape(rank - 1)
+            var batch = la.numel() // (K * M)
+            var batch_stride_a = la.stride(rank - 3) if rank >= 3 else K * M
+            var batch_stride_b = lb.stride(rank - 3) if rank >= 3 else K * N
             var ta = TileTensor(
-                a.bitcast[Scalar[d]](), MixedLayout(Coord(batch, M, K), Coord(batch_stride_a, lda0, lda1))
+                a.bitcast[Scalar[d]](), MixedLayout(Coord(batch, M, K), Coord(batch_stride_a, lda1, lda0))
             )
             var tb = TileTensor(
-                b.bitcast[Scalar[d]](), MixedLayout(Coord(batch, N, K), Coord(batch_stride_b, ldb0, ldb1))
+                b.bitcast[Scalar[d]](), MixedLayout(Coord(batch, K, N), Coord(batch_stride_b, ldb0, ldb1))
             )
             var tc = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, N)))
             comptime BLOCK = 16
             comptime naive = naive_batched_matmul_kernel[
-                3, d, d, d, type_of(tc).LayoutType, type_of(ta).LayoutType, type_of(tb).LayoutType, transpose_b=True
+                3, d, d, d, type_of(tc).LayoutType, type_of(ta).LayoutType, type_of(tb).LayoutType
             ]
             ctx.enqueue_function[naive](
                 tc,
@@ -743,6 +730,50 @@ def mograd_matmul_bt(
                 grid_dim=(ceildiv(N, BLOCK), ceildiv(M, BLOCK), batch),
                 block_dim=(BLOCK, BLOCK),
             )
+        else:
+            # MATMUL_BT: C = A @ B^T.  lb stores B (shape [..., N, K]).
+            var M = la.shape(rank - 2)
+            var K = la.shape(rank - 1)
+            var batch = la.numel() // (M * K)
+            var batch_stride_a = la.stride(rank - 3) if rank >= 3 else M * K
+            var batch_stride_b = lb.stride(rank - 3) if rank >= 3 else N * K
+            if lda0 == K and lda1 == 1 and ldb0 == K and ldb1 == 1:
+                comptime if d.is_floating_point():
+                    if _try_static_square_batched_matmul[d, True](
+                        a.bitcast[Scalar[d]]().as_unsafe_any_origin(),
+                        b.bitcast[Scalar[d]]().as_unsafe_any_origin(),
+                        dst.bitcast[Scalar[d]]().as_unsafe_any_origin(),
+                        batch,
+                        M,
+                        K,
+                        N,
+                        ctx,
+                    ):
+                        return
+                var ta = TileTensor(a.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, K)))
+                var tb = TileTensor(b.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, N, K)))
+                var tc = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, N)))
+                batched_matmul[target="gpu", transpose_b=True](tc, ta, tb, context=ctx)
+            else:
+                var ta = TileTensor(
+                    a.bitcast[Scalar[d]](), MixedLayout(Coord(batch, M, K), Coord(batch_stride_a, lda0, lda1))
+                )
+                var tb = TileTensor(
+                    b.bitcast[Scalar[d]](), MixedLayout(Coord(batch, N, K), Coord(batch_stride_b, ldb0, ldb1))
+                )
+                var tc = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, N)))
+                comptime BLOCK = 16
+                comptime naive = naive_batched_matmul_kernel[
+                    3, d, d, d, type_of(tc).LayoutType, type_of(ta).LayoutType, type_of(tb).LayoutType, transpose_b=True
+                ]
+                ctx.enqueue_function[naive](
+                    tc,
+                    ta,
+                    tb,
+                    IndexList[3](batch, M, N),
+                    grid_dim=(ceildiv(N, BLOCK), ceildiv(M, BLOCK), batch),
+                    block_dim=(BLOCK, BLOCK),
+                )
 
     dispatch_dtype[body](dtype)
 

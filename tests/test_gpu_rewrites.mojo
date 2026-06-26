@@ -2,10 +2,77 @@ from std.testing import TestSuite, assert_true, assert_false, assert_equal
 
 from mograd.op import OpType, OpRef
 from mograd.pattern_matcher import Rule, Pat
-from mograd.runtime.gpu.rewrites import GPU_REWRITES, fuse_matmul_transpose, MATMUL_BT, MATMUL_BIAS_BT, MEAN
+from mograd.runtime.gpu.rewrites import (
+    GPU_REWRITES,
+    fuse_matmul_transpose,
+    fuse_transpose_matmul,
+    MATMUL_AT,
+    MATMUL_BT,
+    MATMUL_BIAS_BT,
+    MEAN,
+)
 from mograd.simplify import RewriteFn
 from mograd.testing import leaf, assert_rewrites_to
 from mograd.simplify import Simplifier
+
+# ===-------------------------------------------------------------------===#
+# MATMUL_AT rewrite
+# ===-------------------------------------------------------------------===#
+
+
+def test_fuse_transpose_matmul() raises:
+    var a = leaf((3, 2))
+    var b = leaf((3, 4))
+    # MATMUL(TRANSPOSE(A), B) -> MATMUL_AT(A, B)
+    assert_rewrites_to(
+        GPU_REWRITES(),
+        a.transpose().matmul(b),
+        Pat(MATMUL_AT, [Pat(), Pat()]),
+    )
+
+
+def test_fuse_transpose_matmul_removes_transpose_node() raises:
+    var a = leaf((3, 2))
+    var b = leaf((3, 4))
+    var rewritten = Simplifier(GPU_REWRITES()).run(a.transpose().matmul(b))
+    assert_false(rewritten.src(0).op_type() == OpType.TRANSPOSE)
+
+
+def test_at_plain_matmul_not_rewritten() raises:
+    var a = leaf((2, 3))
+    var b = leaf((3, 4))
+    # MATMUL(A, B) with no TRANSPOSE must not become MATMUL_AT
+    assert_rewrites_to(
+        GPU_REWRITES(),
+        a.matmul(b),
+        Pat(OpType.MATMUL, [Pat(), Pat()]),
+    )
+
+
+def test_at_rewrite_preserves_shape() raises:
+    var a = leaf((3, 2))
+    var b = leaf((3, 5))
+    # A^T @ B: [2, 3] @ [3, 5] = [2, 5]
+    var result = Simplifier(GPU_REWRITES()).run(a.transpose().matmul(b))
+    assert_equal(result.shape(0), 2)
+    assert_equal(result.shape(1), 5)
+
+
+def test_at_rewrite_preserves_dtype() raises:
+    var a = leaf((3, 2), DType.float32)
+    var b = leaf((3, 4), DType.float32)
+    var result = Simplifier(GPU_REWRITES()).run(a.transpose().matmul(b))
+    assert_true(result.dtype() == DType.float32)
+
+
+def test_at_rule_takes_priority_over_bt_on_lhs_transpose() raises:
+    # fuse to MATMUL_AT, not MATMUL_BT.
+    var a = leaf((3, 2))
+    var b = leaf((3, 4))
+    var rewritten = Simplifier(GPU_REWRITES()).run(a.transpose().matmul(b))
+    assert_true(rewritten.op_type() == MATMUL_AT)
+    assert_false(rewritten.op_type() == MATMUL_BT)
+
 
 # ===-------------------------------------------------------------------===#
 # MATMUL_BT rewrite

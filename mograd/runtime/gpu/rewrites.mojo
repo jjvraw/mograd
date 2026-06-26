@@ -10,6 +10,7 @@ from mograd.op import Op, OpRef, OpType
 
 def GPU_REWRITES() -> List[Rule[RewriteFn]]:
     return [
+        Rule(Pat(OpType.MATMUL, [Pat(OpType.TRANSPOSE), Pat()]), fuse_transpose_matmul),
         Rule(Pat(OpType.MATMUL, [Pat(), Pat(OpType.TRANSPOSE)]), fuse_matmul_transpose),
         Rule(Pat(OpType.SCALE, [Pat(OpType.SUM)]), fuse_sum_scale),
         Rule(Pat(OpType.ADD, [Pat(MATMUL_BT), Pat(OpType.EXPAND)]), fuse_matmul_bias),
@@ -20,6 +21,7 @@ def GPU_REWRITES() -> List[Rule[RewriteFn]]:
 # GPU-specific OpTypes
 # ===-------------------------------------------------------------------===#
 
+comptime MATMUL_AT = OpType("MATMUL_AT")
 comptime MATMUL_BT = OpType("MATMUL_BT")
 comptime MATMUL_BIAS_BT = OpType("MATMUL_BIAS_BT")
 comptime MEAN = OpType("MEAN")
@@ -27,6 +29,12 @@ comptime MEAN = OpType("MEAN")
 # ===-------------------------------------------------------------------===#
 # GPU-specific rewrite methods
 # ===-------------------------------------------------------------------===#
+
+
+def fuse_transpose_matmul(node: OpRef) raises -> Optional[OpRef]:
+    var A = node.src(0).src(0)
+    var B = node.src(1)
+    return OpRef(Op(MATMUL_AT, node.layout(), node.dtype(), [A, B]))
 
 
 def fuse_matmul_transpose(node: OpRef) raises -> Optional[OpRef]:
