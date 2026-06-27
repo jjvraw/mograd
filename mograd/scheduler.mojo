@@ -9,7 +9,7 @@ from mograd.pattern_matcher import Rule, PatternMatcher, GraphUtils, Pat
 # Scheduler
 # ===-------------------------------------------------------------------===#
 
-comptime BoundExecFn = def(node: OpRef, inputs: List[AnyBuffer], device: Device) thin raises -> AnyBuffer
+comptime BoundExecFn = def(node: OpRef, inputs: List[AnyBuffer], device: Device) thin raises -> List[AnyBuffer]
 
 comptime SchedulerRules = List[Rule[BoundExecFn]]
 
@@ -22,7 +22,7 @@ struct Scheduler:
 
     def run(self, root: OpRef, device: Device) raises -> AnyBuffer:
         var bufs = self._compute(root, device)
-        return bufs[root].copy()
+        return bufs[root][0].copy()
 
     def run_many(self, var targets: List[OpRef], device: Device) raises -> List[AnyBuffer]:
         """Computes all `targets` in one pass: one toposort, one bufs dict,
@@ -32,32 +32,39 @@ struct Scheduler:
         var bufs = self._compute(bundle, device)
         var results = List[AnyBuffer]()
         for i in range(len(bundle.srcs())):
-            results.append(bufs[bundle.src(i)].copy())
+            results.append(bufs[bundle.src(i)][0].copy())
         return results^
 
-    def _compute(self, root: OpRef, device: Device) raises -> Dict[OpRef, AnyBuffer]:
+    def _compute(self, root: OpRef, device: Device) raises -> Dict[OpRef, List[AnyBuffer]]:
         var pm = PatternMatcher[BoundExecFn](self.rules)
-        var bufs = Dict[OpRef, AnyBuffer]()
+        var bufs = Dict[OpRef, List[AnyBuffer]]()
         var topo = GraphUtils.toposort(root)
 
         for i in range(len(topo)):
             var node = topo[i]
             if node.op_type() == OpType.SINK:
                 continue
+            elif node.op_type() == OpType.GETTUPLE:
+                var idx = node.attr_int("index")
+                var out = bufs[node.src(0)][idx].copy()
+                node.op().buf = Optional[AnyBuffer](out.copy())
+                bufs[node] = [out^]
+                continue
             elif node.op().buf:
-                bufs[node] = node.op().buf.value().copy()
+                bufs[node] = [node.op().buf.value().copy()]
+                continue
             elif node.op_type() == OpType.BUFFER:
                 raise Error("uninitialized BUFFER node")
-            else:
-                var inputs = List[AnyBuffer]()
-                for j in range(len(node.srcs())):
-                    inputs.append(bufs[node.src(j)].copy())
-                var rule = pm.match(node)
-                if not rule:
-                    raise Error("no exec rule for op: " + node.op_type()._name)
-                var result = rule.value().func(node, inputs, device)
-                node.op().buf = Optional[AnyBuffer](result.copy())
-                bufs[node] = result^
+
+            var inputs = List[AnyBuffer]()
+            for j in range(len(node.srcs())):
+                inputs.append(bufs[node.src(j)][0].copy())
+            var rule = pm.match(node)
+            if not rule:
+                raise Error("no exec rule for op: " + node.op_type()._name)
+            var results = rule.value().func(node, inputs, device)
+            node.op().buf = Optional[AnyBuffer](results[0].copy())
+            bufs[node] = results^
 
         device.ctx.synchronize()
         return bufs^

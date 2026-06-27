@@ -19,6 +19,12 @@ from mograd.pattern_matcher import GraphUtils
 struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     var _name: String
 
+    comptime SINK = OpType("SINK")
+    """Void bundling node for evaluating multiple targets in one simplify/schedule pass."""
+
+    comptime GETTUPLE = OpType("GETTUPLE")
+    """Selects the i-th buffer from a multi-output node (index stored in attrs["index"])."""
+
     # ===-------------------------------------------------------------------===#
     # Leaf ops
     # ===-------------------------------------------------------------------===#
@@ -75,10 +81,6 @@ struct OpType(Copyable, ImplicitlyCopyable, KeyElement, Movable):
     comptime SQUEEZE = OpType("SQUEEZE")
     comptime UNSQUEEZE = OpType("UNSQUEEZE")
     comptime TRIU = OpType("TRIU")
-    # Void bundling node for evaluating multiple targets in one
-    # simplify/schedule pass, so the host doesn't pay separate
-    # bookkeeping/sync per target. Never itself executed.
-    comptime SINK = OpType("SINK")
 
     # ===-------------------------------------------------------------------===#
     # Contraction ops

@@ -55,11 +55,13 @@ test-nn                 = { cmd = "mojo -I . tests/test_nn.mojo",               
 test-ops                = { cmd = "mojo -I . tests/test_ops.mojo",              depends-on = ["ensure-gpu"] }
 test-data               = { cmd = "mojo -I . tests/test_data.mojo",             depends-on = ["ensure-gpu"] }
 test-non-contiguous     = { cmd = "mojo -I . tests/test_non_contiguous.mojo",   depends-on = ["ensure-gpu"] }
+test-scheduler          = { cmd = "mojo -I . tests/test_scheduler.mojo" }
 test-gpu                = { depends-on = [  "test-grad",
                                             "test-nn",
                                             "test-ops",
                                             "test-data",
-                                            "test-non-contiguous"] }
+                                            "test-non-contiguous",
+                                            "test-scheduler"] }
 
 # Test Graph
 test-gpu-rewrites       = { cmd = "mojo -I . tests/test_gpu_rewrites.mojo" }
@@ -79,7 +81,7 @@ tinyshakespear          = { cmd = "mojo -I . examples/tinyshakespear/train.mojo"
 examples-ci                = { depends-on = ["mnist"] }
 
 # Test All
-test-all                = { depends-on = ["test-gpu", "test-graph", "examples"] }
+test-all                = { depends-on = ["test-gpu", "test-graph", "examples-ci"] }
 
 # Benchamrks
 bench-elementwise       = { cmd = "mojo -I . benches/elementwise.mojo",         depends-on = ["ensure-gpu"] }

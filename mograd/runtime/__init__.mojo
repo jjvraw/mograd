@@ -197,7 +197,7 @@ comptime TriuOp = def(
 # ===-------------------------------------------------------------------===#
 
 
-def randn(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def randn(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var params = alloc[Float32](3)
     params[0] = node.attr("mean")
     params[1] = node.attr("std")
@@ -211,10 +211,10 @@ def randn(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuf
         device.ctx,
     )
     params.free()
-    return out^
+    return [out^]
 
 
-def uniform(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def uniform(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var params = alloc[Float32](3)
     params[0] = node.attr("low")
     params[1] = node.attr("high")
@@ -224,10 +224,10 @@ def uniform(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyB
         params.bitcast[NoneType]().as_unsafe_any_origin(), out.data_ptr(), node.numel(), node.dtype(), device.ctx
     )
     params.free()
-    return out^
+    return [out^]
 
 
-def randint(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def randint(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     if node.dtype() != DType.int64:
         raise Error("randint: only int64 output is supported")
     var low = node.attr_int("low")
@@ -236,10 +236,10 @@ def randint(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyB
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
     with out.unsafe_get[DType.int64]().buf().map_to_host() as host:
         host_randint(host.as_span(), low, high - 1)
-    return out^
+    return [out^]
 
 
-def full(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def full(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var v = alloc[Float32](1)
     v[0] = node.attr("value")
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
@@ -251,14 +251,14 @@ def full(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
         device.ctx,
     )
     v.free()
-    return out^
+    return [out^]
 
 
-def gather(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return binary_strided("mograd_gather", node, inputs, device)
+def gather(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
+    return [binary_strided("mograd_gather", node, inputs, device)]
 
 
-def scatter_add(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def scatter_add(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel(), fill=0.0)
@@ -271,10 +271,10 @@ def scatter_add(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> 
         node.dtype(),
         device.ctx,
     )
-    return out^
+    return [out^]
 
 
-def one_hot(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def one_hot(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var la = node.src(0).layout()
     var ld = node.layout()
     var out = AnyBuffer.create(node.dtype(), device, ld.numel())
@@ -287,7 +287,7 @@ def one_hot(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyB
         la,
         device.ctx,
     )
-    return out^
+    return [out^]
 
 
 # ===-------------------------------------------------------------------===#
@@ -295,27 +295,27 @@ def one_hot(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyB
 # ===-------------------------------------------------------------------===#
 
 
-def neg(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return unary_strided("mograd_neg", node, inputs, device)
+def neg(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
+    return [unary_strided("mograd_neg", node, inputs, device)]
 
 
-def log(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return unary_strided("mograd_log", node, inputs, device)
+def log(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
+    return [unary_strided("mograd_log", node, inputs, device)]
 
 
-def exp(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return unary_strided("mograd_exp", node, inputs, device)
+def exp(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
+    return [unary_strided("mograd_exp", node, inputs, device)]
 
 
-def sqrt(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return unary_strided("mograd_sqrt", node, inputs, device)
+def sqrt(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
+    return [unary_strided("mograd_sqrt", node, inputs, device)]
 
 
-def relu(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return unary_strided("mograd_relu", node, inputs, device)
+def relu(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
+    return [unary_strided("mograd_relu", node, inputs, device)]
 
 
-def cast(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def cast(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var layout = node.src(0).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
     device.handle[].get_function[CastOp]("mograd_cast")(
@@ -326,7 +326,7 @@ def cast(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
         node.dtype(),
         device.ctx,
     )
-    return out^
+    return [out^]
 
 
 # ===-------------------------------------------------------------------===#
@@ -334,7 +334,7 @@ def cast(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
 # ===-------------------------------------------------------------------===#
 
 
-def add(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def add(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
@@ -349,28 +349,28 @@ def add(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffe
             device.ctx,
         )
         null.free()
-        return out^
+        return [out^]
 
-    return binary_strided("mograd_add_strided", node, inputs, device)
-
-
-def mul(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return binary_strided("mograd_mul", node, inputs, device)
+    return [binary_strided("mograd_add_strided", node, inputs, device)]
 
 
-def div(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return binary_strided("mograd_div", node, inputs, device)
+def mul(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
+    return [binary_strided("mograd_mul", node, inputs, device)]
 
 
-def eq(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return binary_strided("mograd_eq", node, inputs, device)
+def div(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
+    return [binary_strided("mograd_div", node, inputs, device)]
 
 
-def relu_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return binary_strided("mograd_relu_grad", node, inputs, device)
+def eq(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
+    return [binary_strided("mograd_eq", node, inputs, device)]
 
 
-def scale(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def relu_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
+    return [binary_strided("mograd_relu_grad", node, inputs, device)]
+
+
+def scale(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var la = node.src(0).layout()
     var s = alloc[Float32](1)
     s[0] = node.attrs()["scalar"][Float32]
@@ -383,10 +383,10 @@ def scale(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuf
         node.dtype(),
         device.ctx,
     )
-    return out^
+    return [out^]
 
 
-def slice_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def slice_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var slice_layout = node.src(1).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel(), fill=0.0)
     var out_view = out.view(slice_layout)
@@ -397,7 +397,7 @@ def slice_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> A
         node.dtype(),
         device.ctx,
     )
-    return out^
+    return [out^]
 
 
 # ===-------------------------------------------------------------------===#
@@ -405,22 +405,22 @@ def slice_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> A
 # ===-------------------------------------------------------------------===#
 
 
-def sum(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def sum(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     if "axis" in node.attrs():
-        return axis_reduce_strided("mograd_sum_axis", node, inputs, device)
-    return unary_strided("mograd_sum", node, inputs, device)
+        return [axis_reduce_strided("mograd_sum_axis", node, inputs, device)]
+    return [unary_strided("mograd_sum", node, inputs, device)]
 
 
-def mean(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def mean(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     if "axis" in node.attrs():
-        return axis_reduce_strided("mograd_mean_axis", node, inputs, device)
-    return unary_strided("mograd_mean", node, inputs, device)
+        return [axis_reduce_strided("mograd_mean_axis", node, inputs, device)]
+    return [unary_strided("mograd_mean", node, inputs, device)]
 
 
-def argmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def argmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     if "axis" in node.attrs():
-        return axis_reduce_strided("mograd_argmax_axis", node, inputs, device)
-    return unary_strided("mograd_argmax", node, inputs, device)
+        return [axis_reduce_strided("mograd_argmax_axis", node, inputs, device)]
+    return [unary_strided("mograd_argmax", node, inputs, device)]
 
 
 # ===-------------------------------------------------------------------===#
@@ -428,16 +428,16 @@ def argmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBu
 # ===-------------------------------------------------------------------===#
 
 
-def matmul(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return matmul_strided("mograd_matmul", node, inputs, device)
+def matmul(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
+    return [matmul_strided("mograd_matmul", node, inputs, device)]
 
 
-def matmul_t(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return matmul_strided("mograd_matmul_bt", node, inputs, device)
+def matmul_t(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
+    return [matmul_strided("mograd_matmul_bt", node, inputs, device)]
 
 
-def matmul_bias_bt(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return matmul_bias_strided("mograd_matmul_bias_bt", node, inputs, device)
+def matmul_bias_bt(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
+    return [matmul_bias_strided("mograd_matmul_bias_bt", node, inputs, device)]
 
 
 # ===-------------------------------------------------------------------===#
@@ -455,19 +455,19 @@ def _is_last_two_swap(order: IntTuple, rank: Int) -> Bool:
     return order.value(rank - 2) == rank - 1 and order.value(rank - 1) == rank - 2
 
 
-def contiguous(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def contiguous(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var layout = node.src(0).layout()
     var order = layout.permutation_of_contiguous()
     if order and _is_last_two_swap(order.value(), layout.rank()):
-        return unary_strided("mograd_transpose_last2", node, inputs, device)
-    return unary_strided("mograd_contiguous", node, inputs, device)
+        return [unary_strided("mograd_transpose_last2", node, inputs, device)]
+    return [unary_strided("mograd_contiguous", node, inputs, device)]
 
 
-def view(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return inputs[0].view(node.layout())
+def view(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
+    return [inputs[0].view(node.layout())]
 
 
-def concat(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def concat(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var ax = node.attr_int("axis")
     var out_layout = node.layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
@@ -479,10 +479,10 @@ def concat(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBu
         var dst_view = out.view(dst_layout)
         strided_copy("mograd_strided_copy", src_layout, dst_layout, inputs[i], dst_view, node.dtype(), device)
         offset += size
-    return out^
+    return [out^]
 
 
-def triu(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def triu(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
     var diagonal = node.attr_int("diagonal")
     device.handle[].get_function[TriuOp]("mograd_triu")(
@@ -493,7 +493,7 @@ def triu(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
         node.dtype(),
         device.ctx,
     )
-    return out^
+    return [out^]
 
 
 # _-_-_-_-_-
@@ -501,10 +501,10 @@ def triu(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
 # _-_-_-_-_-
 
 
-def softmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def softmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     if node.src(0).layout().is_contiguous():
-        return unary_strided("mograd_softmax", node, inputs, device)
-    return unary_strided("mograd_softmax_strided", node, inputs, device)
+        return [unary_strided("mograd_softmax", node, inputs, device)]
+    return [unary_strided("mograd_softmax_strided", node, inputs, device)]
 
 
 # ===-------------------------------------------------------------------===#
@@ -521,7 +521,7 @@ comptime BinaryOp = def(
 ) thin abi("Mojo") raises -> None
 
 
-def transpose(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def transpose(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var p = alloc[Float32](2)
     p[0] = Float32(node.src(0).layout().shape(0))
     p[1] = Float32(node.src(0).layout().shape(1))
@@ -535,17 +535,17 @@ def transpose(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> An
         device.ctx,
     )
     p.free()
-    return out^
+    return [out^]
 
 
-def cross_entropy(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def cross_entropy(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     if node.src(0).layout().is_contiguous() and node.src(1).layout().is_contiguous():
-        return binary_strided("mograd_cross_entropy", node, inputs, device)
-    return binary_strided("mograd_cross_entropy_strided", node, inputs, device)
+        return [binary_strided("mograd_cross_entropy", node, inputs, device)]
+    return [binary_strided("mograd_cross_entropy_strided", node, inputs, device)]
 
 
 # TODO: Revisit this, this is slop and can probably be cleaned up.
-def disk(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def disk(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var size = node.numel()
     var bytes = Path(node.attrs()["path"][String]).read_bytes()
     comptime for k in range(AnyBuffer.BufVariant.Ts.size):
@@ -558,7 +558,7 @@ def disk(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
             data.reserve(size)
             for i in range(size):
                 data.append(ptr[i])
-            return AnyBuffer(Buffer[d].from_data(device, data))
+            return [AnyBuffer(Buffer[d].from_data(device, data))]
     raise Error("unsupported dtype")
 
 
@@ -567,8 +567,8 @@ def disk(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuff
 # ===-------------------------------------------------------------------===#
 
 
-def softmax_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
-    return binary_strided("mograd_softmax_grad", node, inputs, device)
+def softmax_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
+    return [binary_strided("mograd_softmax_grad", node, inputs, device)]
 
 
 comptime TernaryStrided = def(
@@ -583,7 +583,7 @@ comptime TernaryStrided = def(
 ) thin abi("Mojo") raises -> None
 
 
-def cross_entropy_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def cross_entropy_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
@@ -600,4 +600,4 @@ def cross_entropy_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) rai
         node.dtype(),
         device.ctx,
     )
-    return out^
+    return [out^]

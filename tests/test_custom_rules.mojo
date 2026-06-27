@@ -10,7 +10,7 @@ from mograd.testing import leaf, assert_graph
 
 
 # Shared dummy kernel, only IR-level tests here.
-def dummy(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
+def dummy(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     raise Error("dummy")
 
 
