@@ -13,7 +13,7 @@ from mograd.buffer import AnyBuffer, Buffer, BufferArm
 from mograd.pattern_matcher import Rule, Pat
 from mograd.scheduler import Scheduler, BoundExecFn, SchedulerRules
 from mograd.simplify import Simplifier
-from mograd.runtime.gpu.rewrites import MATMUL_BT, MATMUL_BIAS_BT, MEAN, GPU_REWRITES
+from mograd.runtime.gpu.rewrites import MATMUL_BT, MATMUL_BIAS_BT, MEAN, LAYER_NORM, LAYER_NORM_GRAD, GPU_REWRITES
 from mograd.runtime.gpu.kernels.utils import (
     FactoryKernel,
     UnaryStrided,
@@ -23,6 +23,8 @@ from mograd.runtime.gpu.kernels.utils import (
     axis_reduce_strided,
     matmul_strided,
     matmul_bias_strided,
+    layer_norm_fwd_dispatch,
+    layer_norm_bwd_dispatch,
     strided_copy,
 )
 
@@ -116,6 +118,8 @@ struct NativeRuntime(Runtime):
             Rule(Pat(OpType.MATMUL), matmul),
             Rule(Pat(MATMUL_BT), matmul_t),
             Rule(Pat(MATMUL_BIAS_BT), matmul_bias_bt),
+            Rule(Pat(LAYER_NORM), layer_norm_fwd),
+            Rule(Pat(LAYER_NORM_GRAD), layer_norm_bwd),
             # Indexing & Encoding
             Rule(Pat(OpType.ONE_HOT), one_hot),
             Rule(Pat(OpType.GATHER), gather),
@@ -438,6 +442,14 @@ def matmul_t(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> Lis
 
 def matmul_bias_bt(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     return [matmul_bias_strided("mograd_matmul_bias_bt", node, inputs, device)]
+
+
+def layer_norm_fwd(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
+    return [layer_norm_fwd_dispatch("mograd_layer_norm_fwd", node, inputs, device)]
+
+
+def layer_norm_bwd(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
+    return layer_norm_bwd_dispatch("mograd_layer_norm_bwd", node, inputs, device)
 
 
 # ===-------------------------------------------------------------------===#

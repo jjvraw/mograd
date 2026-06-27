@@ -87,3 +87,4 @@ test-all                = { depends-on = ["test-gpu", "test-graph", "examples-ci
 bench-elementwise       = { cmd = "mojo -I . benches/elementwise.mojo",         depends-on = ["ensure-gpu"] }
 bench-transpose         = { cmd = "mojo -I . benches/transpose.mojo",           depends-on = ["ensure-gpu"] }
 bench-matmul            = { cmd = "mojo -I . benches/matmul.mojo",              depends-on = ["ensure-gpu"] }
+bench-layer-norm        = { cmd = "mojo -I . benches/normalization.mojo",       depends-on = ["ensure-gpu"] }

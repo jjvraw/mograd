@@ -1,11 +1,14 @@
+from std.sys import has_accelerator
 from std.testing import TestSuite, assert_true, assert_false, assert_equal
 
+from mograd import Device, Tensor
 from mograd.op import OpType, OpRef
 from mograd.pattern_matcher import Rule, Pat
 from mograd.runtime.gpu.rewrites import GPU_REWRITES, fuse_matmul_transpose, MATMUL_BT, MATMUL_BIAS_BT, MEAN
 from mograd.simplify import RewriteFn
-from mograd.testing import leaf, assert_rewrites_to
+from mograd.testing import leaf, assert_rewrites_to, assert_allclose
 from mograd.simplify import Simplifier
+import mograd.nn as nn
 
 # ===-------------------------------------------------------------------===#
 # MATMUL_BT rewrite

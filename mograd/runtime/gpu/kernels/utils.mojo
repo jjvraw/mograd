@@ -487,6 +487,85 @@ comptime BinaryStrided = def(
 ) thin abi("Mojo") raises -> None
 
 
+comptime LayerNormFwdKernel = def(
+    x: UnsafePointer[NoneType, ImmutAnyOrigin],
+    gamma: UnsafePointer[NoneType, ImmutAnyOrigin],
+    beta: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    rows: Int,
+    cols: Int,
+    eps: Float32,
+    dtype: DType,
+    ctx: DeviceContext,
+) thin abi("Mojo") raises -> None
+
+comptime LayerNormBwdKernel = def(
+    dy: UnsafePointer[NoneType, ImmutAnyOrigin],
+    x: UnsafePointer[NoneType, ImmutAnyOrigin],
+    gamma: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dx: UnsafePointer[NoneType, MutAnyOrigin],
+    dgamma: UnsafePointer[NoneType, MutAnyOrigin],
+    dbeta: UnsafePointer[NoneType, MutAnyOrigin],
+    rows: Int,
+    cols: Int,
+    eps: Float32,
+    dtype: DType,
+    ctx: DeviceContext,
+) thin abi("Mojo") raises -> None
+
+
+@always_inline
+def layer_norm_fwd_dispatch(
+    read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+) raises -> AnyBuffer:
+    var x_layout = node.src(0).layout()
+    var cols = x_layout.shape(x_layout.rank() - 1)
+    var rows = x_layout.numel() // cols
+    var eps = node.attrs()["eps"][Float32]
+    var out = AnyBuffer.create(node.dtype(), device, node.numel())
+    device.handle[].get_function[LayerNormFwdKernel](name)(
+        inputs[0].data_ptr(),
+        inputs[1].data_ptr(),
+        inputs[2].data_ptr(),
+        out.data_ptr(),
+        rows,
+        cols,
+        eps,
+        node.dtype(),
+        device.ctx,
+    )
+    return out^
+
+
+@always_inline
+def layer_norm_bwd_dispatch(
+    read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+) raises -> List[AnyBuffer]:
+    # inputs: [dy, x, gamma]  attrs: eps, axis  srcs: [dy, x, gamma]
+    var x_layout = node.src(1).layout()
+    var gamma_layout = node.src(2).layout()
+    var cols = x_layout.shape(x_layout.rank() - 1)
+    var rows = x_layout.numel() // cols
+    var eps = node.attrs()["eps"][Float32]
+    var dx = AnyBuffer.create(node.dtype(), device, x_layout.numel())
+    var dgamma = AnyBuffer.create(node.dtype(), device, gamma_layout.numel(), fill=0.0)
+    var dbeta = AnyBuffer.create(node.dtype(), device, gamma_layout.numel(), fill=0.0)
+    device.handle[].get_function[LayerNormBwdKernel](name)(
+        inputs[0].data_ptr(),
+        inputs[1].data_ptr(),
+        inputs[2].data_ptr(),
+        dx.data_ptr(),
+        dgamma.data_ptr(),
+        dbeta.data_ptr(),
+        rows,
+        cols,
+        eps,
+        node.dtype(),
+        device.ctx,
+    )
+    return [dx^, dgamma^, dbeta^]
+
+
 @always_inline
 def binary_strided(
     read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device

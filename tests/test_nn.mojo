@@ -280,6 +280,50 @@ def test_adamw_shrinks_weights() raises:
         raise Error("AdamW weight decay should produce smaller weight norms")
 
 
+def test_layer_norm_fwd_single_row() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4], (1, 4))
+    var ln = nn.LayerNorm(4)
+    ln._weight[] = Tensor(device, [Float32(1), 2, 1, 2], (4,), requires_grad=True)
+    ln._bias[] = Tensor(device, [Float32(0.1), 0.2, 0.1, 0.2], (4,), requires_grad=True)
+    assert_allclose(
+        ln(x),
+        [Float32(-1.241641), Float32(-0.694427), Float32(0.547214), Float32(2.883282)],
+        tol=Float32(1e-4),
+    )
+
+
+def test_layer_norm_fwd_two_rows() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4, -1, -2, -3, -4], (2, 4))
+    var ln = nn.LayerNorm(4)
+    ln._weight[] = Tensor(device, [Float32(1), 1, 1, 1], (4,), requires_grad=True)
+    ln._bias[] = Tensor(device, [Float32(0), 0, 0, 0], (4,), requires_grad=True)
+    assert_allclose(
+        ln(x),
+        [
+            Float32(-1.341641),
+            Float32(-0.447214),
+            Float32(0.447214),
+            Float32(1.341641),
+            Float32(1.341641),
+            Float32(0.447214),
+            Float32(-0.447214),
+            Float32(-1.341641),
+        ],
+        tol=Float32(1e-4),
+    )
+
+
+def test_layer_norm_fwd_constant_row_gives_beta() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(3), 3, 3, 3], (1, 4))
+    var ln = nn.LayerNorm(4)
+    ln._weight[] = Tensor(device, [Float32(1), 1, 1, 1], (4,), requires_grad=True)
+    ln._bias[] = Tensor(device, [Float32(0.5), 0.5, 0.5, 0.5], (4,), requires_grad=True)
+    assert_allclose(ln(x), [Float32(0.5), Float32(0.5), Float32(0.5), Float32(0.5)], tol=Float32(1e-4))
+
+
 def main() raises:
     comptime assert has_accelerator(), "GPU required to run nn tests"
     TestSuite.discover_tests[__functions_in_module()]().run()

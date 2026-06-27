@@ -701,6 +701,89 @@ def test_concat_grad_axis1() raises:
     assert_allclose(grads[0], [Float32(2), 4, 6, 8])
 
 
+def test_layer_norm_grad_dx() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4], (1, 4), requires_grad=True)
+    var dy = Tensor(device, [Float32(0.1), 0.2, 0.3, 0.4], (1, 4))
+    var ln = nn.LayerNorm(4)
+    ln._weight[] = Tensor(device, [Float32(1), 2, 1, 2], (4,), requires_grad=True)
+    ln._bias[] = Tensor(device, [Float32(0), 0, 0, 0], (4,), requires_grad=True)
+    var loss = (ln(x) * dy).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(
+        grads[0],
+        [Float32(0.0), Float32(0.089443), Float32(-0.178886), Float32(0.089443)],
+        tol=Float32(2e-4),
+    )
+
+
+def test_layer_norm_grad_dgamma() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4], (1, 4), requires_grad=True)
+    var gamma = Tensor(device, [Float32(1), 2, 1, 2], (4,), requires_grad=True)
+    var dy = Tensor(device, [Float32(0.1), 0.2, 0.3, 0.4], (1, 4))
+    var ln = nn.LayerNorm(4)
+    ln._weight[] = gamma
+    ln._bias[] = Tensor(device, [Float32(0), 0, 0, 0], (4,), requires_grad=True)
+    var loss = (ln(x) * dy).sum()
+    var grads = loss.gradient([gamma])
+    assert_allclose(
+        grads[0],
+        [Float32(-0.134164), Float32(-0.089443), Float32(0.134164), Float32(0.536656)],
+        tol=Float32(2e-4),
+    )
+
+
+def test_layer_norm_grad_dbeta() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4], (1, 4), requires_grad=True)
+    var beta = Tensor(device, [Float32(0), 0, 0, 0], (4,), requires_grad=True)
+    var dy = Tensor(device, [Float32(0.1), 0.2, 0.3, 0.4], (1, 4))
+    var ln = nn.LayerNorm(4)
+    ln._weight[] = Tensor(device, [Float32(1), 2, 1, 2], (4,), requires_grad=True)
+    ln._bias[] = beta
+    var loss = (ln(x) * dy).sum()
+    var grads = loss.gradient([beta])
+    assert_allclose(
+        grads[0],
+        [Float32(0.1), Float32(0.2), Float32(0.3), Float32(0.4)],
+        tol=Float32(1e-5),
+    )
+
+
+def test_layer_norm_grad_dbeta_two_rows_accumulates() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4, 1, 2, 3, 4], (2, 4), requires_grad=True)
+    var beta = Tensor(device, [Float32(0), 0, 0, 0], (4,), requires_grad=True)
+    var dy = Tensor(device, [Float32(0.1), 0.2, 0.3, 0.4, 0.1, 0.2, 0.3, 0.4], (2, 4))
+    var ln = nn.LayerNorm(4)
+    ln._weight[] = Tensor(device, [Float32(1), 1, 1, 1], (4,), requires_grad=True)
+    ln._bias[] = beta
+    var loss = (ln(x) * dy).sum()
+    var grads = loss.gradient([beta])
+    assert_allclose(
+        grads[0],
+        [Float32(0.2), Float32(0.4), Float32(0.6), Float32(0.8)],
+        tol=Float32(1e-5),
+    )
+
+
+def test_layer_norm_grad_uniform_dy_gives_zero_dx() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4], (1, 4), requires_grad=True)
+    var dy = Tensor(device, [Float32(1), 1, 1, 1], (1, 4))
+    var ln = nn.LayerNorm(4)
+    ln._weight[] = Tensor(device, [Float32(1), 1, 1, 1], (4,), requires_grad=True)
+    ln._bias[] = Tensor(device, [Float32(0), 0, 0, 0], (4,), requires_grad=True)
+    var loss = (ln(x) * dy).sum()
+    var grads = loss.gradient([x])
+    assert_allclose(
+        grads[0],
+        [Float32(0), Float32(0), Float32(0), Float32(0)],
+        tol=Float32(1e-5),
+    )
+
+
 def main() raises:
     comptime assert has_accelerator(), "GPU required to run gradient tests"
     TestSuite.discover_tests[__functions_in_module()]().run()

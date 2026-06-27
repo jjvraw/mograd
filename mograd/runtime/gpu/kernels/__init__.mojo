@@ -21,6 +21,7 @@ from mograd.runtime.gpu.kernels.reduce import *
 from mograd.runtime.gpu.kernels.softmax import *
 from mograd.runtime.gpu.kernels.gather_scatter import *
 from mograd.runtime.gpu.kernels.cross_entropy import *
+from mograd.runtime.gpu.kernels.normalization import layer_norm_fwd, layer_norm_bwd
 from mograd.runtime.gpu.kernels.utils import (
     dispatch_binary_contiguous,
     dispatch_binary_map,
@@ -1121,6 +1122,75 @@ def mograd_argmax_axis(
                 sa_buf.unsafe_ptr(),
                 ctx,
             )
+
+    dispatch_dtype[body, float_only=True](dtype)
+
+
+# ===-------------------------------------------------------------------===#
+# LayerNorm
+# ===-------------------------------------------------------------------===#
+
+
+@export
+def mograd_layer_norm_fwd(
+    x: UnsafePointer[NoneType, ImmutAnyOrigin],
+    gamma: UnsafePointer[NoneType, ImmutAnyOrigin],
+    beta: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    rows: Int,
+    cols: Int,
+    eps: Float32,
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    @always_inline
+    def body[d: DType]() capturing raises:
+        layer_norm_fwd[d](
+            x.bitcast[Scalar[d]](),
+            gamma.bitcast[Scalar[d]](),
+            beta.bitcast[Scalar[d]](),
+            dst.bitcast[Scalar[d]](),
+            rows,
+            cols,
+            Scalar[d](eps),
+            ctx,
+        )
+
+    dispatch_dtype[body, float_only=True](dtype)
+
+
+@export
+def mograd_layer_norm_bwd(
+    dy: UnsafePointer[NoneType, ImmutAnyOrigin],
+    x: UnsafePointer[NoneType, ImmutAnyOrigin],
+    gamma: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dx: UnsafePointer[NoneType, MutAnyOrigin],
+    dgamma: UnsafePointer[NoneType, MutAnyOrigin],
+    dbeta: UnsafePointer[NoneType, MutAnyOrigin],
+    rows: Int,
+    cols: Int,
+    eps: Float32,
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    @always_inline
+    def body[d: DType]() capturing raises:
+        var dg_tmp = ctx.enqueue_create_buffer[d](rows * cols)
+        var db_tmp = ctx.enqueue_create_buffer[d](rows * cols)
+        layer_norm_bwd[d](
+            dy.bitcast[Scalar[d]](),
+            x.bitcast[Scalar[d]](),
+            gamma.bitcast[Scalar[d]](),
+            dx.bitcast[Scalar[d]](),
+            dgamma.bitcast[Scalar[d]](),
+            dbeta.bitcast[Scalar[d]](),
+            rows,
+            cols,
+            Scalar[d](eps),
+            ctx,
+            dg_tmp.unsafe_ptr(),
+            db_tmp.unsafe_ptr(),
+        )
 
     dispatch_dtype[body, float_only=True](dtype)
 

@@ -3,6 +3,7 @@ from layout.int_tuple import IntTuple
 from mograd.layout import Layout
 from mograd.op import Op, OpRef, OpType
 from mograd.pattern_matcher import PatternMatcher, Rule, Pat, GraphUtils
+from mograd.runtime.gpu.rewrites import LAYER_NORM, LAYER_NORM_GRAD
 
 # ===-------------------------------------------------------------------===#
 # Grad
@@ -53,6 +54,7 @@ struct Grad:
                 Rule(Pat(OpType.TRIU), triu_grad),
                 Rule(Pat(OpType.EXPAND), expand_grad),
                 Rule(Pat(OpType.CONCAT), concat_grad),
+                Rule(Pat(LAYER_NORM), layer_norm_grad),
             ]
         )
 
@@ -251,3 +253,16 @@ def expand_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
         if src_layout.shape(i) != out_layout.shape(i + rank_diff):
             grad = grad.sum(i, keepdim=True)
     return [grad]
+
+
+def layer_norm_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    # Emit a LAYER_NORM_GRAD node whose kernel returns [dx, dgamma, dbeta],
+    # then select each output with GETTUPLE.
+    var x = node.src(0)
+    var gamma = node.src(1)
+    var attrs = node.attrs_copy()
+    var bwd = OpRef(Op(LAYER_NORM_GRAD, x.layout().as_contiguous(), x.dtype(), [upstream, x, gamma], attrs^))
+    var dx = OpRef(Op(OpType.GETTUPLE, x.layout().as_contiguous(), x.dtype(), [bwd], {"index": 0}))
+    var dgamma = OpRef(Op(OpType.GETTUPLE, gamma.layout().as_contiguous(), gamma.dtype(), [bwd], {"index": 1}))
+    var dbeta = OpRef(Op(OpType.GETTUPLE, gamma.layout().as_contiguous(), gamma.dtype(), [bwd], {"index": 2}))
+    return [dx, dgamma, dbeta]
