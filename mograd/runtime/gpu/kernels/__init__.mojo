@@ -1175,8 +1175,6 @@ def mograd_layer_norm_bwd(
 ) abi("Mojo") raises:
     @always_inline
     def body[d: DType]() capturing raises:
-        var dg_tmp = ctx.enqueue_create_buffer[d](rows * cols)
-        var db_tmp = ctx.enqueue_create_buffer[d](rows * cols)
         layer_norm_bwd[d](
             dy.bitcast[Scalar[d]](),
             x.bitcast[Scalar[d]](),
@@ -1188,8 +1186,6 @@ def mograd_layer_norm_bwd(
             cols,
             Scalar[d](eps),
             ctx,
-            dg_tmp.unsafe_ptr(),
-            db_tmp.unsafe_ptr(),
         )
 
     dispatch_dtype[body, float_only=True](dtype)
