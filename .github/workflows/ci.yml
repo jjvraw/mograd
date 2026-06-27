@@ -54,7 +54,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: pixi clean
-      - run: pixi run examples
+      - run: pixi run examples-ci
 
   test-gpu-4090:
     name: Tests (4090)
@@ -79,4 +79,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: pixi clean
-      - run: pixi run examples
+      - run: pixi run examples-ci

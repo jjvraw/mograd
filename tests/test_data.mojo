@@ -1,5 +1,3 @@
-from std.collections.string import Codepoint
-from std.os.path import join
 from std.python import Python
 from std.sys import has_accelerator
 from std.testing import TestSuite, assert_true
@@ -63,19 +61,8 @@ def test_tiny_shakespeare_decodes_known_prefix() raises:
     var device = Device()
     var cache_dir = _fresh_cache_dir()
     var data = tiny_shakespeare(device, cache_dir=cache_dir)
-
-    var vocab = List[Int]()
-    with open(join(cache_dir, "tinyshakespeare_vocab.txt"), "r") as f:
-        for line in f.read().splitlines():
-            if line:
-                vocab.append(Int(line))
-
     var ids = data.data[0:13].to_list[DType.int64]()
-    var decoded = String("")
-    for id in ids:
-        decoded += String(Codepoint.from_u32(UInt32(vocab[Int(id)])).value())
-
-    assert_true(decoded == "First Citizen")
+    assert_true(data.decode(ids) == "First Citizen")
 
 
 def main() raises:

@@ -1,3 +1,5 @@
+from std.collections.string import Codepoint
+
 from mograd.tensor import Tensor, Device
 from mograd.data.lazy_loader import LazyLoader
 
@@ -61,12 +63,25 @@ def mnist(
 # ===-------------------------------------------------------------------===#
 
 
-@fieldwise_init
 struct TinyShakespeareData(Copyable, Movable):
     var data: Tensor
     var vocab_size: Int
     var train_size: Int
     var val_size: Int
+    var _vocab: List[Int]  # token id → unicode codepoint
+
+    def __init__(out self, data: Tensor, vocab_size: Int, train_size: Int, val_size: Int, var vocab: List[Int]):
+        self.data = data
+        self.vocab_size = vocab_size
+        self.train_size = train_size
+        self.val_size = val_size
+        self._vocab = vocab^
+
+    def decode(self, tokens: List[Int64]) raises -> String:
+        var s = String("")
+        for id in tokens:
+            s += String(Codepoint.from_u32(UInt32(self._vocab[Int(id)])).value())
+        return s^
 
     def get_batch(self, seq_len: Int, batch_size: Int, seed: Int = 42) raises -> Tuple[Tensor, Tensor]:
         """Samples a random batch of (x, y) windows from the training split.
@@ -113,13 +128,21 @@ def tiny_shakespeare(
         "tinyshakespeare_vocab.txt",
     )
 
+    var vocab_path = loader.cache_dir + "/tinyshakespeare_vocab.txt"
+    var vocab = List[Int]()
+    with open(vocab_path, "r") as f:
+        for line in f.read().splitlines():
+            if line:
+                vocab.append(Int(line))
+
     var n = loader.file_len(data_path) // 8
     var train_n = (n * 9) // 10
     var val_n = n - train_n
 
     return TinyShakespeareData(
         data=Tensor.disk(device, data_path, (n,), DType.int64),
-        vocab_size=65,
+        vocab_size=len(vocab),
         train_size=train_n,
         val_size=val_n,
+        vocab=vocab^,
     )

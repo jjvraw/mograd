@@ -74,8 +74,9 @@ test-graph              = { depends-on = [  "test-pattern-matcher",
                                             "test-ops-graph"] }
 
 # Examples
-mnist                   = { cmd = "mojo -I . examples/mnist/train.mojo",        depends-on = ["ensure-gpu"] }
-examples                = { depends-on = ["mnist"] }
+mnist                   = { cmd = "mojo -I . examples/mnist/train.mojo",          depends-on = ["ensure-gpu"] }
+tinyshakespear          = { cmd = "mojo -I . examples/tinyshakespear/train.mojo", depends-on = ["ensure-gpu"] }
+examples-ci                = { depends-on = ["mnist"] }
 
 # Test All
 test-all                = { depends-on = ["test-gpu", "test-graph", "examples"] }
