@@ -1,3 +1,4 @@
+from std.math import sqrt
 from std.random import random_float64
 from std.utils.numerics import neg_inf
 
@@ -43,7 +44,7 @@ struct TinyTransformer(Module, Movable):
             var x = Tensor(device, ctx, (1, T))
             var logits = self(x)  # (1, T, VOCAB_SIZE)
             var last = logits.squeeze(0)[T - 1 : T]  # (1, VOCAB_SIZE)
-            var probs = (last * (Float32(1.0) / temperature)).softmax().squeeze(0).to_list()
+            var probs = last.scale(Float32(1.0) / temperature).softmax().squeeze(0).to_list()
             tokens.append(Int64(sample(probs)))
         return tokens^
 
@@ -100,13 +101,13 @@ struct MultiHeadAttention(Module, Movable):
         var V = self.W_V(x).reshape((B, T, self.n_heads, self.d_head)).transpose(1, 2)
 
         # (B, H, T, T)
-        var scores = Q.matmul(K.transpose(-2, -1))
-        scores = scores / Tensor.full_like(scores, Float32(self.d_head)).sqrt()
+        var scale = Float32(1.0) / sqrt(Float32(self.d_head))
+        var scores = (Q @ K.transpose(-2, -1)) * scale
         var mask = Tensor.full_like(scores, neg_inf[DType.float32]()).triu(1)
         var weights = (scores + mask).softmax()
 
         # (B, H, T, Dh) → (B, T, D)
-        var ctx = weights.matmul(V).transpose(1, 2).reshape((B, T, self.d_model))
+        var ctx = (weights @ V).transpose(1, 2).reshape((B, T, self.d_model))
         return self.W_O(ctx)
 
     def parameters(mut self) -> List[ModuleParam]:
