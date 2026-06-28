@@ -132,6 +132,9 @@ struct Adam(Copyable, Movable):
             self._step,
         )
 
+    def set_lr(mut self, lr: Float32):
+        self.lr = lr
+
 
 struct AdamW(Copyable, Movable):
     var lr: Float32
@@ -187,3 +190,6 @@ struct AdamW(Copyable, Movable):
             self.weight_decay,
             self._step,
         )
+
+    def set_lr(mut self, lr: Float32):
+        self.lr = lr
