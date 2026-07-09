@@ -92,10 +92,12 @@ def flash_attn_fwd_kernel[
     var smem = rebind[UnsafePointer[Float32, MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
         external_memory[Float32, address_space=AddressSpace.SHARED, alignment=16, name="attn_fwd_smem"]()
     )
-    var q_smem = smem
-    var k_smem = q_smem + BR * STRIDE
-    var v_smem = k_smem + Bc * STRIDE
-    var p_smem = v_smem + Bc * STRIDE  # [BR][PSTRIDE], warp-private rows
+    # NOTE: sub-pointers derived from external_memory crash Metal codegen,
+    # so every view indexes the one smem base through comptime offsets.
+    comptime Q_OFF = 0
+    comptime K_OFF = BR * STRIDE
+    comptime V_OFF = K_OFF + Bc * STRIDE
+    comptime P_OFF = V_OFF + Bc * STRIDE  # [BR][PSTRIDE], warp-private rows
 
     # Stage the block's Q rows once (reused across every KV tile).
     comptime Q_ELEMS = BR * D_BUCKET
@@ -105,7 +107,7 @@ def flash_attn_fwd_kernel[
             var qr = slot // D_BUCKET
             var qc = slot % D_BUCKET
             var gq = tile_i * BR + qr
-            q_smem[qr * STRIDE + qc] = Float32(q[qkv_bh + gq * HD + qc]) if gq < S and qc < D else Float32(0)
+            smem[Q_OFF + qr * STRIDE + qc] = Float32(q[qkv_bh + gq * HD + qc]) if gq < S and qc < D else Float32(0)
     barrier()
 
     var o_acc = stack_allocation[DPL, Float32]()
@@ -135,10 +137,7 @@ def flash_attn_fwd_kernel[
         read g,
         read row_local,
         read scale_log2e,
-        read q_smem,
-        read k_smem,
-        read v_smem,
-        read p_smem,
+        read smem,
         read o_acc,
         mut m,
         mut l,
@@ -152,8 +151,8 @@ def flash_attn_fwd_kernel[
                 var kc = slot % D_BUCKET
                 var gk = j_base + kr
                 var kv_base = qkv_bh + gk * HD + kc
-                k_smem[kr * STRIDE + kc] = Float32(k[kv_base]) if gk < S and kc < D else Float32(0)
-                v_smem[kr * STRIDE + kc] = Float32(v[kv_base]) if gk < S and kc < D else Float32(0)
+                smem[K_OFF + kr * STRIDE + kc] = Float32(k[kv_base]) if gk < S and kc < D else Float32(0)
+                smem[V_OFF + kr * STRIDE + kc] = Float32(v[kv_base]) if gk < S and kc < D else Float32(0)
         barrier()
 
         # Score pass. Each lane computes JPL full dots serially.
@@ -161,9 +160,9 @@ def flash_attn_fwd_kernel[
         comptime for t in range(JPL):
             s_reg[t] = Float32(0)
         for dd in range(D_BUCKET):
-            var qv = q_smem[row_local * STRIDE + dd]
+            var qv = smem[Q_OFF + row_local * STRIDE + dd]
             comptime for t in range(JPL):
-                s_reg[t] += qv * k_smem[(g * JPL + t) * STRIDE + dd]
+                s_reg[t] += qv * smem[K_OFF + (g * JPL + t) * STRIDE + dd]
 
         # Scale, mask, sentinel. Invalid positions take -1e38.
         var tile_full = j_base + Bc <= S
@@ -199,7 +198,7 @@ def flash_attn_fwd_kernel[
         comptime for t in range(JPL):
             var es = exp2(s_reg[t] - m_new)
             lpart += es
-            p_smem[row_local * PSTRIDE + g * JPL + t] = es
+            smem[P_OFF + row_local * PSTRIDE + g * JPL + t] = es
         comptime for sh in range(5):
             comptime OFF = GR << sh
             comptime if OFF < WARP_SIZE:
@@ -212,9 +211,9 @@ def flash_attn_fwd_kernel[
         comptime for u in range(DPL):
             o_acc[u] *= corr
         for jr in range(Bc):
-            var pv = p_smem[row_local * PSTRIDE + jr]
+            var pv = smem[P_OFF + row_local * PSTRIDE + jr]
             comptime for u in range(DPL):
-                o_acc[u] += pv * v_smem[jr * STRIDE + g * DPL + u]
+                o_acc[u] += pv * smem[V_OFF + jr * STRIDE + g * DPL + u]
         barrier()  # K/V smem is reused by the next tile
 
     comptime if CAUSAL:
@@ -311,11 +310,11 @@ def flash_attn_dq_kernel[
     var smem = rebind[UnsafePointer[Float32, MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
         external_memory[Float32, address_space=AddressSpace.SHARED, alignment=16, name="attn_dq_smem"]()
     )
-    var q_smem = smem
-    var do_smem = q_smem + BR * STRIDE
-    var k_smem = do_smem + BR * STRIDE
-    var v_smem = k_smem + Bc * STRIDE
-    var ds_smem = v_smem + Bc * STRIDE  # [BR][PSTRIDE], warp-private rows
+    comptime Q_OFF = 0
+    comptime DO_OFF = BR * STRIDE
+    comptime K_OFF = DO_OFF + BR * STRIDE
+    comptime V_OFF = K_OFF + Bc * STRIDE
+    comptime DS_OFF = V_OFF + Bc * STRIDE  # [BR][PSTRIDE], warp-private rows
 
     # Stage the block's Q and dO rows once.
     comptime QD_ELEMS = BR * D_BUCKET
@@ -326,8 +325,8 @@ def flash_attn_dq_kernel[
             var qc = slot % D_BUCKET
             var gq = tile_i * BR + qr
             var ok = gq < S and qc < D
-            q_smem[qr * STRIDE + qc] = Float32(q[qkv_bh + gq * HD + qc]) if ok else Float32(0)
-            do_smem[qr * STRIDE + qc] = Float32(dy[o_bh + gq * D + qc]) if ok else Float32(0)
+            smem[Q_OFF + qr * STRIDE + qc] = Float32(q[qkv_bh + gq * HD + qc]) if ok else Float32(0)
+            smem[DO_OFF + qr * STRIDE + qc] = Float32(dy[o_bh + gq * D + qc]) if ok else Float32(0)
     barrier()
 
     # delta_i = dot(dO_i, O_i), computed serially over the lane's d-chunk
@@ -337,7 +336,7 @@ def flash_attn_dq_kernel[
         for u in range(DPL):
             var d = g * DPL + u
             if d < D:
-                dpart += Float32(o[o_bh + i * D + d]) * do_smem[row_local * STRIDE + d]
+                dpart += Float32(o[o_bh + i * D + d]) * smem[DO_OFF + row_local * STRIDE + d]
     comptime for sh in range(5):
         comptime OFF = GR << sh
         comptime if OFF < WARP_SIZE:
@@ -374,11 +373,7 @@ def flash_attn_dq_kernel[
         read scale_log2e,
         read lse_l2,
         read delta_i,
-        read q_smem,
-        read do_smem,
-        read k_smem,
-        read v_smem,
-        read ds_smem,
+        read smem,
         read dq_acc,
     }:
         var j_base = j_tile * Bc
@@ -390,8 +385,8 @@ def flash_attn_dq_kernel[
                 var kc = slot % D_BUCKET
                 var gk = j_base + kr
                 var kv_base = qkv_bh + gk * HD + kc
-                k_smem[kr * STRIDE + kc] = Float32(k[kv_base]) if gk < S and kc < D else Float32(0)
-                v_smem[kr * STRIDE + kc] = Float32(v[kv_base]) if gk < S and kc < D else Float32(0)
+                smem[K_OFF + kr * STRIDE + kc] = Float32(k[kv_base]) if gk < S and kc < D else Float32(0)
+                smem[V_OFF + kr * STRIDE + kc] = Float32(v[kv_base]) if gk < S and kc < D else Float32(0)
         barrier()
 
         # Pass A: score and dO.V dots for the lane's (row, j-group), both serial
@@ -401,11 +396,11 @@ def flash_attn_dq_kernel[
             s_qk[t] = Float32(0)
             s_dp[t] = Float32(0)
         for dd in range(D_BUCKET):
-            var qv = q_smem[row_local * STRIDE + dd]
-            var dov = do_smem[row_local * STRIDE + dd]
+            var qv = smem[Q_OFF + row_local * STRIDE + dd]
+            var dov = smem[DO_OFF + row_local * STRIDE + dd]
             comptime for t in range(JPL):
-                s_qk[t] += qv * k_smem[(g * JPL + t) * STRIDE + dd]
-                s_dp[t] += dov * v_smem[(g * JPL + t) * STRIDE + dd]
+                s_qk[t] += qv * smem[K_OFF + (g * JPL + t) * STRIDE + dd]
+                s_dp[t] += dov * smem[V_OFF + (g * JPL + t) * STRIDE + dd]
         var tile_full = j_base + Bc <= S
         comptime for t in range(JPL):
             var j = j_base + g * JPL + t
@@ -419,14 +414,14 @@ def flash_attn_dq_kernel[
             comptime if HAS_BIAS and not CAUSAL:
                 s_l2 += Float32(mask[b * H * S * S + h * S * S + i * S + j]) * LOG2E if take else Float32(0)
             var p_ij = exp2(s_l2 - lse_l2) if take else Float32(0)
-            ds_smem[row_local * PSTRIDE + g * JPL + t] = p_ij * (s_dp[t] - delta_i)
+            smem[DS_OFF + row_local * PSTRIDE + g * JPL + t] = p_ij * (s_dp[t] - delta_i)
         syncwarp()
 
         # Pass B: dQ accumulation, serial over j, no reductions. The scale factor is applied once at the epilogue.
         for jr in range(Bc):
-            var dsv = ds_smem[row_local * PSTRIDE + jr]
+            var dsv = smem[DS_OFF + row_local * PSTRIDE + jr]
             comptime for u in range(DPL):
-                dq_acc[u] += dsv * k_smem[jr * STRIDE + g * DPL + u]
+                dq_acc[u] += dsv * smem[K_OFF + jr * STRIDE + g * DPL + u]
         barrier()
 
     comptime if CAUSAL:
@@ -518,14 +513,14 @@ def flash_attn_dkdv_kernel[
     var smem = rebind[UnsafePointer[Float32, MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
         external_memory[Float32, address_space=AddressSpace.SHARED, alignment=16, name="attn_dkdv_smem"]()
     )
-    var k_smem = smem
-    var v_smem = k_smem + BR * STRIDE
-    var q_smem = v_smem + BR * STRIDE
-    var do_smem = q_smem + Bc * STRIDE
-    var p_smem = do_smem + Bc * STRIDE  # [BR][PSTRIDE], warp-private rows
-    var ds_smem = p_smem + BR * PSTRIDE
-    var lse_smem = ds_smem + BR * PSTRIDE  # [Bc]
-    var delta_smem = lse_smem + Bc  # [Bc]
+    comptime K_OFF = 0
+    comptime V_OFF = BR * STRIDE
+    comptime Q_OFF = V_OFF + BR * STRIDE
+    comptime DO_OFF = Q_OFF + Bc * STRIDE
+    comptime P_OFF = DO_OFF + Bc * STRIDE  # [BR][PSTRIDE], warp-private rows
+    comptime DS_OFF = P_OFF + BR * PSTRIDE
+    comptime LSE_OFF = DS_OFF + BR * PSTRIDE  # [Bc]
+    comptime DELTA_OFF = LSE_OFF + Bc  # [Bc]
 
     # Stage the block's K and V rows once (resident across all Q tiles).
     comptime KV_ELEMS = BR * D_BUCKET
@@ -537,8 +532,8 @@ def flash_attn_dkdv_kernel[
             var gk = tile_j * BR + kr
             var ok = gk < S and kc < D
             var kv_base = qkv_bh + gk * HD + kc
-            k_smem[kr * STRIDE + kc] = Float32(k[kv_base]) if ok else Float32(0)
-            v_smem[kr * STRIDE + kc] = Float32(v[kv_base]) if ok else Float32(0)
+            smem[K_OFF + kr * STRIDE + kc] = Float32(k[kv_base]) if ok else Float32(0)
+            smem[V_OFF + kr * STRIDE + kc] = Float32(v[kv_base]) if ok else Float32(0)
     barrier()
 
     var dk_acc = stack_allocation[DPL, Float32]()
@@ -570,14 +565,7 @@ def flash_attn_dkdv_kernel[
         read g,
         read row_local,
         read scale_log2e,
-        read k_smem,
-        read v_smem,
-        read q_smem,
-        read do_smem,
-        read p_smem,
-        read ds_smem,
-        read lse_smem,
-        read delta_smem,
+        read smem,
         read dk_acc,
         read dv_acc,
     }:
@@ -590,12 +578,12 @@ def flash_attn_dkdv_kernel[
                 var qc = slot % D_BUCKET
                 var gq = i_base + qr
                 var ok = gq < S and qc < D
-                q_smem[qr * STRIDE + qc] = Float32(q[qkv_bh + gq * HD + qc]) if ok else Float32(0)
-                do_smem[qr * STRIDE + qc] = Float32(dy[o_bh + gq * D + qc]) if ok else Float32(0)
+                smem[Q_OFF + qr * STRIDE + qc] = Float32(q[qkv_bh + gq * HD + qc]) if ok else Float32(0)
+                smem[DO_OFF + qr * STRIDE + qc] = Float32(dy[o_bh + gq * D + qc]) if ok else Float32(0)
         if tid < Bc:
             var gq = i_base + tid
-            lse_smem[tid] = lse[b * H * S + h * S + gq] if gq < S else Float32(0)
-            delta_smem[tid] = delta[b * H * S + h * S + gq] if gq < S else Float32(0)
+            smem[LSE_OFF + tid] = lse[b * H * S + h * S + gq] if gq < S else Float32(0)
+            smem[DELTA_OFF + tid] = delta[b * H * S + h * S + gq] if gq < S else Float32(0)
         barrier()
 
         # Pass A: q.k and dO.v dots for the lane's (key row, i-group)
@@ -605,11 +593,11 @@ def flash_attn_dkdv_kernel[
             s_qk[t] = Float32(0)
             s_dp[t] = Float32(0)
         for dd in range(D_BUCKET):
-            var kv_val = k_smem[row_local * STRIDE + dd]
-            var vv = v_smem[row_local * STRIDE + dd]
+            var kv_val = smem[K_OFF + row_local * STRIDE + dd]
+            var vv = smem[V_OFF + row_local * STRIDE + dd]
             comptime for t in range(JPL):
-                s_qk[t] += q_smem[(g * JPL + t) * STRIDE + dd] * kv_val
-                s_dp[t] += do_smem[(g * JPL + t) * STRIDE + dd] * vv
+                s_qk[t] += smem[Q_OFF + (g * JPL + t) * STRIDE + dd] * kv_val
+                s_dp[t] += smem[DO_OFF + (g * JPL + t) * STRIDE + dd] * vv
         var tile_full = i_base + Bc <= S
         comptime for t in range(JPL):
             var i = i_base + g * JPL + t
@@ -622,18 +610,18 @@ def flash_attn_dkdv_kernel[
             var s_l2 = s_qk[t] * scale_log2e
             comptime if HAS_BIAS and not CAUSAL:
                 s_l2 += Float32(mask[b * H * S * S + h * S * S + i * S + j]) * LOG2E if take else Float32(0)
-            var p_ij = exp2(s_l2 - lse_smem[g * JPL + t] * LOG2E) if take else Float32(0)
-            p_smem[row_local * PSTRIDE + g * JPL + t] = p_ij
-            ds_smem[row_local * PSTRIDE + g * JPL + t] = p_ij * (s_dp[t] - delta_smem[g * JPL + t])
+            var p_ij = exp2(s_l2 - smem[LSE_OFF + g * JPL + t] * LOG2E) if take else Float32(0)
+            smem[P_OFF + row_local * PSTRIDE + g * JPL + t] = p_ij
+            smem[DS_OFF + row_local * PSTRIDE + g * JPL + t] = p_ij * (s_dp[t] - smem[DELTA_OFF + g * JPL + t])
         syncwarp()
 
         # Pass B: dV and dK accumulation, serial over the tile's q rows.
         for qi in range(Bc):
-            var pv = p_smem[row_local * PSTRIDE + qi]
-            var dsv = ds_smem[row_local * PSTRIDE + qi]
+            var pv = smem[P_OFF + row_local * PSTRIDE + qi]
+            var dsv = smem[DS_OFF + row_local * PSTRIDE + qi]
             comptime for u in range(DPL):
-                dv_acc[u] += pv * do_smem[qi * STRIDE + g * DPL + u]
-                dk_acc[u] += dsv * q_smem[qi * STRIDE + g * DPL + u]
+                dv_acc[u] += pv * smem[DO_OFF + qi * STRIDE + g * DPL + u]
+                dk_acc[u] += dsv * smem[Q_OFF + qi * STRIDE + g * DPL + u]
         barrier()
 
     comptime if CAUSAL:
@@ -741,8 +729,8 @@ def flash_attn_dq_kernel_rowwarp[
     var smem = rebind[UnsafePointer[Float32, MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
         external_memory[Float32, address_space=AddressSpace.SHARED, alignment=16, name="attn_dq_smem"]()
     )
-    var k_smem = smem
-    var v_smem = smem + Bc * D_BUCKET
+    comptime K_OFF = 0
+    comptime V_OFF = Bc * D_BUCKET
 
     @always_inline
     def process_tile(
@@ -768,8 +756,7 @@ def flash_attn_dq_kernel_rowwarp[
         read q_reg,
         read do_reg,
         read dq_reg,
-        read k_smem,
-        read v_smem,
+        read smem,
     }:
         var j_base = j_tile * Bc
         var j_load = j_base + warp_id
@@ -777,8 +764,8 @@ def flash_attn_dq_kernel_rowwarp[
         comptime for di in range(D_PT):
             var d = lane + di * WARP_SIZE
             var kv_idx = warp_id * D_BUCKET + lane + di * WARP_SIZE
-            k_smem[kv_idx] = Float32(k[kv_base + d]) if j_load < S and d < D else Float32(0)
-            v_smem[kv_idx] = Float32(v[kv_base + d]) if j_load < S and d < D else Float32(0)
+            smem[K_OFF + kv_idx] = Float32(k[kv_base + d]) if j_load < S and d < D else Float32(0)
+            smem[V_OFF + kv_idx] = Float32(v[kv_base + d]) if j_load < S and d < D else Float32(0)
         barrier()
         if i < S:
             var tile_full = j_base + Bc <= S
@@ -793,7 +780,7 @@ def flash_attn_dq_kernel_rowwarp[
                 if take:
                     var partial_qk = Float32(0)
                     comptime for di in range(D_PT):
-                        partial_qk += q_reg[di] * k_smem[jr * D_BUCKET + lane + di * WARP_SIZE]
+                        partial_qk += q_reg[di] * smem[K_OFF + jr * D_BUCKET + lane + di * WARP_SIZE]
                     var p_ij: Float32
                     comptime if CAUSAL:
                         p_ij = exp2(warp_sum(partial_qk) * scale_log2e - lse_i_l2)
@@ -804,10 +791,10 @@ def flash_attn_dq_kernel_rowwarp[
                         p_ij = exp2(warp_sum(partial_qk) * scale_log2e + mask_val_l2 - lse_i_l2)
                     var partial_dp = Float32(0)
                     comptime for di in range(D_PT):
-                        partial_dp += do_reg[di] * v_smem[jr * D_BUCKET + lane + di * WARP_SIZE]
+                        partial_dp += do_reg[di] * smem[V_OFF + jr * D_BUCKET + lane + di * WARP_SIZE]
                     var ds_ij = p_ij * (warp_sum(partial_dp) - delta_i)
                     comptime for di in range(D_PT):
-                        dq_reg[di] += ds_ij * scale * k_smem[jr * D_BUCKET + lane + di * WARP_SIZE]
+                        dq_reg[di] += ds_ij * scale * smem[K_OFF + jr * D_BUCKET + lane + di * WARP_SIZE]
         barrier()
 
     comptime if CAUSAL:
@@ -907,10 +894,10 @@ def flash_attn_dkdv_kernel_rowwarp[
     var smem = rebind[UnsafePointer[Float32, MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
         external_memory[Float32, address_space=AddressSpace.SHARED, alignment=16, name="attn_dkdv_smem"]()
     )
-    var q_smem = smem
-    var do_smem = smem + Bc * D_BUCKET
-    var lse_smem = smem + 2 * Bc * D_BUCKET
-    var delta_smem = smem + 2 * Bc * D_BUCKET + Bc
+    comptime Q_OFF = 0
+    comptime DO_OFF = Bc * D_BUCKET
+    comptime LSE_OFF = 2 * Bc * D_BUCKET
+    comptime DELTA_OFF = LSE_OFF + Bc
 
     @always_inline
     def process_tile(
@@ -938,10 +925,7 @@ def flash_attn_dkdv_kernel_rowwarp[
         read v_reg,
         read dk_reg,
         read dv_reg,
-        read q_smem,
-        read do_smem,
-        read lse_smem,
-        read delta_smem,
+        read smem,
     }:
         var i_base = i_tile * Bc
         var i_load = i_base + warp_id
@@ -950,11 +934,11 @@ def flash_attn_dkdv_kernel_rowwarp[
         comptime for di in range(D_PT):
             var d = lane + di * WARP_SIZE
             var qi_idx = warp_id * D_BUCKET + lane + di * WARP_SIZE
-            q_smem[qi_idx] = Float32(q[q_src + d]) if i_load < S and d < D else Float32(0)
-            do_smem[qi_idx] = Float32(dy[do_src + d]) if i_load < S and d < D else Float32(0)
+            smem[Q_OFF + qi_idx] = Float32(q[q_src + d]) if i_load < S and d < D else Float32(0)
+            smem[DO_OFF + qi_idx] = Float32(dy[do_src + d]) if i_load < S and d < D else Float32(0)
         if lane == 0:
-            lse_smem[warp_id] = lse[b * H * S + h * S + i_load] if i_load < S else Float32(0)
-            delta_smem[warp_id] = delta[b * H * S + h * S + i_load] if i_load < S else Float32(0)
+            smem[LSE_OFF + warp_id] = lse[b * H * S + h * S + i_load] if i_load < S else Float32(0)
+            smem[DELTA_OFF + warp_id] = delta[b * H * S + h * S + i_load] if i_load < S else Float32(0)
         barrier()
         if j < S:
             var tile_full = i_base + Bc <= S
@@ -967,11 +951,11 @@ def flash_attn_dkdv_kernel_rowwarp[
                     if causal_diag:
                         take = take and j <= i
                 if take:
-                    var lse_i_l2 = lse_smem[qi] * LOG2E
-                    var delta_i = delta_smem[qi]
+                    var lse_i_l2 = smem[LSE_OFF + qi] * LOG2E
+                    var delta_i = smem[DELTA_OFF + qi]
                     var partial_qk = Float32(0)
                     comptime for di in range(D_PT):
-                        partial_qk += Float32(q_smem[qi * D_BUCKET + lane + di * WARP_SIZE]) * k_reg[di]
+                        partial_qk += Float32(smem[Q_OFF + qi * D_BUCKET + lane + di * WARP_SIZE]) * k_reg[di]
                     var p_ij: Float32
                     comptime if CAUSAL:
                         p_ij = exp2(warp_sum(partial_qk) * scale_log2e - lse_i_l2)
@@ -982,11 +966,11 @@ def flash_attn_dkdv_kernel_rowwarp[
                         p_ij = exp2(warp_sum(partial_qk) * scale_log2e + mask_val_l2 - lse_i_l2)
                     var partial_dp = Float32(0)
                     comptime for di in range(D_PT):
-                        partial_dp += Float32(do_smem[qi * D_BUCKET + lane + di * WARP_SIZE]) * v_reg[di]
+                        partial_dp += Float32(smem[DO_OFF + qi * D_BUCKET + lane + di * WARP_SIZE]) * v_reg[di]
                     var ds_ij = p_ij * (warp_sum(partial_dp) - delta_i)
                     comptime for di in range(D_PT):
-                        dv_reg[di] += p_ij * Float32(do_smem[qi * D_BUCKET + lane + di * WARP_SIZE])
-                        dk_reg[di] += ds_ij * scale * Float32(q_smem[qi * D_BUCKET + lane + di * WARP_SIZE])
+                        dv_reg[di] += p_ij * Float32(smem[DO_OFF + qi * D_BUCKET + lane + di * WARP_SIZE])
+                        dk_reg[di] += ds_ij * scale * Float32(smem[Q_OFF + qi * D_BUCKET + lane + di * WARP_SIZE])
         barrier()
 
     comptime if CAUSAL:
