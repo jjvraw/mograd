@@ -1,5 +1,12 @@
-"""Portable SIMT flash-attention kernels (non-NVIDIA fallback)."""
-from std.gpu import WARP_SIZE, MAX_THREADS_PER_BLOCK_METADATA, block_idx, thread_idx, barrier, syncwarp
+"""Naive SIMT flash-attention kernels."""
+from std.gpu import (
+    WARP_SIZE,
+    MAX_THREADS_PER_BLOCK_METADATA,
+    block_idx,
+    thread_idx,
+    barrier,
+    syncwarp,
+)
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.memory import external_memory, AddressSpace
 from std.gpu.primitives.warp import shuffle_xor as warp_shuffle_xor
@@ -7,7 +14,13 @@ from std.gpu.primitives.warp import sum as warp_sum
 from std.math import exp2, log, min
 from std.sys import size_of
 from std.utils import StaticTuple
-from mograd.runtime.gpu.kernels.attention.config import Br, Bc, BLOCK_SIZE, LOG2E, LN2
+from mograd.runtime.gpu.kernels.attention.config import (
+    Br,
+    Bc,
+    BLOCK_SIZE,
+    LOG2E,
+    LN2,
+)
 
 
 # ===-------------------------------------------------------------------===#
@@ -89,15 +102,20 @@ def flash_attn_fwd_kernel[
     var HD = H * D
     var qkv_bh = b * S * H * D + h * D
 
-    var smem = rebind[UnsafePointer[Float32, MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
-        external_memory[Float32, address_space=AddressSpace.SHARED, alignment=16, name="attn_fwd_smem"]()
-    )
-    # NOTE: sub-pointers derived from external_memory crash Metal codegen,
-    # so every view indexes the one smem base through comptime offsets.
+    # Views index the one smem base through comptime offsets (sub-pointers
+    # derived from the base crash Metal codegen).
     comptime Q_OFF = 0
     comptime K_OFF = BR * STRIDE
     comptime V_OFF = K_OFF + Bc * STRIDE
     comptime P_OFF = V_OFF + Bc * STRIDE  # [BR][PSTRIDE], warp-private rows
+    var smem = rebind[UnsafePointer[Float32, MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
+        external_memory[
+            Float32,
+            address_space=AddressSpace.SHARED,
+            alignment=16,
+            name="attn_fwd_smem",
+        ]()
+    )
 
     # Stage the block's Q rows once (reused across every KV tile).
     comptime Q_ELEMS = BR * D_BUCKET
@@ -307,14 +325,19 @@ def flash_attn_dq_kernel[
     var qkv_bh = b * S * H * D + h * D
     var o_bh = b * H * S * D + h * S * D
 
-    var smem = rebind[UnsafePointer[Float32, MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
-        external_memory[Float32, address_space=AddressSpace.SHARED, alignment=16, name="attn_dq_smem"]()
-    )
     comptime Q_OFF = 0
     comptime DO_OFF = BR * STRIDE
     comptime K_OFF = DO_OFF + BR * STRIDE
     comptime V_OFF = K_OFF + Bc * STRIDE
     comptime DS_OFF = V_OFF + Bc * STRIDE  # [BR][PSTRIDE], warp-private rows
+    var smem = rebind[UnsafePointer[Float32, MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
+        external_memory[
+            Float32,
+            address_space=AddressSpace.SHARED,
+            alignment=16,
+            name="attn_dq_smem",
+        ]()
+    )
 
     # Stage the block's Q and dO rows once.
     comptime QD_ELEMS = BR * D_BUCKET
@@ -510,9 +533,6 @@ def flash_attn_dkdv_kernel[
     var qkv_bh = b * S * H * D + h * D
     var o_bh = b * H * S * D + h * S * D
 
-    var smem = rebind[UnsafePointer[Float32, MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
-        external_memory[Float32, address_space=AddressSpace.SHARED, alignment=16, name="attn_dkdv_smem"]()
-    )
     comptime K_OFF = 0
     comptime V_OFF = BR * STRIDE
     comptime Q_OFF = V_OFF + BR * STRIDE
@@ -521,6 +541,14 @@ def flash_attn_dkdv_kernel[
     comptime DS_OFF = P_OFF + BR * PSTRIDE
     comptime LSE_OFF = DS_OFF + BR * PSTRIDE  # [Bc]
     comptime DELTA_OFF = LSE_OFF + Bc  # [Bc]
+    var smem = rebind[UnsafePointer[Float32, MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
+        external_memory[
+            Float32,
+            address_space=AddressSpace.SHARED,
+            alignment=16,
+            name="attn_dkdv_smem",
+        ]()
+    )
 
     # Stage the block's K and V rows once (resident across all Q tiles).
     comptime KV_ELEMS = BR * D_BUCKET
@@ -726,11 +754,16 @@ def flash_attn_dq_kernel_rowwarp[
     var lse_i_l2 = lse[b * H * S + h * S + i] * LOG2E if i < S else Float32(0)
     var scale_log2e = scale * LOG2E
 
-    var smem = rebind[UnsafePointer[Float32, MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
-        external_memory[Float32, address_space=AddressSpace.SHARED, alignment=16, name="attn_dq_smem"]()
-    )
     comptime K_OFF = 0
     comptime V_OFF = Bc * D_BUCKET
+    var smem = rebind[UnsafePointer[Float32, MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
+        external_memory[
+            Float32,
+            address_space=AddressSpace.SHARED,
+            alignment=16,
+            name="attn_dq_smem",
+        ]()
+    )
 
     @always_inline
     def process_tile(
@@ -749,7 +782,8 @@ def flash_attn_dq_kernel_rowwarp[
         read mask,
         read lane,
         read warp_id,
-        read scale,
+        # NOTE: capturing the raw `scale` parameter crashes Metal codegen,
+        # closures may only capture locals. Scale is applied at the epilogue.
         read scale_log2e,
         read lse_i_l2,
         read delta_i,
@@ -794,7 +828,7 @@ def flash_attn_dq_kernel_rowwarp[
                         partial_dp += do_reg[di] * smem[V_OFF + jr * D_BUCKET + lane + di * WARP_SIZE]
                     var ds_ij = p_ij * (warp_sum(partial_dp) - delta_i)
                     comptime for di in range(D_PT):
-                        dq_reg[di] += ds_ij * scale * smem[K_OFF + jr * D_BUCKET + lane + di * WARP_SIZE]
+                        dq_reg[di] += ds_ij * smem[K_OFF + jr * D_BUCKET + lane + di * WARP_SIZE]
         barrier()
 
     comptime if CAUSAL:
@@ -812,7 +846,7 @@ def flash_attn_dq_kernel_rowwarp[
         comptime for di in range(D_PT):
             var d = lane + di * WARP_SIZE
             if d < D:
-                dq[out_base + d] = Scalar[dtype](dq_reg[di])
+                dq[out_base + d] = Scalar[dtype](dq_reg[di] * scale)
 
 
 # ===-------------------------------------------------------------------===#
@@ -891,13 +925,18 @@ def flash_attn_dkdv_kernel_rowwarp[
 
     var scale_log2e = scale * LOG2E
 
-    var smem = rebind[UnsafePointer[Float32, MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
-        external_memory[Float32, address_space=AddressSpace.SHARED, alignment=16, name="attn_dkdv_smem"]()
-    )
     comptime Q_OFF = 0
     comptime DO_OFF = Bc * D_BUCKET
     comptime LSE_OFF = 2 * Bc * D_BUCKET
     comptime DELTA_OFF = LSE_OFF + Bc
+    var smem = rebind[UnsafePointer[Float32, MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
+        external_memory[
+            Float32,
+            address_space=AddressSpace.SHARED,
+            alignment=16,
+            name="attn_dkdv_smem",
+        ]()
+    )
 
     @always_inline
     def process_tile(
@@ -919,7 +958,8 @@ def flash_attn_dkdv_kernel_rowwarp[
         read delta,
         read lane,
         read warp_id,
-        read scale,
+        # NOTE: capturing the raw `scale` parameter crashes Metal codegen,
+        # closures may only capture locals. Scale is applied at the epilogue.
         read scale_log2e,
         read k_reg,
         read v_reg,
@@ -970,7 +1010,7 @@ def flash_attn_dkdv_kernel_rowwarp[
                     var ds_ij = p_ij * (warp_sum(partial_dp) - delta_i)
                     comptime for di in range(D_PT):
                         dv_reg[di] += p_ij * Float32(smem[DO_OFF + qi * D_BUCKET + lane + di * WARP_SIZE])
-                        dk_reg[di] += ds_ij * scale * Float32(smem[Q_OFF + qi * D_BUCKET + lane + di * WARP_SIZE])
+                        dk_reg[di] += ds_ij * Float32(smem[Q_OFF + qi * D_BUCKET + lane + di * WARP_SIZE])
         barrier()
 
     comptime if CAUSAL:
@@ -989,7 +1029,7 @@ def flash_attn_dkdv_kernel_rowwarp[
         comptime for di in range(D_PT):
             var d = lane + di * WARP_SIZE
             if d < D:
-                dk[out_base + d] = Scalar[dtype](dk_reg[di])
+                dk[out_base + d] = Scalar[dtype](dk_reg[di] * scale)
                 dv[out_base + d] = Scalar[dtype](dv_reg[di])
 
 

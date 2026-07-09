@@ -1,25 +1,16 @@
-"""Benchmark for the generic SIMT attention kernels, launched directly.
-
-The main benches/attention.mojo measures the shipping FFI entry point, which
-dispatch routes to the MMA kernels on NVIDIA, so the generic fallback never
-runs there. This bench imports the generic launchers directly so refactors
-of generic.mojo have a measurable regression gate on any GPU.
-
-These are portability kernels rather than tuned ones, and absolute numbers
-on NVIDIA are a proxy tripwire rather than a target. The grid is
-deliberately small, with just enough shape and variant coverage to catch
-codegen regressions without bloating bench time. Conventions (cache busting, FA2 flop accounting, row naming) match
-benches/attention.mojo so reports read side by side.
-"""
 from std.gpu.host import DeviceContext
 from std.math import sqrt
 from std.benchmark import Bench, Bencher, BenchId, keep, BenchConfig
 from std.benchmark import BenchMetric, ThroughputMeasure
 from std.sys import size_of
+from std.sys.info import has_apple_gpu_accelerator
 
 from internal_utils import CacheBustingBuffer
 
-from mograd.runtime.gpu.kernels.attention.generic import _flash_attn_fwd_launch, _flash_attn_bwd_launch
+from mograd.runtime.gpu.kernels.attention.apple import (
+    _flash_attn_fwd_launch_apple,
+    _flash_attn_bwd_launch_apple,
+)
 
 
 @always_inline
@@ -33,7 +24,7 @@ def _mut[dtype: DType](buf: CacheBustingBuffer[dtype], i: Int) -> UnsafePointer[
 
 
 @no_inline
-def bench_generic_fwd[
+def bench_apple_fwd[
     dtype: DType, B: Int, S: Int, H: Int, D: Int, CAUSAL: Bool, BIAS: Bool = False
 ](mut m: Bench, *, ctx: DeviceContext) raises:
     comptime dtype_str = "f32" if dtype == DType.float32 else "f16" if dtype == DType.float16 else "bf16"
@@ -55,7 +46,7 @@ def bench_generic_fwd[
     @parameter
     @always_inline
     def kernel_launch(dc: DeviceContext, iteration: Int) raises:
-        _flash_attn_fwd_launch[dtype, D, CAUSAL, BIAS](
+        _flash_attn_fwd_launch_apple[dtype, D, CAUSAL, BIAS](
             _imm(q, iteration),
             _imm(k, iteration),
             _imm(v, iteration),
@@ -81,7 +72,7 @@ def bench_generic_fwd[
 
     m.bench_function[bench_func](
         BenchId(
-            "generic_attn_fwd",
+            "apple_attn_fwd",
             input_id=String(dtype_str, "/", causal_str, "/B", B, "S", S, "H", H, "D", D),
         ),
         [
@@ -92,13 +83,13 @@ def bench_generic_fwd[
 
 
 @no_inline
-def bench_generic_bwd[
+def bench_apple_bwd[
     dtype: DType, B: Int, S: Int, H: Int, D: Int, CAUSAL: Bool, BIAS: Bool = not CAUSAL
 ](mut m: Bench, *, ctx: DeviceContext) raises:
     comptime dtype_str = "f32" if dtype == DType.float32 else "f16" if dtype == DType.float16 else "bf16"
     comptime causal_str = "causal" if CAUSAL else ("bias" if BIAS else "full")
-    # FA2 convention (see benches/attention.mojo). The split dq/dkdv scheme
-    # recomputes scores, which correctly shows up as lost efficiency.
+    # FA2 convention (see benches/attention/dispatch.mojo). The split dq/dkdv
+    # scheme recomputes scores, which refelcts lost efficiency.
     comptime bwd_flop_scale = 5 if CAUSAL else 10
     comptime flops = bwd_flop_scale * B * H * S * S * D
     comptime hbm_bytes = 8 * B * H * S * D * size_of[dtype]() + B * H * S * size_of[DType.float32]() + (
@@ -120,7 +111,7 @@ def bench_generic_bwd[
     @parameter
     @always_inline
     def kernel_launch(dc: DeviceContext, iteration: Int) raises:
-        _flash_attn_bwd_launch[dtype, D, CAUSAL, BIAS](
+        _flash_attn_bwd_launch_apple[dtype, D, CAUSAL, BIAS](
             _imm(dy, iteration),
             _imm(o, iteration),
             _imm(q, iteration),
@@ -150,7 +141,7 @@ def bench_generic_bwd[
 
     m.bench_function[bench_func](
         BenchId(
-            "generic_attn_bwd",
+            "apple_attn_bwd",
             input_id=String(dtype_str, "/", causal_str, "/B", B, "S", S, "H", H, "D", D),
         ),
         [
@@ -161,10 +152,12 @@ def bench_generic_bwd[
 
 
 def main() raises:
+    comptime if not has_apple_gpu_accelerator():
+        print("skipped: requires an Apple GPU")
+        return
+
     var m = Bench(BenchConfig(max_iters=1000, min_runtime_secs=2, max_runtime_secs=5))
 
-    # One tiny shape, one mid D64, one mid D128, and one D256 catch codegen
-    # regressions in every kernel variant without bench bloat.
     comptime shapes = (
         (1, 256, 8, 64),
         (4, 512, 12, 64),
@@ -181,11 +174,11 @@ def main() raises:
             comptime D = shapes[si][3]
             comptime for di in range(len(dtypes)):
                 comptime dtype = dtypes[di]
-                bench_generic_fwd[dtype, B, S, H, D, False, False](m, ctx=ctx)
-                bench_generic_fwd[dtype, B, S, H, D, False, True](m, ctx=ctx)
-                bench_generic_fwd[dtype, B, S, H, D, True](m, ctx=ctx)
-                bench_generic_bwd[dtype, B, S, H, D, False, False](m, ctx=ctx)
-                bench_generic_bwd[dtype, B, S, H, D, False, True](m, ctx=ctx)
-                bench_generic_bwd[dtype, B, S, H, D, True](m, ctx=ctx)
+                bench_apple_fwd[dtype, B, S, H, D, False, False](m, ctx=ctx)
+                bench_apple_fwd[dtype, B, S, H, D, False, True](m, ctx=ctx)
+                bench_apple_fwd[dtype, B, S, H, D, True](m, ctx=ctx)
+                bench_apple_bwd[dtype, B, S, H, D, False, False](m, ctx=ctx)
+                bench_apple_bwd[dtype, B, S, H, D, False, True](m, ctx=ctx)
+                bench_apple_bwd[dtype, B, S, H, D, True](m, ctx=ctx)
 
     m.dump_report()

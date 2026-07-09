@@ -84,7 +84,9 @@ examples-ci             = { depends-on = ["mnist"] }
 test-all                = { depends-on = ["test-gpu", "test-graph", "examples-ci"] }
 
 # Test Custom Kernels
-test-attention          = { cmd = "mojo -I . tests/kernels/attention.mojo",     depends-on = ["ensure-gpu"] }
+test-attention-mma      = { cmd = "mojo -I . tests/kernels/attention/mma.mojo",   depends-on = ["ensure-gpu"] }
+test-attention-apple    = { cmd = "mojo -I . tests/kernels/attention/apple.mojo", depends-on = ["ensure-gpu"] }
+test-attention          = { depends-on = ["test-attention-mma", "test-attention-apple"] }
 test-kernels            = { depends-on = ["test-attention"] }
 
 # Benchamrk Kernels
@@ -92,5 +94,6 @@ bench-elementwise       = { cmd = "mojo -I . benches/elementwise.mojo",         
 bench-transpose         = { cmd = "mojo -I . benches/transpose.mojo",           depends-on = ["ensure-gpu"] }
 bench-matmul            = { cmd = "mojo -I . benches/matmul.mojo",              depends-on = ["ensure-gpu"] }
 bench-normalization     = { cmd = "mojo -I . benches/normalization.mojo",       depends-on = ["ensure-gpu"] }
-bench-attention         = { cmd = "mojo -I . benches/attention.mojo",           depends-on = ["ensure-gpu"] }
-bench-generic-attention = { cmd = "mojo -I . benches/generic_attention.mojo",   depends-on = ["ensure-gpu"] }
+bench-attention         = { cmd = "mojo -I . benches/attention/dispatch.mojo", depends-on = ["ensure-gpu"] }
+bench-attention-generic = { cmd = "mojo -I . benches/attention/generic.mojo",   depends-on = ["ensure-gpu"] }
+bench-attention-apple   = { cmd = "mojo -I . benches/attention/apple.mojo",     depends-on = ["ensure-gpu"] }
