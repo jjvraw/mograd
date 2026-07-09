@@ -1,7 +1,10 @@
 """Host-side dispatch: dtype / head-dim bucket / routing."""
 from std.gpu.host import DeviceContext
-from std.sys.info import has_nvidia_gpu_accelerator
-from mograd.runtime.gpu.kernels.attention.generic import _flash_attn_fwd_launch, _flash_attn_bwd_launch
+from std.sys.info import has_apple_gpu_accelerator, has_nvidia_gpu_accelerator
+from mograd.runtime.gpu.kernels.attention.generic import (
+    _flash_attn_fwd_launch,
+    _flash_attn_bwd_launch,
+)
 
 # TODO: AMD CDNA support.
 
@@ -30,7 +33,9 @@ def flash_attn_fwd[
     # buckets are limited to 64 and 128 because the ldmatrix swizzle needs a
     # row of D_BUCKET halves to divide into or be a multiple of 128 bytes.
     comptime if has_nvidia_gpu_accelerator() and ctx.default_device_info.compute >= 8:
-        from mograd.runtime.gpu.kernels.attention.nvidia_fwd import _flash_attn_fwd_launch_mma
+        from mograd.runtime.gpu.kernels.attention.nvidia_fwd import (
+            _flash_attn_fwd_launch_mma,
+        )
 
         @parameter
         @always_inline
@@ -47,6 +52,30 @@ def flash_attn_fwd[
             # D > 256 exceeds the MMA kernels' register/smem envelope (the
             # same hdim <= 256 limit as FA2) and runs on the generic path.
             _flash_attn_fwd_launch[d, 512, CAUSAL, HAS_BIAS](q, k, v, mask, dst, lse, B, S, H, D, scale, ctx)
+    elif has_apple_gpu_accelerator():
+        # Metal: the smem-tiled SIMT kernels miscompile, and SMEM staging
+        # measures as a net loss on Apple anyway (see apple.mojo). Route
+        # to the register-streaming kernel. No shared memory means no
+        # head-dim tile limit either.
+        from mograd.runtime.gpu.kernels.attention.apple import _flash_attn_fwd_launch_apple
+
+        @parameter
+        @always_inline
+        def apple[DB: Int]() raises:
+            _flash_attn_fwd_launch_apple[d, DB, CAUSAL, HAS_BIAS](q, k, v, mask, dst, lse, B, S, H, D, scale, ctx)
+
+        if D <= 32:
+            apple[32]()
+        elif D <= 64:
+            apple[64]()
+        elif D <= 96:
+            apple[96]()
+        elif D <= 128:
+            apple[128]()
+        elif D <= 256:
+            apple[256]()
+        else:
+            apple[512]()
     else:
         # Scalar fallback
         @parameter
@@ -127,7 +156,22 @@ def flash_attn_bwd[
                 mma[256]()
             else:
                 _flash_attn_bwd_launch[d, 512, CAUSAL, HAS_BIAS](
-                    dy, o, q, k, v, mask, lse, dq, dk, dv, B, S, H, D, scale, ctx
+                    dy,
+                    o,
+                    q,
+                    k,
+                    v,
+                    mask,
+                    lse,
+                    dq,
+                    dk,
+                    dv,
+                    B,
+                    S,
+                    H,
+                    D,
+                    scale,
+                    ctx,
                 )
         else:
             # TF32 split path (FA2 has no f32 backward to mirror).
@@ -139,8 +183,48 @@ def flash_attn_bwd[
                 mma[256]()
             else:
                 _flash_attn_bwd_launch[d, 512, CAUSAL, HAS_BIAS](
-                    dy, o, q, k, v, mask, lse, dq, dk, dv, B, S, H, D, scale, ctx
+                    dy,
+                    o,
+                    q,
+                    k,
+                    v,
+                    mask,
+                    lse,
+                    dq,
+                    dk,
+                    dv,
+                    B,
+                    S,
+                    H,
+                    D,
+                    scale,
+                    ctx,
                 )
+    elif has_apple_gpu_accelerator():
+        # Metal miscompiles the smem-staged SIMT kernels, so Apple runs the
+        # register-streaming pair in apple.mojo. No shared memory means no
+        # head-dim tile limit.
+        from mograd.runtime.gpu.kernels.attention.apple import _flash_attn_bwd_launch_apple
+
+        @parameter
+        @always_inline
+        def apple[DB: Int]() raises:
+            _flash_attn_bwd_launch_apple[d, DB, CAUSAL, HAS_BIAS](
+                dy, o, q, k, v, mask, lse, dq, dk, dv, B, S, H, D, scale, ctx
+            )
+
+        if D <= 32:
+            apple[32]()
+        elif D <= 64:
+            apple[64]()
+        elif D <= 96:
+            apple[96]()
+        elif D <= 128:
+            apple[128]()
+        elif D <= 256:
+            apple[256]()
+        else:
+            apple[512]()
     else:
 
         @parameter

@@ -30,11 +30,9 @@ from std.utils.numerics import neg_inf
 from mograd import Device, Tensor
 from std.sys.info import has_nvidia_gpu_accelerator
 from mograd.runtime.gpu.kernels.attention.generic import _flash_attn_fwd_launch, _flash_attn_bwd_launch
-from mograd.runtime.gpu.kernels.attention.nvidia_fwd import _flash_attn_fwd_launch_mma
-from mograd.runtime.gpu.kernels.attention.nvidia_bwd import _flash_attn_bwd_launch_mma, _flash_attn_bwd_launch_mma_half
 
 # The MMA kernels require NVIDIA sm_80+ (TF32 m16n8k8, m16n8k16 HMMA,
-# cp.async). Tests comptime-skip elsewhere so the file compiles anywhere.
+# cp.async). The suite skips on other targets.
 comptime IS_NVIDIA = has_nvidia_gpu_accelerator()
 
 
@@ -138,6 +136,27 @@ def _run_fwd_kernel[
     D: Int,
     scale: Float32,
 ) raises -> Tuple[List[Scalar[dtype]], List[Float32]]:
+    comptime if not IS_NVIDIA:
+        raise Error("kernel accuracy suite requires an NVIDIA GPU")
+    else:
+        return _run_fwd_kernel_impl[dtype, D_BUCKET, CAUSAL, HAS_BIAS, MMA](q, k, v, mask, B, S, H, D, scale)
+
+
+def _run_fwd_kernel_impl[
+    dtype: DType, D_BUCKET: Int, CAUSAL: Bool, HAS_BIAS: Bool, MMA: Bool
+](
+    q: List[Scalar[dtype]],
+    k: List[Scalar[dtype]],
+    v: List[Scalar[dtype]],
+    mask: List[Scalar[dtype]],
+    B: Int,
+    S: Int,
+    H: Int,
+    D: Int,
+    scale: Float32,
+) raises -> Tuple[List[Scalar[dtype]], List[Float32]]:
+    from mograd.runtime.gpu.kernels.attention.nvidia_fwd import _flash_attn_fwd_launch_mma
+
     with DeviceContext() as ctx:
         var q_buf = ctx.enqueue_create_buffer[dtype](B * S * H * D)
         var k_buf = ctx.enqueue_create_buffer[dtype](B * S * H * D)
@@ -163,23 +182,38 @@ def _run_fwd_kernel[
         lse_buf.enqueue_fill(Float32(0))
         ctx.synchronize()
 
-        comptime launch = _flash_attn_fwd_launch_mma[
-            dtype, D_BUCKET, CAUSAL, HAS_BIAS
-        ] if MMA else _flash_attn_fwd_launch[dtype, D_BUCKET, CAUSAL, HAS_BIAS]
-        launch(
-            q_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            k_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            v_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            m_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            o_buf.unsafe_ptr().as_unsafe_any_origin(),
-            lse_buf.unsafe_ptr().as_unsafe_any_origin(),
-            B,
-            S,
-            H,
-            D,
-            scale,
-            ctx,
-        )
+        # comptime if, not an alias ternary: a comptime ternary elaborates
+        # both arms, which instantiates the MMA kernels off NVIDIA.
+        comptime if MMA and IS_NVIDIA:
+            _flash_attn_fwd_launch_mma[dtype, D_BUCKET, CAUSAL, HAS_BIAS](
+                q_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                k_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                v_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                m_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                o_buf.unsafe_ptr().as_unsafe_any_origin(),
+                lse_buf.unsafe_ptr().as_unsafe_any_origin(),
+                B,
+                S,
+                H,
+                D,
+                scale,
+                ctx,
+            )
+        else:
+            _flash_attn_fwd_launch[dtype, D_BUCKET, CAUSAL, HAS_BIAS](
+                q_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                k_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                v_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                m_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                o_buf.unsafe_ptr().as_unsafe_any_origin(),
+                lse_buf.unsafe_ptr().as_unsafe_any_origin(),
+                B,
+                S,
+                H,
+                D,
+                scale,
+                ctx,
+            )
         ctx.synchronize()
 
         var o_list = List[Scalar[dtype]](capacity=B * H * S * D)
@@ -269,9 +303,6 @@ def _assert_gate(err: Float64, baseline: Float64, factor: Float64, floor: Float6
 
 
 def test_fwd_f16_full() raises:
-    comptime if not IS_NVIDIA:
-        print("    skipped: requires NVIDIA sm_80+ (MMA kernels)")
-        return
     var e = _fwd_case[DType.float16, False, False, 64](2, 2, 96, 64, 100)
     _assert_gate(e.mma, e.naive, 2.0, 1e-4, "f16 full mma")
     _assert_gate(e.generic, e.naive, 2.0, 1e-4, "f16 full generic")
@@ -279,9 +310,6 @@ def test_fwd_f16_full() raises:
 
 
 def test_fwd_f16_causal() raises:
-    comptime if not IS_NVIDIA:
-        print("    skipped: requires NVIDIA sm_80+ (MMA kernels)")
-        return
     var e = _fwd_case[DType.float16, True, False, 64](2, 2, 96, 64, 110)
     _assert_gate(e.mma, e.naive, 2.0, 1e-4, "f16 causal mma")
     _assert_gate(e.generic, e.naive, 2.0, 1e-4, "f16 causal generic")
@@ -289,18 +317,12 @@ def test_fwd_f16_causal() raises:
 
 
 def test_fwd_f16_bias() raises:
-    comptime if not IS_NVIDIA:
-        print("    skipped: requires NVIDIA sm_80+ (MMA kernels)")
-        return
     var e = _fwd_case[DType.float16, False, True, 64](2, 2, 96, 64, 120)
     _assert_gate(e.mma, e.naive, 2.0, 1e-4, "f16 bias mma")
     _assert_gate(e.generic, e.naive, 2.0, 1e-4, "f16 bias generic")
 
 
 def test_fwd_f16_causal_d128() raises:
-    comptime if not IS_NVIDIA:
-        print("    skipped: requires NVIDIA sm_80+ (MMA kernels)")
-        return
     # D=128 bucket: exercises the register-capped fwd-half MMA variant.
     var e = _fwd_case[DType.float16, True, False, 128](2, 2, 96, 128, 130)
     _assert_gate(e.mma, e.naive, 2.0, 1e-4, "f16 causal d128 mma")
@@ -308,9 +330,6 @@ def test_fwd_f16_causal_d128() raises:
 
 
 def test_fwd_f16_large_s() raises:
-    comptime if not IS_NVIDIA:
-        print("    skipped: requires NVIDIA sm_80+ (MMA kernels)")
-        return
     # S=768 pushes the generic launcher onto its large-grid geometry (GR=8,
     # 32-row blocks). The small shapes above all take the GR=4 branch, so
     # without this case GR=8 would be covered by history only. Causal is the
@@ -325,9 +344,6 @@ def test_fwd_f16_large_s() raises:
 
 
 def test_fwd_f32_full() raises:
-    comptime if not IS_NVIDIA:
-        print("    skipped: requires NVIDIA sm_80+ (MMA kernels)")
-        return
     # MMA f32 means TF32 matmuls (~1e-3-class), so it gets an absolute cap
     # rather than a naive-relative one. The generic SIMT kernel is true f32
     # FMA and must stay near the naive baseline (~1e-6-class), a tight
@@ -338,18 +354,12 @@ def test_fwd_f32_full() raises:
 
 
 def test_fwd_f32_causal() raises:
-    comptime if not IS_NVIDIA:
-        print("    skipped: requires NVIDIA sm_80+ (MMA kernels)")
-        return
     var e = _fwd_case[DType.float32, True, False, 64](2, 2, 96, 64, 150)
     assert_true(e.mma < 5e-3, "f32(TF32) causal mma error above TF32-class cap")
     _assert_gate(e.generic, e.naive, 4.0, 1e-7, "f32 causal generic")
 
 
 def test_fwd_f32_bias() raises:
-    comptime if not IS_NVIDIA:
-        print("    skipped: requires NVIDIA sm_80+ (MMA kernels)")
-        return
     var e = _fwd_case[DType.float32, False, True, 64](2, 2, 96, 64, 160)
     assert_true(e.mma < 5e-3, "f32(TF32) bias mma error above TF32-class cap")
     _assert_gate(e.generic, e.naive, 4.0, 1e-7, "f32 bias generic")
@@ -361,9 +371,6 @@ def test_fwd_f32_bias() raises:
 
 
 def test_fwd_f32_d256() raises:
-    comptime if not IS_NVIDIA:
-        print("    skipped: requires NVIDIA sm_80+ (MMA kernels)")
-        return
     # At D=256 MMA routes to the TF32 kernel. Generic gets its only coverage
     # at this bucket here (no shipping workload uses it yet).
     var e = _fwd_case[DType.float32, False, False, 256](2, 2, 96, 256, 400)
@@ -372,18 +379,12 @@ def test_fwd_f32_d256() raises:
 
 
 def test_bwd_f32_full_d256() raises:
-    comptime if not IS_NVIDIA:
-        print("    skipped: requires NVIDIA sm_80+ (MMA kernels)")
-        return
     var e = _bwd_case[DType.float32, False, False, 256](2, 2, 96, 256, 410)
     assert_true(e.dq_mma < 5e-2 and e.dk_mma < 5e-2 and e.dv_mma < 5e-2, "f32(TF32) d256 bwd mma error")
     assert_true(e.dq_gen < 2e-5 and e.dk_gen < 2e-5 and e.dv_gen < 2e-5, "f32 d256 bwd generic error")
 
 
 def test_d512_generic_only() raises:
-    comptime if not IS_NVIDIA:
-        print("    skipped: requires NVIDIA sm_80+ (MMA kernels)")
-        return
     # D > 256 has no MMA kernels (dispatch routes it to generic), so this
     # gates the generic launchers directly at the 512 bucket, the only
     # coverage that bucket has.
@@ -421,9 +422,6 @@ def test_d512_generic_only() raises:
 
 
 def test_fwd_large_logits_stable() raises:
-    comptime if not IS_NVIDIA:
-        print("    skipped: requires NVIDIA sm_80+ (MMA kernels)")
-        return
     # std=20 pushes logits to ~O(100). An unstable softmax overflows exp
     # and returns NaN/Inf (caught as err=1e300), so the online-softmax max
     # tracking must keep error at the same magnitude as the unit-scale case.
@@ -439,9 +437,6 @@ def test_fwd_large_logits_stable() raises:
 
 
 def test_fwd_deterministic_bitwise() raises:
-    comptime if not IS_NVIDIA:
-        print("    skipped: requires NVIDIA sm_80+ (MMA kernels)")
-        return
     # The forward has no atomics, so two launches on identical inputs must
     # agree bit for bit. The backward's dQ is atomic-accumulated and
     # explicitly NOT bitwise reproducible, so do not add it here.
@@ -461,9 +456,6 @@ def test_fwd_deterministic_bitwise() raises:
 
 
 def test_fwd_bias_shift_invariance() raises:
-    comptime if not IS_NVIDIA:
-        print("    skipped: requires NVIDIA sm_80+ (MMA kernels)")
-        return
     # softmax(s + c) == softmax(s): adding a constant to every bias entry
     # must leave O unchanged. Catches max-tracking bugs, no oracle needed.
     var device = Device()
@@ -597,8 +589,34 @@ def _run_bwd_kernel[
     D: Int,
     scale: Float32,
 ) raises -> Tuple[List[Scalar[dtype]], List[Scalar[dtype]], List[Scalar[dtype]]]:
+    comptime if not IS_NVIDIA:
+        raise Error("kernel accuracy suite requires an NVIDIA GPU")
+    else:
+        return _run_bwd_kernel_impl[dtype, D_BUCKET, CAUSAL, HAS_BIAS, MMA](q, k, v, mask, dy, B, S, H, D, scale)
+
+
+def _run_bwd_kernel_impl[
+    dtype: DType, D_BUCKET: Int, CAUSAL: Bool, HAS_BIAS: Bool, MMA: Bool
+](
+    q: List[Scalar[dtype]],
+    k: List[Scalar[dtype]],
+    v: List[Scalar[dtype]],
+    mask: List[Scalar[dtype]],
+    dy: List[Scalar[dtype]],
+    B: Int,
+    S: Int,
+    H: Int,
+    D: Int,
+    scale: Float32,
+) raises -> Tuple[List[Scalar[dtype]], List[Scalar[dtype]], List[Scalar[dtype]]]:
     """Same-path forward (for O/LSE) chained into the backward kernel, all
     called directly with raw buffers. Returns (dQ, dK, dV) as BSHD lists."""
+    from mograd.runtime.gpu.kernels.attention.nvidia_fwd import _flash_attn_fwd_launch_mma
+    from mograd.runtime.gpu.kernels.attention.nvidia_bwd import (
+        _flash_attn_bwd_launch_mma,
+        _flash_attn_bwd_launch_mma_half,
+    )
+
     with DeviceContext() as ctx:
         var q_buf = ctx.enqueue_create_buffer[dtype](B * S * H * D)
         var k_buf = ctx.enqueue_create_buffer[dtype](B * S * H * D)
@@ -634,50 +652,97 @@ def _run_bwd_kernel[
         dv_buf.enqueue_fill(Scalar[dtype](0))
         ctx.synchronize()
 
-        comptime fwd = _flash_attn_fwd_launch_mma[dtype, D_BUCKET, CAUSAL, HAS_BIAS] if MMA else _flash_attn_fwd_launch[
-            dtype, D_BUCKET, CAUSAL, HAS_BIAS
-        ]
-        fwd(
-            q_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            k_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            v_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            m_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            o_buf.unsafe_ptr().as_unsafe_any_origin(),
-            lse_buf.unsafe_ptr().as_unsafe_any_origin(),
-            B,
-            S,
-            H,
-            D,
-            scale,
-            ctx,
-        )
+        # comptime if, not alias ternaries, for the same reason as the
+        # forward helper: a comptime ternary elaborates both arms.
+        comptime if MMA and IS_NVIDIA:
+            _flash_attn_fwd_launch_mma[dtype, D_BUCKET, CAUSAL, HAS_BIAS](
+                q_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                k_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                v_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                m_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                o_buf.unsafe_ptr().as_unsafe_any_origin(),
+                lse_buf.unsafe_ptr().as_unsafe_any_origin(),
+                B,
+                S,
+                H,
+                D,
+                scale,
+                ctx,
+            )
+        else:
+            _flash_attn_fwd_launch[dtype, D_BUCKET, CAUSAL, HAS_BIAS](
+                q_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                k_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                v_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                m_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                o_buf.unsafe_ptr().as_unsafe_any_origin(),
+                lse_buf.unsafe_ptr().as_unsafe_any_origin(),
+                B,
+                S,
+                H,
+                D,
+                scale,
+                ctx,
+            )
         ctx.synchronize()
 
-        comptime bwd = _flash_attn_bwd_launch_mma_half[
-            dtype, D_BUCKET, CAUSAL, HAS_BIAS
-        ] if MMA and dtype.is_half_float() and D_BUCKET <= 128 else (
-            _flash_attn_bwd_launch_mma[dtype, D_BUCKET, CAUSAL, HAS_BIAS] if MMA else _flash_attn_bwd_launch[
-                dtype, D_BUCKET, CAUSAL, HAS_BIAS
-            ]
-        )
-        bwd(
-            dy_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            o_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            q_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            k_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            v_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            m_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            lse_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            dq_buf.unsafe_ptr().as_unsafe_any_origin(),
-            dk_buf.unsafe_ptr().as_unsafe_any_origin(),
-            dv_buf.unsafe_ptr().as_unsafe_any_origin(),
-            B,
-            S,
-            H,
-            D,
-            scale,
-            ctx,
-        )
+        comptime if MMA and IS_NVIDIA and dtype.is_half_float() and D_BUCKET <= 128:
+            _flash_attn_bwd_launch_mma_half[dtype, D_BUCKET, CAUSAL, HAS_BIAS](
+                dy_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                o_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                q_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                k_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                v_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                m_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                lse_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                dq_buf.unsafe_ptr().as_unsafe_any_origin(),
+                dk_buf.unsafe_ptr().as_unsafe_any_origin(),
+                dv_buf.unsafe_ptr().as_unsafe_any_origin(),
+                B,
+                S,
+                H,
+                D,
+                scale,
+                ctx,
+            )
+        elif MMA and IS_NVIDIA:
+            _flash_attn_bwd_launch_mma[dtype, D_BUCKET, CAUSAL, HAS_BIAS](
+                dy_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                o_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                q_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                k_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                v_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                m_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                lse_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                dq_buf.unsafe_ptr().as_unsafe_any_origin(),
+                dk_buf.unsafe_ptr().as_unsafe_any_origin(),
+                dv_buf.unsafe_ptr().as_unsafe_any_origin(),
+                B,
+                S,
+                H,
+                D,
+                scale,
+                ctx,
+            )
+        else:
+            _flash_attn_bwd_launch[dtype, D_BUCKET, CAUSAL, HAS_BIAS](
+                dy_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                o_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                q_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                k_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                v_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                m_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                lse_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                dq_buf.unsafe_ptr().as_unsafe_any_origin(),
+                dk_buf.unsafe_ptr().as_unsafe_any_origin(),
+                dv_buf.unsafe_ptr().as_unsafe_any_origin(),
+                B,
+                S,
+                H,
+                D,
+                scale,
+                ctx,
+            )
         ctx.synchronize()
 
         var dq_l = List[Scalar[dtype]](capacity=B * S * H * D)
@@ -742,9 +807,6 @@ def _bwd_case[
 
 
 def test_bwd_f16_causal_d64() raises:
-    comptime if not IS_NVIDIA:
-        print("    skipped: requires NVIDIA sm_80+ (MMA kernels)")
-        return
     # Calibrated 2026-07-07: mma <= 1.65e-3 (f16 P/dS casts), gen <= 1.0e-3.
     var e = _bwd_case[DType.float16, True, False, 64](2, 2, 96, 64, 200)
     assert_true(e.dq_mma < 8e-3 and e.dk_mma < 8e-3 and e.dv_mma < 8e-3, "f16 causal bwd mma error")
@@ -752,27 +814,18 @@ def test_bwd_f16_causal_d64() raises:
 
 
 def test_bwd_f16_causal_d128() raises:
-    comptime if not IS_NVIDIA:
-        print("    skipped: requires NVIDIA sm_80+ (MMA kernels)")
-        return
     var e = _bwd_case[DType.float16, True, False, 128](2, 2, 96, 128, 210)
     assert_true(e.dq_mma < 8e-3 and e.dk_mma < 8e-3 and e.dv_mma < 8e-3, "f16 causal d128 bwd mma error")
     assert_true(e.dq_gen < 5e-3 and e.dk_gen < 5e-3 and e.dv_gen < 5e-3, "f16 causal d128 bwd generic error")
 
 
 def test_bwd_f16_bias_d64() raises:
-    comptime if not IS_NVIDIA:
-        print("    skipped: requires NVIDIA sm_80+ (MMA kernels)")
-        return
     var e = _bwd_case[DType.float16, False, True, 64](2, 2, 96, 64, 220)
     assert_true(e.dq_mma < 8e-3 and e.dk_mma < 8e-3 and e.dv_mma < 8e-3, "f16 bias bwd mma error")
     assert_true(e.dq_gen < 5e-3 and e.dk_gen < 5e-3 and e.dv_gen < 5e-3, "f16 bias bwd generic error")
 
 
 def test_bwd_f32_full_d64() raises:
-    comptime if not IS_NVIDIA:
-        print("    skipped: requires NVIDIA sm_80+ (MMA kernels)")
-        return
     # f32 routes to the TF32 split path while generic is true-f32 FMA, so
     # the generic gate is the tight one at 4 orders below the TF32 path
     # (calibrated at 3.1e-3 for TF32 and 6.7e-7 for generic).
@@ -782,9 +835,6 @@ def test_bwd_f32_full_d64() raises:
 
 
 def test_bwd_dq_atomic_spread() raises:
-    comptime if not IS_NVIDIA:
-        print("    skipped: requires NVIDIA sm_80+ (MMA kernels)")
-        return
     # dQ is accumulated with red.global.add, whose ordering is not
     # guaranteed, so dQ reproducibility is bounded rather than asserted
     # bitwise. The spread measures 0.0 back to back because the f32
@@ -819,4 +869,4 @@ def test_bwd_dq_atomic_spread() raises:
 
 def main() raises:
     comptime assert has_accelerator(), "GPU required to run kernel accuracy tests"
-    TestSuite.discover_tests[__functions_in_module()]().run()
+    TestSuite.discover_tests[__functions_in_module()]().run(skip_all=not IS_NVIDIA)
