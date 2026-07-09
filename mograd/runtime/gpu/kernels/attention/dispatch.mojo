@@ -2,8 +2,6 @@
 from std.gpu.host import DeviceContext
 from std.sys.info import has_nvidia_gpu_accelerator
 from mograd.runtime.gpu.kernels.attention.generic import _flash_attn_fwd_launch, _flash_attn_bwd_launch
-from mograd.runtime.gpu.kernels.attention.nvidia_bwd import _flash_attn_bwd_launch_mma
-
 
 # TODO: AMD CDNA support.
 
@@ -98,7 +96,10 @@ def flash_attn_bwd[
         raise Error("flash_attn_bwd: D=", D, " out of range (1..512)")
     # The MMA kernels need sm_80 or newer (TF32 mma, m16n8k16 HMMA, cp.async).
     comptime if has_nvidia_gpu_accelerator() and ctx.default_device_info.compute >= 8:
-        from mograd.runtime.gpu.kernels.attention.nvidia_bwd import _flash_attn_bwd_launch_mma_half
+        from mograd.runtime.gpu.kernels.attention.nvidia_bwd import (
+            _flash_attn_bwd_launch_mma,
+            _flash_attn_bwd_launch_mma_half,
+        )
 
         @parameter
         @always_inline
