@@ -22,6 +22,7 @@ from mograd.runtime.gpu.kernels.softmax import *
 from mograd.runtime.gpu.kernels.gather_scatter import *
 from mograd.runtime.gpu.kernels.cross_entropy import *
 from mograd.runtime.gpu.kernels.normalization import layer_norm_fwd, layer_norm_bwd
+from mograd.runtime.gpu.kernels.attention import flash_attn_fwd, flash_attn_bwd
 from mograd.runtime.gpu.kernels.utils import (
     dispatch_binary_contiguous,
     dispatch_binary_map,
@@ -831,6 +832,172 @@ def mograd_matmul_bias_bt(
             )
 
     dispatch_dtype[body](dtype)
+
+
+# ===-------------------------------------------------------------------===#
+# Flash Attention
+# ===-------------------------------------------------------------------===#
+
+
+@export
+def mograd_flash_attn_fwd(
+    q: UnsafePointer[NoneType, ImmutAnyOrigin],
+    k: UnsafePointer[NoneType, ImmutAnyOrigin],
+    v: UnsafePointer[NoneType, ImmutAnyOrigin],
+    mask: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    lse: UnsafePointer[NoneType, MutAnyOrigin],
+    B: Int,
+    S: Int,
+    H: Int,
+    D: Int,
+    scale: Float32,
+    causal: Int,
+    has_bias: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    @always_inline
+    def body[d: DType]() capturing raises:
+        if causal != 0:
+            # The causal kernels (fwd and bwd) never read the mask, so a causal
+            # + bias combination would silently drop the bias. Fusion upholds
+            # has_bias == not is_causal (rewrites.mojo). Reject any violation.
+            if has_bias != 0:
+                raise Error("flash_attn_fwd: causal attention with additive bias is not supported")
+            else:
+                flash_attn_fwd[d, True, False](
+                    q.bitcast[Scalar[d]](),
+                    k.bitcast[Scalar[d]](),
+                    v.bitcast[Scalar[d]](),
+                    mask.bitcast[Scalar[d]](),
+                    dst.bitcast[Scalar[d]](),
+                    lse.bitcast[Float32](),
+                    B,
+                    S,
+                    H,
+                    D,
+                    scale,
+                    ctx,
+                )
+        else:
+            if has_bias != 0:
+                flash_attn_fwd[d, False, True](
+                    q.bitcast[Scalar[d]](),
+                    k.bitcast[Scalar[d]](),
+                    v.bitcast[Scalar[d]](),
+                    mask.bitcast[Scalar[d]](),
+                    dst.bitcast[Scalar[d]](),
+                    lse.bitcast[Float32](),
+                    B,
+                    S,
+                    H,
+                    D,
+                    scale,
+                    ctx,
+                )
+            else:
+                flash_attn_fwd[d, False, False](
+                    q.bitcast[Scalar[d]](),
+                    k.bitcast[Scalar[d]](),
+                    v.bitcast[Scalar[d]](),
+                    mask.bitcast[Scalar[d]](),
+                    dst.bitcast[Scalar[d]](),
+                    lse.bitcast[Float32](),
+                    B,
+                    S,
+                    H,
+                    D,
+                    scale,
+                    ctx,
+                )
+
+    dispatch_dtype[body, float_only=True](dtype)
+
+
+@export
+def mograd_flash_attn_bwd(
+    dy: UnsafePointer[NoneType, ImmutAnyOrigin],
+    o: UnsafePointer[NoneType, ImmutAnyOrigin],
+    q: UnsafePointer[NoneType, ImmutAnyOrigin],
+    k: UnsafePointer[NoneType, ImmutAnyOrigin],
+    v: UnsafePointer[NoneType, ImmutAnyOrigin],
+    mask: UnsafePointer[NoneType, ImmutAnyOrigin],
+    lse: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dq: UnsafePointer[NoneType, MutAnyOrigin],
+    dk: UnsafePointer[NoneType, MutAnyOrigin],
+    dv: UnsafePointer[NoneType, MutAnyOrigin],
+    B: Int,
+    S: Int,
+    H: Int,
+    D: Int,
+    scale: Float32,
+    causal: Int,
+    has_bias: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) abi("Mojo") raises:
+    @always_inline
+    def body[d: DType]() capturing raises:
+        if causal != 0:
+            flash_attn_bwd[d, True, False](
+                dy.bitcast[Scalar[d]](),
+                o.bitcast[Scalar[d]](),
+                q.bitcast[Scalar[d]](),
+                k.bitcast[Scalar[d]](),
+                v.bitcast[Scalar[d]](),
+                mask.bitcast[Scalar[d]](),
+                lse.bitcast[Float32](),
+                dq.bitcast[Scalar[d]](),
+                dk.bitcast[Scalar[d]](),
+                dv.bitcast[Scalar[d]](),
+                B,
+                S,
+                H,
+                D,
+                scale,
+                ctx,
+            )
+        elif has_bias != 0:
+            flash_attn_bwd[d, False, True](
+                dy.bitcast[Scalar[d]](),
+                o.bitcast[Scalar[d]](),
+                q.bitcast[Scalar[d]](),
+                k.bitcast[Scalar[d]](),
+                v.bitcast[Scalar[d]](),
+                mask.bitcast[Scalar[d]](),
+                lse.bitcast[Float32](),
+                dq.bitcast[Scalar[d]](),
+                dk.bitcast[Scalar[d]](),
+                dv.bitcast[Scalar[d]](),
+                B,
+                S,
+                H,
+                D,
+                scale,
+                ctx,
+            )
+        else:
+            flash_attn_bwd[d, False, False](
+                dy.bitcast[Scalar[d]](),
+                o.bitcast[Scalar[d]](),
+                q.bitcast[Scalar[d]](),
+                k.bitcast[Scalar[d]](),
+                v.bitcast[Scalar[d]](),
+                mask.bitcast[Scalar[d]](),
+                lse.bitcast[Float32](),
+                dq.bitcast[Scalar[d]](),
+                dk.bitcast[Scalar[d]](),
+                dv.bitcast[Scalar[d]](),
+                B,
+                S,
+                H,
+                D,
+                scale,
+                ctx,
+            )
+
+    dispatch_dtype[body, float_only=True](dtype)
 
 
 # ===-------------------------------------------------------------------===#

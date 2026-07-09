@@ -13,7 +13,16 @@ from mograd.buffer import AnyBuffer, Buffer, BufferArm
 from mograd.pattern_matcher import Rule, Pat
 from mograd.scheduler import Scheduler, BoundExecFn, SchedulerRules
 from mograd.simplify import Simplifier
-from mograd.runtime.gpu.rewrites import MATMUL_BT, MATMUL_BIAS_BT, MEAN, LAYER_NORM, LAYER_NORM_GRAD, GPU_REWRITES
+from mograd.runtime.gpu.rewrites import (
+    MATMUL_BT,
+    MATMUL_BIAS_BT,
+    MEAN,
+    LAYER_NORM,
+    LAYER_NORM_GRAD,
+    FLASH_ATTN,
+    FLASH_ATTN_GRAD,
+    GPU_REWRITES,
+)
 from mograd.runtime.gpu.kernels.utils import (
     FactoryKernel,
     UnaryStrided,
@@ -25,6 +34,8 @@ from mograd.runtime.gpu.kernels.utils import (
     matmul_bias_strided,
     layer_norm_fwd_dispatch,
     layer_norm_bwd_dispatch,
+    flash_attn_fwd_dispatch,
+    flash_attn_bwd_dispatch,
     strided_copy,
 )
 
@@ -36,7 +47,10 @@ from mograd.runtime.gpu.kernels.utils import (
 trait Runtime:
     @staticmethod
     def run(
-        root: OpRef, device: Optional[Device], var extern_rules: Optional[SchedulerRules] = None
+        root: OpRef,
+        device: Optional[Device],
+        simplifier: Bool = True,
+        var extern_rules: Optional[SchedulerRules] = None,
     ) raises -> AnyBuffer:
         ...
 
@@ -45,7 +59,10 @@ trait Runtime:
 struct NativeRuntime(Runtime):
     @staticmethod
     def run(
-        root: OpRef, device: Optional[Device], var extern_rules: Optional[SchedulerRules] = None
+        root: OpRef,
+        device: Optional[Device],
+        simplifier: Bool = True,
+        var extern_rules: Optional[SchedulerRules] = None,
     ) raises -> AnyBuffer:
         if not device:
             raise Error("NativeRuntime requires a Device")
@@ -53,12 +70,15 @@ struct NativeRuntime(Runtime):
         var prepared = Self._prepare(extern_rules^)
         ref compound = prepared[0]
         ref extra_sched = prepared[1]
-        var simplified = Simplifier(GPU_REWRITES()).run(root, compound.copy(), extra_sched)
+        var simplified = Simplifier(GPU_REWRITES()).run(root, compound.copy(), extra_sched) if simplifier else root
         return Scheduler(extra_sched.copy()).run(simplified, device.value())
 
     @staticmethod
     def run_many(
-        var targets: List[OpRef], device: Optional[Device], var extern_rules: Optional[SchedulerRules] = None
+        var targets: List[OpRef],
+        device: Optional[Device],
+        simplifier: Bool = True,
+        var extern_rules: Optional[SchedulerRules] = None,
     ) raises -> List[AnyBuffer]:
         """Evaluates all `targets` in one simplify/schedule pass, so shared
         bookkeeping (toposort, substitution, scheduling) and the final sync
@@ -70,7 +90,9 @@ struct NativeRuntime(Runtime):
         var prepared = Self._prepare(extern_rules^)
         ref compound = prepared[0]
         ref extra_sched = prepared[1]
-        var simplified_bundle = Simplifier(GPU_REWRITES()).run(sink(targets^), compound.copy(), extra_sched)
+        var simplified_bundle = Simplifier(GPU_REWRITES()).run(
+            sink(targets^), compound.copy(), extra_sched
+        ) if simplifier else sink(targets^)
         var simplified_targets = List[OpRef]()
         for i in range(len(simplified_bundle.srcs())):
             simplified_targets.append(simplified_bundle.src(i))
@@ -120,6 +142,8 @@ struct NativeRuntime(Runtime):
             Rule(Pat(MATMUL_BIAS_BT), matmul_bias_bt),
             Rule(Pat(LAYER_NORM), layer_norm_fwd),
             Rule(Pat(LAYER_NORM_GRAD), layer_norm_bwd),
+            Rule(Pat(FLASH_ATTN), flash_attn_fwd_sched),
+            Rule(Pat(FLASH_ATTN_GRAD), flash_attn_bwd_sched),
             # Indexing & Encoding
             Rule(Pat(OpType.ONE_HOT), one_hot),
             Rule(Pat(OpType.GATHER), gather),
@@ -450,6 +474,14 @@ def layer_norm_fwd(node: OpRef, inputs: List[AnyBuffer], device: Device) raises 
 
 def layer_norm_bwd(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     return layer_norm_bwd_dispatch("mograd_layer_norm_bwd", node, inputs, device)
+
+
+def flash_attn_fwd_sched(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
+    return flash_attn_fwd_dispatch("mograd_flash_attn_fwd", node, inputs, device)
+
+
+def flash_attn_bwd_sched(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
+    return flash_attn_bwd_dispatch("mograd_flash_attn_bwd", node, inputs, device)
 
 
 # ===-------------------------------------------------------------------===#

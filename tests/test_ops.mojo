@@ -1,6 +1,8 @@
+from std.math import sqrt
 from std.sys import has_accelerator
 from std.sys.info import has_apple_gpu_accelerator
 from std.testing import TestSuite, assert_almost_equal, assert_raises, assert_true
+from std.utils.numerics import neg_inf
 
 from mograd import Tensor, Device
 from mograd.testing import assert_allclose, assert_close
@@ -365,6 +367,15 @@ def test_scale() raises:
     var device = Device()
     var x = Tensor(device, [Float32(1), 2, 3, 4], (4,))
     assert_allclose(x * Float32(3.0), [Float32(3), 6, 9, 12])
+
+
+def test_scale_float16() raises:
+    # Regression test. The SCALE scalar operand is materialised as Float32
+    # by the scheduler and used to be bitcast (not converted) to the tensor
+    # dtype, which silently produced zeros for float16 tensors.
+    var device = Device()
+    var x = Tensor(device, [Float16(2), 4, 6, 8], (4,))
+    assert_allclose(x * Float32(0.5), [Float16(1), 2, 3, 4])
 
 
 def test_sum() raises:
@@ -841,6 +852,24 @@ def test_full_like() raises:
     assert_true(y.dtype == x.dtype)
 
 
+def test_zeros_like_static() raises:
+    var device = Device()
+    var x = Tensor.full(device, (2, 3), Float32(5), dtype=DType.float16)
+    var z = Tensor.zeros_like(x)
+    assert_true(z.shape() == x.shape())
+    assert_true(z.dtype == x.dtype)
+    assert_allclose(z, Tensor.full(device, (2, 3), Float32(0), dtype=DType.float16))
+
+
+def test_zeros_like_instance() raises:
+    var device = Device()
+    var x = Tensor.full(device, (3, 4), Float32(7))
+    var z = x.zeros_like()
+    assert_true(z.shape() == x.shape())
+    assert_true(z.dtype == x.dtype)
+    assert_allclose(z, Tensor.full(device, (3, 4), Float32(0)))
+
+
 def test_flatten_all() raises:
     var device = Device()
     var x = Tensor(device, [Float32(1), 2, 3, 4, 5, 6], (2, 3))
@@ -854,6 +883,357 @@ def test_flatten_partial() raises:
     var x = Tensor.ones(device, (2, 3, 4))
     var flat = x.flatten(1, 2)
     assert_true(flat.shape(0) == 2 and flat.shape(1) == 12)
+
+
+def _causal_mask(device: Device, scores: Tensor) raises -> Tensor:
+    return Tensor.full_like(scores, neg_inf[DType.float32]()).triu(1)
+
+
+def test_flash_attn_output_shape() raises:
+    var device = Device()
+    var B = 2
+    var H = 4
+    var T = 8
+    var Dh = 16
+    var Q = Tensor.randn(device, (B, H, T, Dh), seed=0)
+    var K = Tensor.randn(device, (B, H, T, Dh), seed=1)
+    var V = Tensor.randn(device, (B, H, T, Dh), seed=2)
+    var scale = Float32(1.0) / sqrt(Float32(Dh))
+    var scores = (Q @ K.transpose(-2, -1)) * scale
+    var out = (scores + _causal_mask(device, scores)).softmax() @ V
+    assert_true(out.shape(0) == B and out.shape(1) == H and out.shape(2) == T and out.shape(3) == Dh)
+
+
+def test_flash_attn_causal_first_token_equals_v0() raises:
+    # With a causal mask, position 0 can only attend to itself.
+    # B=H=1 so out is (1,1,T,Dh). Flatten to (T,Dh) to slice position 0.
+    var device = Device()
+    var B = 1
+    var H = 1
+    var T = 4
+    var Dh = 8
+    var Q = Tensor.randn(device, (B, H, T, Dh), seed=3)
+    var K = Tensor.randn(device, (B, H, T, Dh), seed=4)
+    var V = Tensor.randn(device, (B, H, T, Dh), seed=5)
+    var scale = Float32(1.0) / sqrt(Float32(Dh))
+    var scores = (Q @ K.transpose(-2, -1)) * scale
+    var out = (scores + _causal_mask(device, scores)).softmax() @ V
+    var out_seq = out.reshape((T, Dh))
+    var v_seq = V.reshape((T, Dh))
+    assert_allclose(out_seq[0:1], v_seq[0:1], tol=1e-3)
+
+
+def test_flash_attn_known_values_t2_h1_dh1() raises:
+    var device = Device()
+    var Q = Tensor.ones(device, (1, 1, 2, 1))
+    var K = Tensor.ones(device, (1, 1, 2, 1))
+    var V = Tensor(device, [Float32(1), -1], (1, 1, 2, 1))
+    var scores = (Q @ K.transpose(-2, -1)) * Float32(1.0)
+    var out = (scores + _causal_mask(device, scores)).softmax() @ V
+    assert_allclose(out, [Float32(1), 0], tol=1e-3)
+
+
+def test_flash_attn_no_mask_uniform_qk_averages_v() raises:
+    # Q=K=zeros → scores=0 → uniform softmax = 1/T.
+    # V is constant (all 3), so output = 3 everywhere.
+    var device = Device()
+    var B = 1
+    var H = 1
+    var T = 4
+    var Dh = 4
+    var Q = Tensor.full(device, (B, H, T, Dh), Float32(0))
+    var K = Tensor.full(device, (B, H, T, Dh), Float32(0))
+    var V = Tensor.full(device, (B, H, T, Dh), Float32(3))
+    var scale = Float32(1.0) / sqrt(Float32(Dh))
+    var no_mask = Tensor.full(device, (B, H, T, T), Float32(0))
+    var out = (Q @ K.transpose(-2, -1) * scale + no_mask).softmax() @ V
+    assert_allclose(out, Tensor.full(device, (B, H, T, Dh), Float32(3)), tol=1e-3)
+
+
+def test_flash_attn_multi_batch_multi_head_shape() raises:
+    # Mirrors the reshape/transpose pattern from tinyshakespear
+    var device = Device()
+    var B = 2
+    var T = 6
+    var D = 32
+    var H = 4
+    var Dh = D // H
+    var x = Tensor.randn(device, (B, T, D), seed=10)
+    var Q = x.reshape((B, T, H, Dh)).transpose(1, 2)  # (B, H, T, Dh)
+    var K = x.reshape((B, T, H, Dh)).transpose(1, 2)
+    var V = x.reshape((B, T, H, Dh)).transpose(1, 2)
+    var scale = Float32(1.0) / sqrt(Float32(Dh))
+    var scores = (Q @ K.transpose(-2, -1)) * scale
+    var out = (scores + _causal_mask(device, scores)).softmax() @ V
+    var ctx = out.transpose(1, 2).reshape((B, T, D))
+    assert_true(ctx.shape(0) == B and ctx.shape(1) == T and ctx.shape(2) == D)
+
+
+def test_sdpa_causal_matches_unfused() raises:
+    # Compare the fused FLASH_ATTN kernel against the unfused scalar path.
+    # simplifier=False bypasses GPU rewrites so the reference runs the slow
+    # but definitely-correct element-wise softmax+matmul implementation.
+    var device = Device()
+    var B = 2
+    var H = 4
+    var T = 8
+    var Dh = 16
+    var Q = Tensor.randn(device, (B, H, T, Dh), seed=40)
+    var K = Tensor.randn(device, (B, H, T, Dh), seed=41)
+    var V = Tensor.randn(device, (B, H, T, Dh), seed=42)
+    var scale = Float32(1.0) / sqrt(Float32(Dh))
+    var scores = (Q @ K.transpose(-2, -1)) * scale
+    var unfused = (scores + _causal_mask(device, scores)).softmax() @ V
+    var fused = Q.scaled_dot_product_attention(K, V, is_causal=True)
+    # fused.value() runs through the FLASH_ATTN kernel. unfused.value(simplifier=False)
+    # bypasses GPU rewrites and runs the scalar softmax+matmul fallback.
+    assert_allclose(unfused.value(simplifier=False), unfused.op.layout(), fused, tol=1e-3)
+
+
+def test_sdpa_causal_transposed_bshd_large_matches_unfused() raises:
+    # Mirrors the fused training path: contiguous BSHD leaves are transposed to
+    # BHSD immediately before SDPA, then GPU_REWRITES lowers to FLASH_ATTN.
+    var device = Device()
+    var B = 1
+    var T = 16
+    var H = 1
+    var Dh = 64
+    var Q_bshd = Tensor.randn(device, (B, T, H, Dh), seed=140)
+    var K_bshd = Tensor.randn(device, (B, T, H, Dh), seed=141)
+    var V_bshd = Tensor.randn(device, (B, T, H, Dh), seed=142)
+    var Q = Q_bshd.transpose(1, 2)
+    var K = K_bshd.transpose(1, 2)
+    var V = V_bshd.transpose(1, 2)
+    var scale = Float32(1.0) / sqrt(Float32(Dh))
+    var scores = (Q @ K.transpose(-2, -1)) * scale
+    var unfused = (scores + _causal_mask(device, scores)).softmax() @ V
+    var fused = Q.scaled_dot_product_attention(K, V, is_causal=True)
+    assert_allclose(unfused.value(simplifier=False), unfused.op.layout(), fused, tol=5e-3)
+
+    # Position 0 is a stronger causal invariant: it can only attend to V[0].
+    assert_allclose(fused.reshape((T, Dh))[0:1], V.reshape((T, Dh))[0:1], tol=5e-3)
+
+
+def test_sdpa_causal_f16_transposed_bshd_d128_first_token_equals_v0() raises:
+    var device = Device()
+    var B = 1
+    var T = 16
+    var H = 1
+    var Dh = 128
+    var Q_bshd = Tensor.randn(device, (B, T, H, Dh), seed=240).cast(DType.float16)
+    var K_bshd = Tensor.randn(device, (B, T, H, Dh), seed=241).cast(DType.float16)
+    var V_bshd = Tensor.randn(device, (B, T, H, Dh), seed=242).cast(DType.float16)
+    var Q = Q_bshd.transpose(1, 2)
+    var K = K_bshd.transpose(1, 2)
+    var V = V_bshd.transpose(1, 2)
+    var fused = Q.scaled_dot_product_attention(K, V, is_causal=True)
+    assert_allclose(fused.reshape((T, Dh))[0:1], V.reshape((T, Dh))[0:1], tol=7e-2)
+
+
+def test_sdpa_explicit_mask_f16_d128_matches_unfused() raises:
+    var device = Device()
+    var B = 1
+    var H = 1
+    var T = 16
+    var Dh = 128
+    var Q = Tensor.randn(device, (B, H, T, Dh), seed=250).cast(DType.float16)
+    var K = Tensor.randn(device, (B, H, T, Dh), seed=251).cast(DType.float16)
+    var V = Tensor.randn(device, (B, H, T, Dh), seed=252).cast(DType.float16)
+    var scale = Float32(1.0) / sqrt(Float32(Dh))
+    var mask = Tensor.full(device, (B, H, T, T), Float32(0)).cast(DType.float16)
+    var unfused = (Q @ K.transpose(-2, -1) * scale + mask).softmax() @ V
+    var fused = Q.scaled_dot_product_attention(K, V, attn_mask=mask)
+    assert_allclose(unfused.value(simplifier=False), unfused.op.layout(), fused, tol=7e-2)
+
+
+def test_sdpa_explicit_mask_matches_unfused() raises:
+    var device = Device()
+    var B = 1
+    var H = 2
+    var T = 6
+    var Dh = 8
+    var Q = Tensor.randn(device, (B, H, T, Dh), seed=43)
+    var K = Tensor.randn(device, (B, H, T, Dh), seed=44)
+    var V = Tensor.randn(device, (B, H, T, Dh), seed=45)
+    var scale = Float32(1.0) / sqrt(Float32(Dh))
+    var mask = Tensor.full(device, (B, H, T, T), Float32(0))
+    var unfused = (Q @ K.transpose(-2, -1) * scale + mask).softmax() @ V
+    var fused = Q.scaled_dot_product_attention(K, V, attn_mask=mask)
+    assert_allclose(unfused.value(simplifier=False), unfused.op.layout(), fused, tol=1e-3)
+
+
+def test_sdpa_3d_input_output_shape() raises:
+    # 3D (B, T, D) → unsqueeze H=1 inside, result is (B, T, D)
+    var device = Device()
+    var B = 2
+    var T = 6
+    var D = 16
+    var Q = Tensor.randn(device, (B, T, D), seed=46)
+    var K = Tensor.randn(device, (B, T, D), seed=47)
+    var V = Tensor.randn(device, (B, T, D), seed=48)
+    var out = Q.scaled_dot_product_attention(K, V, is_causal=True)
+    assert_true(out.shape(0) == B and out.shape(1) == T and out.shape(2) == D)
+
+
+def test_sdpa_3d_matches_4d_unsqueeze() raises:
+    # 3D path and manually unsqueezed 4D path must agree.
+    var device = Device()
+    var B = 1
+    var T = 4
+    var D = 8
+    var Q = Tensor.randn(device, (B, T, D), seed=49)
+    var K = Tensor.randn(device, (B, T, D), seed=50)
+    var V = Tensor.randn(device, (B, T, D), seed=51)
+    var out_3d = Q.scaled_dot_product_attention(K, V, is_causal=True)
+    var Q4 = Q.reshape((B, 1, T, D))
+    var K4 = K.reshape((B, 1, T, D))
+    var V4 = V.reshape((B, 1, T, D))
+    var out_4d = Q4.scaled_dot_product_attention(K4, V4, is_causal=True).reshape((B, T, D))
+    assert_allclose(out_3d, out_4d, tol=1e-3)
+
+
+def test_sdpa_causal_long_seq_prefix_mean() raises:
+    # S=128 spans two 64-row MMA tiles per block, exercising the multi-tile
+    # online-softmax path. With Q = K = 0 causal attention is a prefix mean:
+    # O[i] = mean(V[0..i]).
+    var device = Device()
+    var S = 128
+    var Dh = 8
+    var Q = Tensor.zeros(device, (1, S, 1, Dh))
+    var K = Tensor.zeros(device, (1, S, 1, Dh))
+    var V = Tensor.randn(device, (1, S, 1, Dh), seed=150)
+    var out = Q.transpose(1, 2).scaled_dot_product_attention(K.transpose(1, 2), V.transpose(1, 2), is_causal=True)
+    var v_vals = V.to_list()  # (1, S, 1, Dh) row-major == (S, Dh)
+    var expected = List[Float32]()
+    var prefix = List[Float32]()
+    for _ in range(Dh):
+        prefix.append(Float32(0))
+    for i in range(S):
+        for d in range(Dh):
+            prefix[d] += v_vals[i * Dh + d]
+            expected.append(prefix[d] / Float32(i + 1))
+    assert_allclose(out.reshape((S, Dh)), expected, tol=Float32(2e-2))
+
+
+def test_sdpa_causal_f16_d128_multi_tile_matches_unfused() raises:
+    # f16 causal at D == D_BUCKET(128) exercises the half-MMA forward kernel's
+    # causal path (previously asserted off, falling back to TF32+convert).
+    # S=80 spans three 32-row KV tiles with a ragged tail. H=2 exercises the
+    # BSHD row stride.
+    var device = Device()
+    var B = 1
+    var T = 80
+    var H = 2
+    var Dh = 128
+    var Q_bshd = Tensor.randn(device, (B, T, H, Dh), seed=260).cast(DType.float16)
+    var K_bshd = Tensor.randn(device, (B, T, H, Dh), seed=261).cast(DType.float16)
+    var V_bshd = Tensor.randn(device, (B, T, H, Dh), seed=262).cast(DType.float16)
+    var Q = Q_bshd.transpose(1, 2)
+    var K = K_bshd.transpose(1, 2)
+    var V = V_bshd.transpose(1, 2)
+    var scale = Float32(1.0) / sqrt(Float32(Dh))
+    var scores = (Q @ K.transpose(-2, -1)) * scale
+    var unfused = (scores + _causal_mask(device, scores)).softmax() @ V
+    var fused = Q.scaled_dot_product_attention(K, V, is_causal=True)
+    assert_allclose(unfused.value(simplifier=False), unfused.op.layout(), fused, tol=7e-2)
+
+
+def test_sdpa_custom_scale_matches_unfused() raises:
+    # A user-provided scale must reach the fused kernel. The rewrite once
+    # recomputed 1/sqrt(d_head) regardless, which this test would catch.
+    var device = Device()
+    var B = 1
+    var T = 16
+    var H = 2
+    var Dh = 16
+    var Q = Tensor.randn(device, (B, T, H, Dh), seed=280).transpose(1, 2)
+    var K = Tensor.randn(device, (B, T, H, Dh), seed=281).transpose(1, 2)
+    var V = Tensor.randn(device, (B, T, H, Dh), seed=282).transpose(1, 2)
+    var custom = Float32(0.5)
+    var unfused = ((Q @ K.transpose(-2, -1)) * custom).softmax() @ V
+    var fused = Q.scaled_dot_product_attention(K, V, scale=custom)
+    # 5e-3: TF32 attention kernel vs full-f32 unfused chain, with the larger
+    # scale sharpening the softmax. A dropped scale would miss by ~0.1-1.0.
+    assert_allclose(unfused.value(simplifier=False), unfused.op.layout(), fused, tol=5e-3)
+
+
+def test_sdpa_causal_multi_head_matches_unfused() raises:
+    # H > 1 through the fused path: Q/K/V reach the kernel as BSHD buffers
+    # (row stride H*D), while O is produced BHSD. Catches head/sequence
+    # stride mix-ups that are invisible at H == 1.
+    var device = Device()
+    var B = 2
+    var T = 16
+    var H = 4
+    var Dh = 16
+    var Q_bshd = Tensor.randn(device, (B, T, H, Dh), seed=170)
+    var K_bshd = Tensor.randn(device, (B, T, H, Dh), seed=171)
+    var V_bshd = Tensor.randn(device, (B, T, H, Dh), seed=172)
+    var Q = Q_bshd.transpose(1, 2)
+    var K = K_bshd.transpose(1, 2)
+    var V = V_bshd.transpose(1, 2)
+    var scale = Float32(1.0) / sqrt(Float32(Dh))
+    var scores = (Q @ K.transpose(-2, -1)) * scale
+    var unfused = (scores + _causal_mask(device, scores)).softmax() @ V
+    var fused = Q.scaled_dot_product_attention(K, V, is_causal=True)
+    assert_allclose(unfused.value(simplifier=False), unfused.op.layout(), fused, tol=5e-3)
+
+
+def test_sdpa_f16_multi_head_mask_matches_unfused() raises:
+    # f16 half-MMA path with H > 1: rows are strided by H*D, so the
+    # synchronous smem load path (not the H==1 async copy) must be used.
+    var device = Device()
+    var B = 1
+    var T = 16
+    var H = 2
+    var Dh = 64
+    var Q_bshd = Tensor.randn(device, (B, T, H, Dh), seed=180).cast(DType.float16)
+    var K_bshd = Tensor.randn(device, (B, T, H, Dh), seed=181).cast(DType.float16)
+    var V_bshd = Tensor.randn(device, (B, T, H, Dh), seed=182).cast(DType.float16)
+    var Q = Q_bshd.transpose(1, 2)
+    var K = K_bshd.transpose(1, 2)
+    var V = V_bshd.transpose(1, 2)
+    var mask = Tensor.randn(device, (B, H, T, T), seed=183).cast(DType.float16)
+    var scale = Float32(1.0) / sqrt(Float32(Dh))
+    var unfused = (Q @ K.transpose(-2, -1) * scale + mask).softmax() @ V
+    var fused = Q.scaled_dot_product_attention(K, V, attn_mask=mask)
+    assert_allclose(unfused.value(simplifier=False), unfused.op.layout(), fused, tol=7e-2)
+
+
+def test_sdpa_nonzero_mask_matches_unfused() raises:
+    # Non-zero additive mask (bias): fused forward must add the bias inside
+    # the online softmax, not just tolerate a zero-filled buffer.
+    var device = Device()
+    var B = 1
+    var T = 8
+    var H = 2
+    var Dh = 16
+    var Q_bshd = Tensor.randn(device, (B, T, H, Dh), seed=160)
+    var K_bshd = Tensor.randn(device, (B, T, H, Dh), seed=161)
+    var V_bshd = Tensor.randn(device, (B, T, H, Dh), seed=162)
+    var Q = Q_bshd.transpose(1, 2)
+    var K = K_bshd.transpose(1, 2)
+    var V = V_bshd.transpose(1, 2)
+    var mask = Tensor.randn(device, (B, H, T, T), seed=163)
+    var scale = Float32(1.0) / sqrt(Float32(Dh))
+    var unfused = (Q @ K.transpose(-2, -1) * scale + mask).softmax() @ V
+    var fused = Q.scaled_dot_product_attention(K, V, attn_mask=mask)
+    assert_allclose(unfused.value(simplifier=False), unfused.op.layout(), fused, tol=5e-3)
+
+
+def test_sdpa_causal_first_token_equals_v0() raises:
+    # Position 0 can only attend to itself under a causal mask → out[0] == V[0]
+    var device = Device()
+    var B = 1
+    var H = 1
+    var T = 4
+    var Dh = 8
+    var Q = Tensor.randn(device, (B, H, T, Dh), seed=52)
+    var K = Tensor.randn(device, (B, H, T, Dh), seed=53)
+    var V = Tensor.randn(device, (B, H, T, Dh), seed=54)
+    var out = Q.scaled_dot_product_attention(K, V, is_causal=True).reshape((T, Dh))
+    var v_seq = V.reshape((T, Dh))
+    assert_allclose(out[0:1], v_seq[0:1], tol=1e-3)
 
 
 def main() raises:

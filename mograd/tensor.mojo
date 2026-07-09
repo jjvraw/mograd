@@ -70,9 +70,8 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
     def zeros(device: Device, shape: Layout, dtype: DType = DType.float32, requires_grad: Bool = False) -> Self:
         return Self.full(device, shape, 0.0, dtype, requires_grad)
 
-    @staticmethod
-    def zeros_like(other: Self, requires_grad: Bool = False) -> Self:
-        return Self.full(other.device.value(), other.op.layout(), 0.0, other.dtype, requires_grad)
+    def zeros_like(self, requires_grad: Bool = False) -> Self:
+        return Self(self.device.value(), self.op.zeros_like(), requires_grad)
 
     @staticmethod
     def ones(device: Device, shape: Layout, dtype: DType = DType.float32, requires_grad: Bool = False) -> Self:
@@ -147,11 +146,13 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
     # Materialisation / Device I/O
     # ===-------------------------------------------------------------------===#
 
-    def value(self, rules: Optional[SchedulerRules] = None) raises -> AnyBuffer:
-        return NativeRuntime.run(self.op, self.device, rules.copy())
+    def value(self, simplifier: Bool = True, rules: Optional[SchedulerRules] = None) raises -> AnyBuffer:
+        return NativeRuntime.run(self.op, self.device, simplifier, rules.copy())
 
     @staticmethod
-    def values(tensors: List[Tensor], rules: Optional[SchedulerRules] = None) raises -> List[AnyBuffer]:
+    def values(
+        tensors: List[Tensor], simplifier: Bool = True, rules: Optional[SchedulerRules] = None
+    ) raises -> List[AnyBuffer]:
         """Evaluates all `tensors` in one simplify/schedule pass, so the
         bookkeeping and final sync happen once instead of once per tensor
         (see `value` for the single-tensor equivalent).
@@ -159,17 +160,21 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         var ops = List[OpRef]()
         for i in range(len(tensors)):
             ops.append(tensors[i].op)
-        return NativeRuntime.run_many(ops^, tensors[0].device, rules.copy())
+        return NativeRuntime.run_many(ops^, tensors[0].device, simplifier, rules.copy())
 
-    def item[T: DType = DType.float32](self, rules: Optional[SchedulerRules] = None) raises -> Scalar[T]:
+    def item[
+        T: DType = DType.float32
+    ](self, simplifier: Bool = True, rules: Optional[SchedulerRules] = None) raises -> Scalar[T]:
         if T != self.dtype:
             raise Error("Tensor.item: requested dtype does not match tensor dtype")
-        return self.value(rules).item[T]()
+        return self.value(simplifier, rules).item[T]()
 
-    def to_list[T: DType = DType.float32](self, rules: Optional[SchedulerRules] = None) raises -> List[Scalar[T]]:
+    def to_list[
+        T: DType = DType.float32
+    ](self, simplifier: Bool = True, rules: Optional[SchedulerRules] = None) raises -> List[Scalar[T]]:
         if T != self.dtype:
             raise Error("Tensor.to_list: requested dtype does not match tensor dtype")
-        return self.value(rules).to_list[T](self.op.layout())
+        return self.value(simplifier, rules).to_list[T](self.op.layout())
 
     # ===-------------------------------------------------------------------===#
     # Layout
@@ -341,7 +346,7 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         """Concatenates `tensors` along `axis`.
 
         Args:
-            tensors: Tensors to concatenate; must share rank, dtype, and every axis but `axis`.
+            tensors: Tensors to concatenate. They must share rank, dtype, and every axis but `axis`.
             axis: Axis to concatenate along.
 
         Returns:
@@ -407,6 +412,9 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
 
     def scale(self, scalar: Float32) -> Self:
         return Self(self.device, self.op.scale(scalar), self.requires_grad)
+
+    def __truediv__(self, scalar: Float32) -> Self:
+        return self.scale(Float32(1.0) / scalar)
 
     def __truediv__(self, other: Self) -> Self:
         return Self(self.device, self.op / other.op, self.requires_grad or other.requires_grad)
@@ -521,6 +529,38 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
 
     def matmul(self, other: Self) raises -> Self:
         return Self(self.device, self.op.matmul(other.op), self.requires_grad or other.requires_grad)
+
+    def scaled_dot_product_attention(
+        self,
+        key: Self,
+        value: Self,
+        attn_mask: Optional[Self] = None,
+        is_causal: Bool = False,
+        scale: Optional[Float32] = None,
+    ) raises -> Self:
+        """Computes scaled dot product attention: softmax(Q @ K^T * scale + mask) @ V.
+
+        Args:
+            key: Key tensor, (B, T, D) or (B, T, H, D), same dtype as self.
+            value: Value tensor, same shape and dtype as key.
+            attn_mask: Optional additive float bias of shape (B, H, T, T)
+                applied to the scaled scores before softmax. Use -inf to
+                block positions. Cannot be combined with is_causal.
+            is_causal: Apply the lower-triangular causal structure.
+            scale: Score scale factor. Defaults to 1/sqrt(head_dim).
+
+        Returns:
+            The attention output with the same shape as self.
+
+        Raises:
+            If attn_mask is combined with is_causal=True.
+        """
+        attn_mask_op: Optional[OpRef] = attn_mask.value().op if attn_mask else None
+        return Self(
+            self.device,
+            self.op.scaled_dot_product_attention(key.op, value.op, attn_mask_op, is_causal, scale),
+            self.requires_grad or key.requires_grad or value.requires_grad,
+        )
 
     # ===-------------------------------------------------------------------===#
     # Comparison operations

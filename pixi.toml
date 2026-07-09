@@ -49,7 +49,7 @@ build-gpu               = { cmd = "MOGRAD_FORCE_BUILD=1 bash scripts/build_gpu.s
 
 format                  = { cmd = "mojo format -l 120 mograd/ tests/ examples/ benches/"}
 
-# Test GPU
+# Test Mograd GPU
 test-grad               = { cmd = "mojo -I . tests/test_grad.mojo",             depends-on = ["ensure-gpu"] }
 test-nn                 = { cmd = "mojo -I . tests/test_nn.mojo",               depends-on = ["ensure-gpu"] }
 test-ops                = { cmd = "mojo -I . tests/test_ops.mojo",              depends-on = ["ensure-gpu"] }
@@ -63,7 +63,7 @@ test-gpu                = { depends-on = [  "test-grad",
                                             "test-non-contiguous",
                                             "test-scheduler"] }
 
-# Test Graph
+# Test Mograd Graph
 test-gpu-rewrites       = { cmd = "mojo -I . tests/test_gpu_rewrites.mojo" }
 test-pattern-matcher    = { cmd = "mojo -I . tests/test_pattern_matcher.mojo" }
 test-layout             = { cmd = "mojo -I . tests/test_layout.mojo" }
@@ -75,16 +75,22 @@ test-graph              = { depends-on = [  "test-pattern-matcher",
                                             "test-custom-rules",
                                             "test-ops-graph"] }
 
-# Examples
+# Mograd Examples
 mnist                   = { cmd = "mojo -I . examples/mnist/train.mojo",          depends-on = ["ensure-gpu"] }
 tinyshakespear          = { cmd = "mojo -I . examples/tinyshakespear/train.mojo", depends-on = ["ensure-gpu"] }
-examples-ci                = { depends-on = ["mnist"] }
+examples-ci             = { depends-on = ["mnist"] }
 
-# Test All
+# Mograd Test All
 test-all                = { depends-on = ["test-gpu", "test-graph", "examples-ci"] }
 
-# Benchamrks
+# Test Custom Kernels
+test-attention          = { cmd = "mojo -I . tests/kernels/attention.mojo",     depends-on = ["ensure-gpu"] }
+test-kernels            = { depends-on = ["test-attention"] }
+
+# Benchamrk Kernels
 bench-elementwise       = { cmd = "mojo -I . benches/elementwise.mojo",         depends-on = ["ensure-gpu"] }
 bench-transpose         = { cmd = "mojo -I . benches/transpose.mojo",           depends-on = ["ensure-gpu"] }
 bench-matmul            = { cmd = "mojo -I . benches/matmul.mojo",              depends-on = ["ensure-gpu"] }
 bench-normalization     = { cmd = "mojo -I . benches/normalization.mojo",       depends-on = ["ensure-gpu"] }
+bench-attention         = { cmd = "mojo -I . benches/attention.mojo",           depends-on = ["ensure-gpu"] }
+bench-generic-attention = { cmd = "mojo -I . benches/generic_attention.mojo",   depends-on = ["ensure-gpu"] }

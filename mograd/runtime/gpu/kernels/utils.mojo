@@ -300,9 +300,13 @@ def dispatch_binary_scalar_map[
 ) raises:
     @always_inline
     def body[d: DType]() capturing raises:
+        # The scheduler always materialises the scalar operand as Float32
+        # (see runtime scale()). Convert to the tensor dtype rather than
+        # bitcasting, which reads garbage for any non-f32 dtype.
+        var scalar = Scalar[d](b.bitcast[Float32]()[0])
         binary_strided_scalar_map[d, op[d]](
             a.bitcast[Scalar[d]](),
-            b.bitcast[Scalar[d]](),
+            UnsafePointer(to=scalar),
             dst.bitcast[Scalar[d]](),
             rank,
             inner,
@@ -512,6 +516,127 @@ comptime LayerNormBwdKernel = def(
     dtype: DType,
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
+
+comptime FlashAttnFwdKernel = def(
+    q: UnsafePointer[NoneType, ImmutAnyOrigin],
+    k: UnsafePointer[NoneType, ImmutAnyOrigin],
+    v: UnsafePointer[NoneType, ImmutAnyOrigin],
+    mask: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    lse: UnsafePointer[NoneType, MutAnyOrigin],
+    B: Int,
+    S: Int,
+    H: Int,
+    D: Int,
+    scale: Float32,
+    causal: Int,
+    has_bias: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) thin abi("Mojo") raises -> None
+
+comptime FlashAttnBwdKernel = def(
+    dy: UnsafePointer[NoneType, ImmutAnyOrigin],
+    o: UnsafePointer[NoneType, ImmutAnyOrigin],
+    q: UnsafePointer[NoneType, ImmutAnyOrigin],
+    k: UnsafePointer[NoneType, ImmutAnyOrigin],
+    v: UnsafePointer[NoneType, ImmutAnyOrigin],
+    mask: UnsafePointer[NoneType, ImmutAnyOrigin],
+    lse: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dq: UnsafePointer[NoneType, MutAnyOrigin],
+    dk: UnsafePointer[NoneType, MutAnyOrigin],
+    dv: UnsafePointer[NoneType, MutAnyOrigin],
+    B: Int,
+    S: Int,
+    H: Int,
+    D: Int,
+    scale: Float32,
+    causal: Int,
+    has_bias: Int,
+    dtype: DType,
+    ctx: DeviceContext,
+) thin abi("Mojo") raises -> None
+
+
+@always_inline
+def flash_attn_fwd_dispatch(
+    read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+) raises -> List[AnyBuffer]:
+    # node.srcs = [Q, K, V, mask], all BSHD (B, S, H, D)
+    # Returns [O_buf (BHSD), LSE_buf (BHS, float32)]
+    var q_layout = node.src(0).layout()
+    var B = q_layout.shape(0)
+    var S = q_layout.shape(1)
+    var H = q_layout.shape(2)
+    var D = q_layout.shape(3)
+    var scale = node.attrs()["scale"][Float32]
+    var is_causal = node.attrs()["is_causal"][Bool]
+    var has_bias = True
+    if "has_bias" in node.attrs():
+        has_bias = node.attrs()["has_bias"][Bool]
+    var dst = AnyBuffer.create(node.dtype(), device, node.numel())
+    var lse = AnyBuffer.create(DType.float32, device, B * H * S)
+    device.handle[].get_function[FlashAttnFwdKernel](name)(
+        inputs[0].data_ptr(),
+        inputs[1].data_ptr(),
+        inputs[2].data_ptr(),
+        inputs[3].data_ptr(),
+        dst.data_ptr(),
+        lse.data_ptr(),
+        B,
+        S,
+        H,
+        D,
+        scale,
+        Int(is_causal),
+        Int(has_bias),
+        node.dtype(),
+        device.ctx,
+    )
+    return [dst^, lse^]
+
+
+@always_inline
+def flash_attn_bwd_dispatch(
+    read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+) raises -> List[AnyBuffer]:
+    # node.srcs = [dO, O, Q, K, V, mask, LSE]  attrs: scale
+    var q_layout = node.src(2).layout()
+    var B = q_layout.shape(0)
+    var S = q_layout.shape(1)
+    var H = q_layout.shape(2)
+    var D = q_layout.shape(3)
+    var scale = node.attrs()["scale"][Float32]
+    var is_causal = node.attrs()["is_causal"][Bool]
+    var has_bias = not is_causal
+    if "has_bias" in node.attrs():
+        has_bias = node.attrs()["has_bias"][Bool]
+    var numel = q_layout.numel()
+    var dq = AnyBuffer.create(node.dtype(), device, numel)
+    var dk = AnyBuffer.create(node.dtype(), device, numel)
+    var dv = AnyBuffer.create(node.dtype(), device, numel)
+    device.handle[].get_function[FlashAttnBwdKernel](name)(
+        inputs[0].data_ptr(),  # dO
+        inputs[1].data_ptr(),  # O
+        inputs[2].data_ptr(),  # Q
+        inputs[3].data_ptr(),  # K
+        inputs[4].data_ptr(),  # V
+        inputs[5].data_ptr(),  # mask
+        inputs[6].data_ptr(),  # LSE (float32, BHS)
+        dq.data_ptr(),
+        dk.data_ptr(),
+        dv.data_ptr(),
+        B,
+        S,
+        H,
+        D,
+        scale,
+        Int(is_causal),
+        Int(has_bias),
+        node.dtype(),
+        device.ctx,
+    )
+    return [dq^, dk^, dv^]
 
 
 @always_inline

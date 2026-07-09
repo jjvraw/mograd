@@ -38,8 +38,8 @@ def _adam_step[
                 g = g + w * weight_decay
 
         if not m[i]:
-            m[i] = Tensor.zeros_like(w)
-            v[i] = Tensor.zeros_like(w)
+            m[i] = w.zeros_like()
+            v[i] = w.zeros_like()
 
         var new_m = m[i].value() * beta1 + g * (Float32(1.0) - beta1)
         var new_v = v[i].value() * beta2 + (g * g) * (Float32(1.0) - beta2)

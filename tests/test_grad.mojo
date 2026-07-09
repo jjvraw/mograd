@@ -4,7 +4,11 @@ from std.testing import TestSuite, assert_almost_equal, assert_equal, assert_tru
 
 import mograd.nn as nn
 from mograd import Tensor, Device
+from mograd.grad import Grad
 from mograd.layout import Layout
+from mograd.op import OpRef
+from mograd.runtime.gpu.rewrites import FLASH_ATTN_GRAD, GPU_REWRITES
+from mograd.simplify import Simplifier
 from mograd.testing import assert_allclose, assert_close
 
 
@@ -782,6 +786,345 @@ def test_layer_norm_grad_uniform_dy_gives_zero_dx() raises:
         [Float32(0), Float32(0), Float32(0), Float32(0)],
         tol=Float32(1e-5),
     )
+
+
+# ===-------------------------------------------------------------------===#
+# Flash attention backward (SDPA gradient)
+#
+# Q/K/V are created in BSHD layout and transposed to BHSD, matching the model
+# pattern that triggers fuse_flash_attention.  This ensures gradient() goes
+# through flash_attn_bwd (via FLASH_ATTN_GRAD), not the unfused scalar ops.
+#
+# Dimensions are B=1, T=4, H=1, Dh=8. Dh=8 is the smallest MMA tile size.
+#
+# ===-------------------------------------------------------------------===#
+
+
+def test_flash_attn_bwd_uses_flash_attn_grad_op() raises:
+    # Verify that the backward graph for fused SDPA contains FLASH_ATTN_GRAD,
+    # not decomposed scalar op grads.
+    from mograd.op import OpRef
+    from mograd.runtime.gpu.rewrites import FLASH_ATTN_GRAD
+    from mograd.simplify import Simplifier
+    from mograd.runtime.gpu.rewrites import GPU_REWRITES
+    from mograd.grad import Grad
+    from mograd.pattern_matcher import GraphUtils
+
+    var device = Device()
+    var Q_bshd = Tensor.randn(device, Layout(1, 4, 1, 8), seed=10, requires_grad=True)
+    var K_bshd = Tensor.randn(device, Layout(1, 4, 1, 8), seed=11)
+    var V_bshd = Tensor.randn(device, Layout(1, 4, 1, 8), seed=12)
+    var loss = (
+        Q_bshd.transpose(1, 2)
+        .scaled_dot_product_attention(K_bshd.transpose(1, 2), V_bshd.transpose(1, 2), is_causal=True)
+        .sum()
+    )
+
+    var fwd_simplified = Simplifier(GPU_REWRITES()).run(loss.op)
+    var target_ops = List[OpRef]()
+    target_ops.append(Q_bshd.op)
+    var initial_grad = Tensor.ones(device, (1,)).op
+    var grad_ops = Grad.compute(fwd_simplified, initial_grad, target_ops)
+
+    # Toposort the backward graph and scan for FLASH_ATTN_GRAD
+    assert_true(grad_ops[0] is not None)
+    var topo = GraphUtils.toposort(grad_ops[0].value())
+    var found = False
+    for i in range(len(topo)):
+        if topo[i].op_type() == FLASH_ATTN_GRAD:
+            found = True
+            break
+    assert_true(found)
+
+
+def _fused_grad(loss_op: OpRef, target: Tensor) raises -> Tensor:
+    # Compute gradient through the FUSED (FLASH_ATTN → FLASH_ATTN_GRAD) path.
+    var fwd_simplified = Simplifier(GPU_REWRITES()).run(loss_op)
+    var initial_grad = Tensor.ones(target.device.value(), (1,)).op
+    var targets = List[OpRef]()
+    targets.append(target.op)
+    var grads = Grad.compute(fwd_simplified, initial_grad, targets)
+    return Tensor(target.device.value(), grads[0].value())
+
+
+def test_flash_attn_bwd_dq_causal() raises:
+    var device = Device()
+
+    def fwd(q: Tensor) raises -> Tensor:
+        var K = Tensor.randn(q.device.value(), Layout(1, 4, 1, 8), seed=21)
+        var V = Tensor.randn(q.device.value(), Layout(1, 4, 1, 8), seed=22)
+        return (
+            q.transpose(1, 2).scaled_dot_product_attention(K.transpose(1, 2), V.transpose(1, 2), is_causal=True).sum()
+        )
+
+    var Q = Tensor.randn(device, Layout(1, 4, 1, 8), seed=20, requires_grad=True)
+    var K = Tensor.randn(device, Layout(1, 4, 1, 8), seed=21)
+    var V = Tensor.randn(device, Layout(1, 4, 1, 8), seed=22)
+    var loss = (
+        Q.transpose(1, 2).scaled_dot_product_attention(K.transpose(1, 2), V.transpose(1, 2), is_causal=True).sum()
+    )
+    var dQ = _fused_grad(loss.op, Q)
+    var num_dQ = numerical_grad[fwd](device, Q.to_list[DType.float32](), Layout(1, 4, 1, 8), eps=Float32(0.05))
+    assert_allclose(dQ, num_dQ, tol=Float32(5e-2))
+
+
+def test_flash_attn_bwd_dk_causal() raises:
+    var device = Device()
+
+    def fwd(k: Tensor) raises -> Tensor:
+        var Q = Tensor.randn(k.device.value(), Layout(1, 4, 1, 8), seed=30)
+        var V = Tensor.randn(k.device.value(), Layout(1, 4, 1, 8), seed=32)
+        return (
+            Q.transpose(1, 2).scaled_dot_product_attention(k.transpose(1, 2), V.transpose(1, 2), is_causal=True).sum()
+        )
+
+    var Q = Tensor.randn(device, Layout(1, 4, 1, 8), seed=30)
+    var K = Tensor.randn(device, Layout(1, 4, 1, 8), seed=31, requires_grad=True)
+    var V = Tensor.randn(device, Layout(1, 4, 1, 8), seed=32)
+    var loss = (
+        Q.transpose(1, 2).scaled_dot_product_attention(K.transpose(1, 2), V.transpose(1, 2), is_causal=True).sum()
+    )
+    var dK = _fused_grad(loss.op, K)
+    var num_dK = numerical_grad[fwd](device, K.to_list[DType.float32](), Layout(1, 4, 1, 8), eps=Float32(0.05))
+    assert_allclose(dK, num_dK, tol=Float32(5e-2))
+
+
+def test_flash_attn_bwd_dv_causal() raises:
+    var device = Device()
+
+    def fwd(v: Tensor) raises -> Tensor:
+        var Q = Tensor.randn(v.device.value(), Layout(1, 4, 1, 8), seed=40)
+        var K = Tensor.randn(v.device.value(), Layout(1, 4, 1, 8), seed=41)
+        return (
+            Q.transpose(1, 2).scaled_dot_product_attention(K.transpose(1, 2), v.transpose(1, 2), is_causal=True).sum()
+        )
+
+    var Q = Tensor.randn(device, Layout(1, 4, 1, 8), seed=40)
+    var K = Tensor.randn(device, Layout(1, 4, 1, 8), seed=41)
+    var V = Tensor.randn(device, Layout(1, 4, 1, 8), seed=42, requires_grad=True)
+    var loss = (
+        Q.transpose(1, 2).scaled_dot_product_attention(K.transpose(1, 2), V.transpose(1, 2), is_causal=True).sum()
+    )
+    var dV = _fused_grad(loss.op, V)
+    var num_dV = numerical_grad[fwd](device, V.to_list[DType.float32](), Layout(1, 4, 1, 8), eps=Float32(0.05))
+    assert_allclose(dV, num_dV, tol=Float32(5e-2))
+
+
+def test_flash_attn_bwd_dv_no_mask() raises:
+    var device = Device()
+
+    def fwd(v: Tensor) raises -> Tensor:
+        var Q = Tensor.randn(v.device.value(), Layout(1, 4, 1, 8), seed=50)
+        var K = Tensor.randn(v.device.value(), Layout(1, 4, 1, 8), seed=51)
+        return Q.transpose(1, 2).scaled_dot_product_attention(K.transpose(1, 2), v.transpose(1, 2)).sum()
+
+    var Q = Tensor.randn(device, Layout(1, 4, 1, 8), seed=50)
+    var K = Tensor.randn(device, Layout(1, 4, 1, 8), seed=51)
+    var V = Tensor.randn(device, Layout(1, 4, 1, 8), seed=52, requires_grad=True)
+    var loss = Q.transpose(1, 2).scaled_dot_product_attention(K.transpose(1, 2), V.transpose(1, 2)).sum()
+    var dV = _fused_grad(loss.op, V)
+    # eps=0.05: the fast-path P@V uses TF32 (precision ~1e-3), so eps=1e-3 causes
+    # catastrophic cancellation in the finite difference.  Use a larger eps so the
+    # signal (2*eps*col_sum(P) ~ 0.1) dominates TF32 rounding noise.
+    var num_dV = numerical_grad[fwd](device, V.to_list[DType.float32](), Layout(1, 4, 1, 8), eps=Float32(0.05))
+    assert_allclose(dV, num_dV, tol=Float32(5e-2))
+
+
+def test_flash_attn_bwd_dv_causal_multi_tile() raises:
+    # S=128 spans two 64-row tiles in both the Q and KV grids of the MMA
+    # backward kernels, so dV must accumulate across Q-tile iterations.
+    # With Q = K = 0 the causal softmax is exactly uniform: P[i,j] = 1/(i+1)
+    # for j <= i, so for loss = sum(O), dV[j, :] = sum_{i>=j} 1/(i+1).
+    var device = Device()
+    var S = 128
+    var Dh = 8
+    var Q = Tensor.zeros(device, Layout(1, S, 1, Dh))
+    var K = Tensor.zeros(device, Layout(1, S, 1, Dh))
+    var V = Tensor.randn(device, Layout(1, S, 1, Dh), seed=70, requires_grad=True)
+    var loss = (
+        Q.transpose(1, 2).scaled_dot_product_attention(K.transpose(1, 2), V.transpose(1, 2), is_causal=True).sum()
+    )
+    var dV = _fused_grad(loss.op, V)
+    var expected = List[Float32]()
+    for j in range(S):
+        var tail = Float32(0)
+        for i in range(j, S):
+            tail += Float32(1) / Float32(i + 1)
+        for _ in range(Dh):
+            expected.append(tail)
+    assert_allclose(dV, expected, tol=Float32(2e-2))
+
+
+def test_flash_attn_bwd_causal_multi_tile_matches_unfused() raises:
+    # Fused FLASH_ATTN_GRAD vs the decomposed backward graph at S larger than
+    # one 64-row MMA tile, catching per-tile accumulation bugs in dQ/dK/dV.
+    # H=2 also exercises the BSHD (row stride H*D) indexing of Q/K/V/dQ/dK/dV.
+    var device = Device()
+    var S = 96
+    var H = 2
+    var Dh = 16
+    var Q = Tensor.randn(device, Layout(1, S, H, Dh), seed=80, requires_grad=True)
+    var K = Tensor.randn(device, Layout(1, S, H, Dh), seed=81, requires_grad=True)
+    var V = Tensor.randn(device, Layout(1, S, H, Dh), seed=82, requires_grad=True)
+    var loss = (
+        Q.transpose(1, 2).scaled_dot_product_attention(K.transpose(1, 2), V.transpose(1, 2), is_causal=True).sum()
+    )
+
+    # Unfused reference: gradients of the raw graph, evaluated without GPU
+    # rewrites so no flash kernels are involved.
+    var initial = Tensor.ones(device, (1,)).op
+    var targets = List[OpRef]()
+    targets.append(Q.op)
+    targets.append(K.op)
+    targets.append(V.op)
+    var ref_grads = Grad.compute(loss.op, initial, targets)
+
+    var fused_dQ = _fused_grad(loss.op, Q)
+    var fused_dK = _fused_grad(loss.op, K)
+    var fused_dV = _fused_grad(loss.op, V)
+    var ref_dQ = Tensor(device, ref_grads[0].value())
+    var ref_dK = Tensor(device, ref_grads[1].value())
+    var ref_dV = Tensor(device, ref_grads[2].value())
+    assert_allclose(ref_dQ.value(simplifier=False), ref_dQ.op.layout(), fused_dQ, tol=5e-2)
+    assert_allclose(ref_dK.value(simplifier=False), ref_dK.op.layout(), fused_dK, tol=5e-2)
+    assert_allclose(ref_dV.value(simplifier=False), ref_dV.op.layout(), fused_dV, tol=5e-2)
+
+
+def test_flash_attn_bwd_dq_bias_mask() raises:
+    # Non-causal SDPA with a non-zero additive mask (bias): the backward must
+    # include the bias when reconstructing P = exp(score + mask - lse).
+    var device = Device()
+
+    def fwd(q: Tensor) raises -> Tensor:
+        var dev = q.device.value()
+        var K = Tensor.randn(dev, Layout(1, 4, 1, 8), seed=91)
+        var V = Tensor.randn(dev, Layout(1, 4, 1, 8), seed=92)
+        var mask = Tensor.randn(dev, Layout(1, 1, 4, 4), seed=93)
+        return (
+            q.transpose(1, 2).scaled_dot_product_attention(K.transpose(1, 2), V.transpose(1, 2), attn_mask=mask).sum()
+        )
+
+    var Q = Tensor.randn(device, Layout(1, 4, 1, 8), seed=90, requires_grad=True)
+    var K = Tensor.randn(device, Layout(1, 4, 1, 8), seed=91)
+    var V = Tensor.randn(device, Layout(1, 4, 1, 8), seed=92)
+    var mask = Tensor.randn(device, Layout(1, 1, 4, 4), seed=93)
+    var loss = (
+        Q.transpose(1, 2).scaled_dot_product_attention(K.transpose(1, 2), V.transpose(1, 2), attn_mask=mask).sum()
+    )
+    var dQ = _fused_grad(loss.op, Q)
+    var num_dQ = numerical_grad[fwd](device, Q.to_list[DType.float32](), Layout(1, 4, 1, 8), eps=Float32(0.05))
+    assert_allclose(dQ, num_dQ, tol=Float32(5e-2))
+
+
+def test_flash_attn_bwd_dv_bias_mask() raises:
+    var device = Device()
+
+    def fwd(v: Tensor) raises -> Tensor:
+        var dev = v.device.value()
+        var Q = Tensor.randn(dev, Layout(1, 4, 1, 8), seed=95)
+        var K = Tensor.randn(dev, Layout(1, 4, 1, 8), seed=96)
+        var mask = Tensor.randn(dev, Layout(1, 1, 4, 4), seed=98)
+        return (
+            Q.transpose(1, 2).scaled_dot_product_attention(K.transpose(1, 2), v.transpose(1, 2), attn_mask=mask).sum()
+        )
+
+    var Q = Tensor.randn(device, Layout(1, 4, 1, 8), seed=95)
+    var K = Tensor.randn(device, Layout(1, 4, 1, 8), seed=96)
+    var V = Tensor.randn(device, Layout(1, 4, 1, 8), seed=97, requires_grad=True)
+    var mask = Tensor.randn(device, Layout(1, 1, 4, 4), seed=98)
+    var loss = (
+        Q.transpose(1, 2).scaled_dot_product_attention(K.transpose(1, 2), V.transpose(1, 2), attn_mask=mask).sum()
+    )
+    var dV = _fused_grad(loss.op, V)
+    var num_dV = numerical_grad[fwd](device, V.to_list[DType.float32](), Layout(1, 4, 1, 8), eps=Float32(0.05))
+    assert_allclose(dV, num_dV, tol=Float32(5e-2))
+
+
+def test_flash_attn_bwd_f16_causal_multi_tile_matches_unfused() raises:
+    # f16 exercises the fused half-precision backward kernel (FA2-shaped,
+    # single kernel + atomic dQ accumulation). S=96 spans two 64-row tiles
+    # (ragged second tile), H=2 exercises BSHD strides, Dh=16 → D_BUCKET=64.
+    var device = Device()
+    var S = 96
+    var H = 2
+    var Dh = 16
+    var Q = Tensor.randn(device, Layout(1, S, H, Dh), seed=180).cast(DType.float16)
+    var K = Tensor.randn(device, Layout(1, S, H, Dh), seed=181).cast(DType.float16)
+    var V = Tensor.randn(device, Layout(1, S, H, Dh), seed=182).cast(DType.float16)
+    var loss = (
+        Q.transpose(1, 2).scaled_dot_product_attention(K.transpose(1, 2), V.transpose(1, 2), is_causal=True).sum()
+    )
+
+    var initial = Tensor.ones(device, (1,)).op
+    var targets = List[OpRef]()
+    targets.append(Q.op)
+    targets.append(K.op)
+    targets.append(V.op)
+    var ref_grads = Grad.compute(loss.op, initial, targets)
+
+    var fused_dQ = _fused_grad(loss.op, Q)
+    var fused_dK = _fused_grad(loss.op, K)
+    var fused_dV = _fused_grad(loss.op, V)
+    var ref_dQ = Tensor(device, ref_grads[0].value())
+    var ref_dK = Tensor(device, ref_grads[1].value())
+    var ref_dV = Tensor(device, ref_grads[2].value())
+    assert_allclose(ref_dQ.value(simplifier=False), ref_dQ.op.layout(), fused_dQ, tol=7e-2)
+    assert_allclose(ref_dK.value(simplifier=False), ref_dK.op.layout(), fused_dK, tol=7e-2)
+    assert_allclose(ref_dV.value(simplifier=False), ref_dV.op.layout(), fused_dV, tol=7e-2)
+
+
+def test_flash_attn_bwd_f16_bias_mask_d128_matches_unfused() raises:
+    # f16 half backward with an additive bias mask at Dh=128 (D_BUCKET=128,
+    # the largest resident-tile configuration) and ragged S.
+    var device = Device()
+    var S = 80
+    var H = 2
+    var Dh = 128
+    var Q = Tensor.randn(device, Layout(1, S, H, Dh), seed=190).cast(DType.float16)
+    var K = Tensor.randn(device, Layout(1, S, H, Dh), seed=191).cast(DType.float16)
+    var V = Tensor.randn(device, Layout(1, S, H, Dh), seed=192).cast(DType.float16)
+    var mask = Tensor.randn(device, Layout(1, H, S, S), seed=193).cast(DType.float16)
+    var loss = (
+        Q.transpose(1, 2).scaled_dot_product_attention(K.transpose(1, 2), V.transpose(1, 2), attn_mask=mask).sum()
+    )
+
+    var initial = Tensor.ones(device, (1,)).op
+    var targets = List[OpRef]()
+    targets.append(Q.op)
+    targets.append(K.op)
+    targets.append(V.op)
+    var ref_grads = Grad.compute(loss.op, initial, targets)
+
+    var fused_dQ = _fused_grad(loss.op, Q)
+    var fused_dK = _fused_grad(loss.op, K)
+    var fused_dV = _fused_grad(loss.op, V)
+    var ref_dQ = Tensor(device, ref_grads[0].value())
+    var ref_dK = Tensor(device, ref_grads[1].value())
+    var ref_dV = Tensor(device, ref_grads[2].value())
+    assert_allclose(ref_dQ.value(simplifier=False), ref_dQ.op.layout(), fused_dQ, tol=7e-2)
+    assert_allclose(ref_dK.value(simplifier=False), ref_dK.op.layout(), fused_dK, tol=7e-2)
+    assert_allclose(ref_dV.value(simplifier=False), ref_dV.op.layout(), fused_dV, tol=7e-2)
+
+
+def test_flash_attn_bwd_shapes() raises:
+    var device = Device()
+    var B = 2
+    var T = 8
+    var H = 4
+    var Dh = 16
+    var bshd = Layout(B, T, H, Dh)
+    var Q_bshd = Tensor.randn(device, bshd, seed=60, requires_grad=True)
+    var K_bshd = Tensor.randn(device, bshd, seed=61, requires_grad=True)
+    var V_bshd = Tensor.randn(device, bshd, seed=62, requires_grad=True)
+    var loss = (
+        Q_bshd.transpose(1, 2)
+        .scaled_dot_product_attention(K_bshd.transpose(1, 2), V_bshd.transpose(1, 2), is_causal=True)
+        .sum()
+    )
+    var grads = loss.gradient([Q_bshd, K_bshd, V_bshd])
+    assert_true(grads[0].shape() == Q_bshd.shape())
+    assert_true(grads[1].shape() == K_bshd.shape())
+    assert_true(grads[2].shape() == V_bshd.shape())
 
 
 def main() raises:

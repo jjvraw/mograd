@@ -38,6 +38,21 @@ def assert_allclose[
     _assert_allclose_impl[dtype](actual.to_list[dtype](), expected, tol)
 
 
+def assert_allclose(actual: AnyBuffer, actual_layout: Layout, expected: Tensor, tol: Float64 = 1e-5) raises:
+    """Compare an eagerly-evaluated AnyBuffer (from Tensor.value(simplifier=False))
+    against a lazy Tensor, element-wise within `tol`.  Useful for fused-vs-unfused checks."""
+    if actual.dtype() != expected.dtype:
+        raise Error("dtype mismatch: " + String(actual.dtype()) + " vs " + String(expected.dtype))
+    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+        comptime T = AnyBuffer.BufVariant.Ts[k]
+        comptime assert conforms_to(T, BufferArm)
+        comptime d = T.node_dtype
+        if actual.dtype() == d:
+            _assert_allclose_impl[d](actual.to_list[d](actual_layout), expected.to_list[d](), Scalar[d](tol))
+            return
+    raise Error("Unsupported dtype: " + String(actual.dtype()))
+
+
 def assert_allclose(actual: Tensor, expected: Tensor, tol: Float64 = 1e-5) raises:
     if actual.dtype != expected.dtype:
         raise Error("dtype mismatch: " + String(actual.dtype) + " vs " + String(expected.dtype))

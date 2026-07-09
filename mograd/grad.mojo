@@ -3,7 +3,7 @@ from layout.int_tuple import IntTuple
 from mograd.layout import Layout
 from mograd.op import Op, OpRef, OpType
 from mograd.pattern_matcher import PatternMatcher, Rule, Pat, GraphUtils
-from mograd.runtime.gpu.rewrites import LAYER_NORM, LAYER_NORM_GRAD
+from mograd.runtime.gpu.rewrites import LAYER_NORM, LAYER_NORM_GRAD, FLASH_ATTN, FLASH_ATTN_GRAD
 
 # ===-------------------------------------------------------------------===#
 # Grad
@@ -54,7 +54,9 @@ struct Grad:
                 Rule(Pat(OpType.TRIU), triu_grad),
                 Rule(Pat(OpType.EXPAND), expand_grad),
                 Rule(Pat(OpType.CONCAT), concat_grad),
+                Rule(Pat(OpType.GETTUPLE), gettuple_grad),
                 Rule(Pat(LAYER_NORM), layer_norm_grad),
+                Rule(Pat(FLASH_ATTN), flash_attn_grad),
             ]
         )
 
@@ -255,6 +257,11 @@ def expand_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     return [grad]
 
 
+def gettuple_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    # node = GETTUPLE(src, index=i). Pass upstream through to the multi-output src.
+    return [upstream]
+
+
 def layer_norm_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     # Emit a LAYER_NORM_GRAD node whose kernel returns [dx, dgamma, dbeta],
     # then select each output with GETTUPLE.
@@ -266,3 +273,42 @@ def layer_norm_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     var dgamma = OpRef(Op(OpType.GETTUPLE, gamma.layout().as_contiguous(), gamma.dtype(), [bwd], {"index": 1}))
     var dbeta = OpRef(Op(OpType.GETTUPLE, gamma.layout().as_contiguous(), gamma.dtype(), [bwd], {"index": 2}))
     return [dx, dgamma, dbeta]
+
+
+def flash_attn_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+    # node = FLASH_ATTN(Q, K, V, mask), multi-output: output 0 = O (BHSD), output 1 = LSE (BHS).
+    # upstream = dO accumulated via gettuple_grad from GETTUPLE(node, 0).
+    # FLASH_ATTN_GRAD takes [dO, O, Q, K, V, mask, LSE] and returns [dQ, dK, dV].
+    var Q = node.src(0)
+    var K = node.src(1)
+    var V = node.src(2)
+    var mask = node.src(3)
+
+    # Extract O and LSE from the forward multi-output node.
+    var O = OpRef(Op(OpType.GETTUPLE, node.layout(), node.dtype(), [node], {"index": 0}))
+    # LSE layout: (B, H, S) row-major, float32.  Q is BSHD → B=0,S=1,H=2.
+    var B = Q.layout().shape(0)
+    var S = Q.layout().shape(1)
+    var H = Q.layout().shape(2)
+    var lse_shape = IntTuple()
+    lse_shape.append(IntTuple(B))
+    lse_shape.append(IntTuple(H))
+    lse_shape.append(IntTuple(S))
+    var lse_strides = IntTuple()
+    lse_strides.append(IntTuple(H * S))
+    lse_strides.append(IntTuple(S))
+    lse_strides.append(IntTuple(1))
+    var lse_layout = Layout(3, lse_shape, lse_strides, 0)
+    var LSE = OpRef(Op(OpType.GETTUPLE, lse_layout, DType.float32, [node], {"index": 1}))
+
+    var attrs = node.attrs_copy()
+    # Upstream (dO) may be a zero-stride broadcast EXPAND.
+    # The FLASH_ATTN_GRAD kernel reads it with raw pointer offsets and would read garbage memory past
+    # the 1-element scalar buffer without materialisation first.
+    var dO = upstream.contiguous()
+    var bwd = OpRef(Op(FLASH_ATTN_GRAD, Q.layout().as_contiguous(), Q.dtype(), [dO, O, Q, K, V, mask, LSE], attrs^))
+    var dQ = OpRef(Op(OpType.GETTUPLE, Q.layout().as_contiguous(), Q.dtype(), [bwd], {"index": 0}))
+    var dK = OpRef(Op(OpType.GETTUPLE, K.layout().as_contiguous(), K.dtype(), [bwd], {"index": 1}))
+    var dV = OpRef(Op(OpType.GETTUPLE, V.layout().as_contiguous(), V.dtype(), [bwd], {"index": 2}))
+    var d_mask = mask.zeros_like()
+    return [dQ, dK, dV, d_mask]

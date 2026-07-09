@@ -20,42 +20,54 @@ struct Simplifier:
         return self.run(root, SchedulerRules(), extra)
 
     def run(self, root: OpRef, var extern_rules: SchedulerRules, mut extra_sched: SchedulerRules) raises -> OpRef:
-        var rewrite_pm = PatternMatcher[RewriteFn](self.rules)
         var fusion_pm = PatternMatcher[BoundExecFn](extern_rules)
         var subst = Dict[OpRef, OpRef]()
         var topo = GraphUtils.toposort(root)
 
         for i in range(len(topo)):
             var node = topo[i]
-            var node_s = _apply_subst(node, subst)
 
-            # Fusion rules first, user compound patterns take priority over GPU rewrites
-            var fmatch = fusion_pm.match(node_s)
-            if fmatch:
-                var leaves = extract_wildcard_srcs(fmatch.value().pat, node_s)
-                for j in range(len(extern_rules)):
-                    if extern_rules[j].pat.matches(node_s):
-                        var stype = OpType("__fuse_" + String(j))
-                        subst[node] = OpRef(Op(stype, node_s.layout(), node_s.dtype(), leaves^))
-                        var already = False
-                        for k in range(len(extra_sched)):
-                            if extra_sched[k].pat.op_type == stype:
-                                already = True
-                                break
-                        if not already:
-                            extra_sched.append(Rule(Pat(stype), extern_rules[j].func))
+            # Per-node fixed point: matchers run in priority of user rules.
+            var node_r = _apply_subst(node, subst)
+            var seen = Dict[OpRef, Bool]()
+            while True:
+                if node_r in seen:
+                    raise Error("Simplifier: rewrite rules cycled without converging")
+                seen[node_r] = True
+
+                # User compound patterns produce opaque __fuse_N nodes that
+                # are never rewritten further.
+                var fmatch = fusion_pm.match(node_r)
+                if fmatch:
+                    var leaves = extract_wildcard_srcs(fmatch.value().pat, node_r)
+                    for j in range(len(extern_rules)):
+                        if extern_rules[j].pat.matches(node_r):
+                            var stype = OpType("__fuse_" + String(j))
+                            node_r = OpRef(Op(stype, node_r.layout(), node_r.dtype(), leaves^))
+                            var already = False
+                            for k in range(len(extra_sched)):
+                                if extra_sched[k].pat.op_type == stype:
+                                    already = True
+                                    break
+                            if not already:
+                                extra_sched.append(Rule(Pat(stype), extern_rules[j].func))
+                            break
+                    break
+
+                var progressed = False
+                for j in range(len(self.rules)):
+                    if not self.rules[j].pat.matches(node_r):
+                        continue
+                    var rewritten = self.rules[j].func(node_r)
+                    if rewritten:
+                        node_r = rewritten.value()
+                        progressed = True
                         break
-                continue
+                if not progressed:
+                    break
 
-            var rmatch = rewrite_pm.match(node_s)
-            if rmatch:
-                var rewritten = rmatch.value().func(node_s)
-                if rewritten:
-                    subst[node] = rewritten.value()
-                    continue
-
-            if node_s != node:
-                subst[node] = node_s
+            if node_r != node:
+                subst[node] = node_r
 
         var result = subst.get(root)
         return result.value() if result else root
