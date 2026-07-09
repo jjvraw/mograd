@@ -169,6 +169,11 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Writable):
         return product(self.shape())
 
     @always_inline
+    def size(self, dim: Int) raises -> Int:
+        """Returns the size of the layout along dimension `idx`."""
+        return self._shape.value(self.normalise_dim(dim))
+
+    @always_inline
     def stride(self) -> IntTuple:
         """Returns the strides of the layout."""
         return self._strides
@@ -356,7 +361,7 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Writable):
     def reduce_output_shape(self, axis: Int, keepdim: Bool) raises -> Self:
         """Returns the output layout after reducing along axis.
 
-        With keepdim=False the axis dimension is removed; with keepdim=True it
+        With keepdim=False the axis dimension is removed. With keepdim=True it
         is replaced by 1. A rank-0 result (1-D tensor, keepdim=False) is
         represented as shape (1,) to match the scalar convention used elsewhere.
         """
@@ -471,7 +476,7 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Writable):
         The returned order lists axes from slowest- to fastest-varying (i.e. by
         stride descending). If this layout is exactly a contiguous buffer viewed
         through that axis order, `compact_order` reconstructs its strides
-        exactly and the order is returned. Otherwise returns None — this
+        exactly and the order is returned. Otherwise returns None, since this
         rejects broadcasts (stride 0 on a dim with size > 1 can never match a
         compact stride) and slices (a narrowed stride can never match either).
         """

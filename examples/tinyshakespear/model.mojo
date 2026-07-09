@@ -100,14 +100,8 @@ struct MultiHeadAttention(Module, Movable):
         var K = self.W_K(x).reshape((B, T, self.n_heads, self.d_head)).transpose(1, 2)
         var V = self.W_V(x).reshape((B, T, self.n_heads, self.d_head)).transpose(1, 2)
 
-        # (B, H, T, T)
-        var scale = Float32(1.0) / sqrt(Float32(self.d_head))
-        var scores = (Q @ K.transpose(-2, -1)) * scale
-        var mask = Tensor.full_like(scores, neg_inf[DType.float32]()).triu(1)
-        var weights = (scores + mask).softmax()
-
         # (B, H, T, Dh) → (B, T, D)
-        var ctx = (weights @ V).transpose(1, 2).reshape((B, T, self.d_model))
+        var ctx = Q.scaled_dot_product_attention(K, V, is_causal=True).transpose(1, 2).reshape((B, T, self.d_model))
         return self.W_O(ctx)
 
     def parameters(mut self) -> List[ModuleParam]:

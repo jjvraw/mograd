@@ -1,3 +1,5 @@
+from std.math import sqrt
+from std.utils.numerics import neg_inf
 from std.memory import ArcPointer
 from std.hashlib.hasher import Hasher
 from std.sys.info import has_apple_gpu_accelerator
@@ -124,7 +126,7 @@ struct Op(Copyable, Movable, Writable):
     var layout: Layout
     var dtype: DType
     var srcs: List[OpRef]
-    var buf: Optional[AnyBuffer]
+    var buf: List[AnyBuffer]
     var attrs: Attrs
 
     def __init__(
@@ -138,7 +140,7 @@ struct Op(Copyable, Movable, Writable):
         self.layout = shape
         self.dtype = dtype
         self.srcs = srcs^
-        self.buf = None
+        self.buf = List[AnyBuffer]()
         self.attrs = {}
 
     def __init__(
@@ -153,7 +155,7 @@ struct Op(Copyable, Movable, Writable):
         self.layout = shape
         self.dtype = dtype
         self.srcs = srcs^
-        self.buf = buf^
+        self.buf = [buf^]
         self.attrs = {}
 
     def __init__(
@@ -168,7 +170,7 @@ struct Op(Copyable, Movable, Writable):
         self.layout = shape
         self.dtype = dtype
         self.srcs = srcs^
-        self.buf = None
+        self.buf = List[AnyBuffer]()
         self.attrs = attrs^
 
     def __str__(self) -> String:
@@ -243,6 +245,9 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
 
     def __add__(self, rhs: OpRef) -> Self:
         return Self(Op(OpType.ADD, self.layout().as_contiguous(), self.dtype(), [self, rhs]))
+
+    def add(self, rhs: OpRef) -> Self:
+        return self + rhs
 
     def __mul__(self, rhs: OpRef) -> Self:
         return Self(Op(OpType.MUL, self.layout().as_contiguous(), self.dtype(), [self, rhs]))
@@ -354,6 +359,9 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         attrs: Attrs = {"dim0": d0, "dim1": d1}
         return Self(Op(OpType.TRANSPOSE, self.layout().transpose(dim0, dim1), self.dtype(), [self], attrs^))
 
+    def zeros_like(self) -> Self:
+        return Self(Op(OpType.FULL, self.layout().as_contiguous(), self.dtype(), [], {"value": AttrVal(Float32(0.0))}))
+
     def contiguous(self) -> Self:
         if self.layout().is_contiguous():
             return self
@@ -423,6 +431,56 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         var b_src = rhs if lb.batch_dims_collapsible() else rhs.contiguous()
 
         return Self(Op(OpType.MATMUL, out_layout, self.dtype(), [a_src, b_src]))
+
+    def scaled_dot_product_attention(
+        self,
+        key: Self,
+        value: Self,
+        attn_mask: Optional[Self],
+        is_causal: Bool = False,
+        scale: Optional[Float32] = None,
+    ) raises -> Self:
+        if is_causal and attn_mask:
+            raise Error("scaled_dot_product_attention: attn_mask cannot be combined with is_causal=True")
+        # Promote 3D (B, T, D) → 4D (B, 1, T, D) so fusion sees the expected BHTD layout.
+        var rank = self.layout().rank()
+        var q = (
+            self.reshape(Layout(self.layout().shape(0), 1, self.layout().shape(1), self.layout().shape(2))) if rank
+            == 3 else self
+        )
+        var k = (
+            key.reshape(Layout(key.layout().shape(0), 1, key.layout().shape(1), key.layout().shape(2))) if rank
+            == 3 else key
+        )
+        var v = (
+            value.reshape(Layout(value.layout().shape(0), 1, value.layout().shape(1), value.layout().shape(2))) if rank
+            == 3 else value
+        )
+
+        var scale_factor = scale.value() if scale else Float32(1.0) / sqrt(Float32(q.layout().size(-1)))
+        var scores = q.matmul(k.transpose(-2, -1)).scale(scale_factor)
+        var out: Self
+        if is_causal:
+            var causal_mask = Self(
+                Op(
+                    OpType.FULL,
+                    scores.layout().as_contiguous(),
+                    scores.dtype(),
+                    [],
+                    {"value": AttrVal(neg_inf[DType.float32]())},
+                )
+            ).triu(1)
+            out = scores.add(causal_mask).softmax().matmul(v)
+        elif attn_mask:
+            out = scores.add(attn_mask.value()).softmax().matmul(v)
+        else:
+            out = scores.softmax().matmul(v)
+
+        # Squeeze back to 3D if input was 3D.
+        if rank == 3:
+            var s = out.layout()
+            return out.reshape(Layout(s.shape(0), s.shape(2), s.shape(3)))
+        return out
 
     # ===-------------------------------------------------------------------===#
     # Loss operations

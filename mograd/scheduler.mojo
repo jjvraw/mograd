@@ -47,11 +47,14 @@ struct Scheduler:
             elif node.op_type() == OpType.GETTUPLE:
                 var idx = node.attr_int("index")
                 var out = bufs[node.src(0)][idx].copy()
-                node.op().buf = Optional[AnyBuffer](out.copy())
+                node.op().buf = [out.copy()]
                 bufs[node] = [out^]
                 continue
-            elif node.op().buf:
-                bufs[node] = [node.op().buf.value().copy()]
+            elif len(node.op().buf) > 0:
+                var cached = List[AnyBuffer]()
+                for i in range(len(node.op().buf)):
+                    cached.append(node.op().buf[i].copy())
+                bufs[node] = cached^
                 continue
             elif node.op_type() == OpType.BUFFER:
                 raise Error("uninitialized BUFFER node")
@@ -63,7 +66,10 @@ struct Scheduler:
             if not rule:
                 raise Error("no exec rule for op: " + node.op_type()._name)
             var results = rule.value().func(node, inputs, device)
-            node.op().buf = Optional[AnyBuffer](results[0].copy())
+            var to_cache = List[AnyBuffer]()
+            for i in range(len(results)):
+                to_cache.append(results[i].copy())
+            node.op().buf = to_cache^
             bufs[node] = results^
 
         device.ctx.synchronize()

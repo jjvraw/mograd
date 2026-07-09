@@ -2,9 +2,10 @@ from std.testing import TestSuite, assert_equal, assert_true
 
 from mograd import Device
 from mograd.buffer import AnyBuffer
-from mograd.op import Op, OpRef, OpType
+from mograd.op import AttrVal, Op, OpRef, OpType
 from mograd.pattern_matcher import Rule, Pat
 from mograd.scheduler import BoundExecFn, SchedulerRules
+from mograd.runtime.gpu.rewrites import GPU_REWRITES
 from mograd.simplify import Simplifier, RewriteFn
 from mograd.testing import leaf, assert_graph
 
@@ -145,3 +146,22 @@ def test_nested_compound_rule_intermediate_node_removed() raises:
 
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
+
+
+def test_compound_rule_matches_after_canonicalization() raises:
+    # A user pattern written against the canonical SCALE spelling must also
+    # catch a graph spelled MUL(x, FULL(v)). The canonicalization rewrites
+    # the node, and the fusion matcher gets another look within the same
+    # per-node fixed point.
+    var x = leaf((2, 3))
+    var y = leaf((2, 3))
+    var c = OpRef(Op(OpType.FULL, x.layout(), x.dtype(), [], {"value": AttrVal(Float32(2.0))}))
+
+    var extra = SchedulerRules()
+    var result = Simplifier(GPU_REWRITES()).run(
+        (x + y) * c,
+        [Rule(Pat(OpType.SCALE, [Pat(OpType.ADD, [Pat(), Pat()])]), dummy)],
+        extra,
+    )
+
+    assert_graph(result, Pat(OpType("__fuse_0")))

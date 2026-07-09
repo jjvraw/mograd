@@ -30,7 +30,7 @@ def make_scheduler(device: Device) -> Scheduler:
 def make_graph(device: Device) raises -> Tuple[OpRef, OpRef, OpRef]:
     """Returns (split, get0, get1) where split is FAKE_SPLIT and gets are GETTUPLE."""
     var x = leaf(Layout(4))
-    x.op().buf = Optional[AnyBuffer](AnyBuffer.create(DType.float32, device, 4))
+    x.op().buf = [AnyBuffer.create(DType.float32, device, 4)]
     var split = OpRef(Op(FAKE_SPLIT, Layout(4), DType.float32, [x]))
     var get0 = OpRef(Op(OpType.GETTUPLE, Layout(4), DType.float32, [split], {"index": 1}))
     var get1 = OpRef(Op(OpType.GETTUPLE, Layout(4), DType.float32, [split], {"index": 0}))
