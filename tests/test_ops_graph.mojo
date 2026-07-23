@@ -77,12 +77,12 @@ def test_concat_grad_splits_along_axis() raises:
     var upstream = leaf((6, 3))
     var grads = concat_grad(node, upstream)
     assert_equal(len(grads), 2)
-    assert_true(grads[0].op_type() == OpType.SLICE)
-    assert_true(grads[1].op_type() == OpType.SLICE)
-    assert_equal(grads[0].shape(0), 2)
-    assert_equal(grads[0].shape(1), 3)
-    assert_equal(grads[1].shape(0), 4)
-    assert_equal(grads[1].shape(1), 3)
+    assert_true(grads[0].value().op_type() == OpType.SLICE)
+    assert_true(grads[1].value().op_type() == OpType.SLICE)
+    assert_equal(grads[0].value().shape(0), 2)
+    assert_equal(grads[0].value().shape(1), 3)
+    assert_equal(grads[1].value().shape(0), 4)
+    assert_equal(grads[1].value().shape(1), 3)
 
 
 def test_concat_grad_splits_along_axis1() raises:
@@ -91,8 +91,8 @@ def test_concat_grad_splits_along_axis1() raises:
     var node = concat([a, b], 1)
     var upstream = leaf((2, 8))
     var grads = concat_grad(node, upstream)
-    assert_equal(grads[0].shape(1), 3)
-    assert_equal(grads[1].shape(1), 5)
+    assert_equal(grads[0].value().shape(1), 3)
+    assert_equal(grads[1].value().shape(1), 5)
 
 
 def main() raises:

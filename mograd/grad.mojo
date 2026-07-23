@@ -9,7 +9,7 @@ from mograd.runtime.gpu.rewrites import LAYER_NORM, LAYER_NORM_GRAD, FLASH_ATTN,
 # Grad
 # ===-------------------------------------------------------------------===#
 
-comptime GradFn = def(node: OpRef, upstream: OpRef) thin raises -> List[OpRef]
+comptime GradFn = def(node: OpRef, upstream: OpRef) thin raises -> List[Optional[OpRef]]
 
 
 struct Grad:
@@ -72,7 +72,10 @@ struct Grad:
             if rule:
                 var src_grads = rule.value().func(node, up)
                 for j in range(len(node.srcs())):
-                    grad.accum(node.srcs()[j], src_grads[j])
+                    # None marks a non-differentiable input (indices, labels, masks):
+                    # no gradient edge is created, so backprop never enters that subgraph
+                    if src_grads[j]:
+                        grad.accum(node.srcs()[j], src_grads[j].value())
 
         var result = List[Optional[OpRef]]()
         for i in range(len(target_ops)):
@@ -89,41 +92,41 @@ struct Grad:
 # ===-------------------------------------------------------------------===#
 
 
-def mul_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def mul_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     return [node.src(1) * upstream, node.src(0) * upstream]
 
 
-def add_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
-    return [upstream] * len(node.srcs())
+def add_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
+    return [Optional(upstream)] * len(node.srcs())
 
 
-def relu_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def relu_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     return [OpRef(Op(OpType.RELU_GRAD, node.layout().as_contiguous(), node.dtype(), [node.src(0), upstream]))]
 
 
-def exp_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def exp_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     return [node * upstream]
 
 
-def sqrt_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def sqrt_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     return [(upstream / node).scale(0.5)]
 
 
-def log_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def log_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     return [upstream / node.src(0)]
 
 
-def neg_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def neg_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     return [-upstream]
 
 
-def div_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def div_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     var a = node.src(0)
     var b = node.src(1)
     return [upstream / b, -(upstream * a / (b * b))]
 
 
-def sum_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def sum_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     var in_layout = node.src(0).layout().as_contiguous()
     if "axis" in node.attrs():
         var ax = node.attr_int("axis")
@@ -147,37 +150,37 @@ def sum_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     return [OpRef(Op(OpType.EXPAND, bcast_layout, node.dtype(), [upstream]))]
 
 
-def matmul_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def matmul_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     var a = node.src(0)
     var b = node.src(1)
     return [upstream.matmul(b.transpose()), a.transpose().matmul(upstream)]
 
 
-def transpose_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def transpose_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     return [upstream.transpose(node.attr_int("dim0"), node.attr_int("dim1"))]
 
 
-def contiguous_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def contiguous_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     return [upstream]
 
 
-def reshape_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def reshape_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     return [upstream.reshape(node.src(0).layout())]
 
 
-def view_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def view_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     return [OpRef(Op(OpType.VIEW, node.src(0).layout(), node.dtype(), [upstream]))]
 
 
-def slice_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def slice_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     return [
         OpRef(Op(OpType.SLICE_GRAD, node.src(0).layout().as_contiguous(), node.dtype(), [upstream.contiguous(), node]))
     ]
 
 
-def concat_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def concat_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     var ax = node.attr_int("axis")
-    var grads = List[OpRef]()
+    var grads = List[Optional[OpRef]]()
     var offset = 0
     for i in range(len(node.srcs())):
         var size = node.src(i).layout().shape(ax)
@@ -186,41 +189,38 @@ def concat_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     return grads^
 
 
-def scale_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def scale_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     var scalar = Scalar(node.attrs()["scalar"][Float32])
     return [upstream.scale(scalar)]
 
 
-def cross_entropy_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def cross_entropy_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     var logits = node.src(0)
     var labels = node.src(1)
     var grad_logits = OpRef(
         Op(OpType.CROSS_ENTROPY_GRAD, logits.layout().as_contiguous(), logits.dtype(), [logits, labels, upstream])
     )
-    var dummy = OpRef(Op(OpType.EXPAND, labels.layout(), labels.dtype(), [upstream]))
-    return [grad_logits, dummy]
+    return [grad_logits, None]
 
 
-def softmax_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def softmax_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     return [OpRef(Op(OpType.SOFTMAX_GRAD, node.layout().as_contiguous(), node.dtype(), [node, upstream.contiguous()]))]
 
 
-def gather_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def gather_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     var src = node.src(0)
     var indices = node.src(1)
     var grad_src = upstream.scatter_add(indices, src.shape(0))
-    var dummy = OpRef(Op(OpType.EXPAND, indices.layout(), indices.dtype(), [upstream]))
-    return [grad_src, dummy]
+    return [grad_src, None]
 
 
-def scatter_add_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def scatter_add_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     var indices = node.src(0)
-    var dummy = OpRef(Op(OpType.EXPAND, indices.layout(), indices.dtype(), [upstream]))
     var grad_values = upstream.gather(indices)
-    return [dummy, grad_values]
+    return [None, grad_values]
 
 
-def squeeze_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def squeeze_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     if "dim" in node.attrs():
         var dim = node.attr_int("dim")
         return [upstream.unsqueeze(dim)]
@@ -234,17 +234,17 @@ def squeeze_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
         return [expanded]
 
 
-def unsqueeze_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def unsqueeze_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     var dim = node.attr_int("dim")
     return [upstream.squeeze(dim)]
 
 
-def triu_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def triu_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     var diagonal = node.attr_int("diagonal")
     return [upstream.triu(diagonal)]
 
 
-def expand_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def expand_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     var src_layout = node.src(0).layout()
     var out_layout = node.layout()
     var rank_diff = out_layout.rank() - src_layout.rank()
@@ -257,12 +257,12 @@ def expand_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     return [grad]
 
 
-def gettuple_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def gettuple_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     # node = GETTUPLE(src, index=i). Pass upstream through to the multi-output src.
     return [upstream]
 
 
-def layer_norm_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def layer_norm_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     # Emit a LAYER_NORM_GRAD node whose kernel returns [dx, dgamma, dbeta],
     # then select each output with GETTUPLE.
     var x = node.src(0)
@@ -275,7 +275,7 @@ def layer_norm_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     return [dx, dgamma, dbeta]
 
 
-def flash_attn_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
+def flash_attn_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     # node = FLASH_ATTN(Q, K, V, mask), multi-output: output 0 = O (BHSD), output 1 = LSE (BHS).
     # upstream = dO accumulated via gettuple_grad from GETTUPLE(node, 0).
     # FLASH_ATTN_GRAD takes [dO, O, Q, K, V, mask, LSE] and returns [dQ, dK, dV].
@@ -310,5 +310,4 @@ def flash_attn_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
     var dQ = OpRef(Op(OpType.GETTUPLE, Q.layout().as_contiguous(), Q.dtype(), [bwd], {"index": 0}))
     var dK = OpRef(Op(OpType.GETTUPLE, K.layout().as_contiguous(), K.dtype(), [bwd], {"index": 1}))
     var dV = OpRef(Op(OpType.GETTUPLE, V.layout().as_contiguous(), V.dtype(), [bwd], {"index": 2}))
-    var d_mask = mask.zeros_like()
-    return [dQ, dK, dV, d_mask]
+    return [dQ, dK, dV, None]
