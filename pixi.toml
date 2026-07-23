@@ -84,9 +84,10 @@ examples-ci             = { depends-on = ["mnist"] }
 test-all                = { depends-on = ["test-gpu", "test-graph", "examples-ci"] }
 
 # Test Custom Kernels
-test-attention-mma      = { cmd = "mojo -I . tests/kernels/attention/mma.mojo",   depends-on = ["ensure-gpu"] }
-test-attention-apple    = { cmd = "mojo -I . tests/kernels/attention/apple.mojo", depends-on = ["ensure-gpu"] }
-test-attention          = { depends-on = ["test-attention-mma", "test-attention-apple"] }
+test-attention-mma      = { cmd = "mojo -I . tests/kernels/attention/mma.mojo",     depends-on = ["ensure-gpu"] }
+test-attention-generic  = { cmd = "mojo -I . tests/kernels/attention/generic.mojo", depends-on = ["ensure-gpu"] }
+test-attention-apple    = { cmd = "mojo -I . tests/kernels/attention/apple.mojo",   depends-on = ["ensure-gpu"] }
+test-attention          = { depends-on = ["test-attention-mma", "test-attention-generic", "test-attention-apple"] }
 test-kernels            = { depends-on = ["test-attention"] }
 
 # Benchamrk Kernels
