@@ -3,6 +3,7 @@ from std.gpu.host import DeviceContext, DeviceBuffer
 from std.utils import Variant
 
 from mograd.layout import Layout
+from mograd.device_ctx import CtxKeeper
 from mograd import Device
 
 
@@ -26,6 +27,10 @@ trait BufferArm(Copyable, Movable):
 struct Buffer[dtype: DType](BufferArm, Copyable):
     comptime node_dtype = Self.dtype
     var _ptr: ArcPointer[DeviceBuffer[Self.dtype]]
+    # Keeps the owning Device's CtxKeeper alive so the context is drained
+    # only after the last buffer is gone (see CtxKeeper in device_ctx.mojo).
+    # None for buffers wrapping externally created DeviceBuffers.
+    var _keeper: Optional[ArcPointer[CtxKeeper]]
     var base_offset: Int
 
     def __init__(
@@ -34,6 +39,7 @@ struct Buffer[dtype: DType](BufferArm, Copyable):
         size: Int,
     ):
         self._ptr = ArcPointer(buf^)
+        self._keeper = None
         self.base_offset = 0
 
     def __init__(
@@ -41,8 +47,10 @@ struct Buffer[dtype: DType](BufferArm, Copyable):
         ptr: ArcPointer[DeviceBuffer[Self.dtype]],
         size: Int,
         base_offset: Int,
+        keeper: Optional[ArcPointer[CtxKeeper]] = None,
     ):
         self._ptr = ptr
+        self._keeper = keeper.copy()
         self.base_offset = base_offset
 
     def buf(ref self) -> ref[self._ptr[]] DeviceBuffer[Self.dtype]:
@@ -77,13 +85,15 @@ struct Buffer[dtype: DType](BufferArm, Copyable):
     @staticmethod
     def empty(device: Device, numel: Int) raises -> Self:
         var dev_buf = device.ctx.enqueue_create_buffer[Self.dtype](numel)
-        return Self(dev_buf^, numel)
+        var buf = Self(dev_buf^, numel)
+        buf._keeper = device.keeper.copy()
+        return buf^
 
     @staticmethod
     def full(device: Device, value: Scalar[Self.dtype], numel: Int) raises -> Self:
-        var dev_buf = device.ctx.enqueue_create_buffer[Self.dtype](numel)
-        dev_buf.enqueue_fill(value)
-        return Self(dev_buf^, numel)
+        var buf = Self.empty(device, numel)
+        buf.buf().enqueue_fill(value)
+        return buf^
 
     @staticmethod
     def from_data(
@@ -95,9 +105,10 @@ struct Buffer[dtype: DType](BufferArm, Copyable):
         var host_ptr = host_buf.unsafe_ptr()
         for i in range(size):
             host_ptr[i] = data[i]
-        var dev_buf = device.ctx.enqueue_create_buffer[Self.dtype](size)
-        device.ctx.enqueue_copy(dst_buf=dev_buf, src_buf=host_buf)
-        return Self(dev_buf^, size)
+        var buf = Self.empty(device, size)
+        device.ctx.enqueue_copy(dst_buf=buf.buf(), src_buf=host_buf)
+        device.ctx.synchronize()
+        return buf^
 
 
 # ===-------------------------------------------------------------------===#
@@ -120,7 +131,7 @@ struct AnyBuffer(Copyable, Movable):
         return self._buf.unsafe_get[Buffer[dtype]]()
 
     def dtype(self) raises -> DType:
-        comptime for k in range(Self.BufVariant.Ts.size):
+        comptime for k in range(Self.BufVariant.Ts.length):
             comptime T = Self.BufVariant.Ts[k]
             comptime assert conforms_to(T, BufferArm)
             comptime d = T.node_dtype
@@ -135,27 +146,27 @@ struct AnyBuffer(Copyable, Movable):
         return self.unsafe_get[dtype]().to_list(layout)
 
     def data_ptr(ref self, with_offset: Bool = True) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
-        comptime for k in range(Self.BufVariant.Ts.size):
+        comptime for k in range(Self.BufVariant.Ts.length):
             comptime T = Self.BufVariant.Ts[k]
             comptime assert conforms_to(T, BufferArm)
             if self._buf.isa[T]():
-                return trait_downcast[BufferArm](self._buf.unsafe_get[T]()).raw_ptr(with_offset)
+                return self._buf.unsafe_get[T]().raw_ptr(with_offset)
         raise Error("Unsupported dtype")
 
     def view(ref self, layout: Layout) raises -> AnyBuffer:
-        comptime for k in range(Self.BufVariant.Ts.size):
+        comptime for k in range(Self.BufVariant.Ts.length):
             comptime T = Self.BufVariant.Ts[k]
             comptime assert conforms_to(T, BufferArm)
             comptime d = T.node_dtype
 
             if self._buf.isa[T]():
                 ref src = self.unsafe_get[d]()
-                return AnyBuffer(Buffer[d](src._ptr.copy(), layout.numel(), layout.base_offset))
+                return AnyBuffer(Buffer[d](src._ptr.copy(), layout.numel(), layout.base_offset, src._keeper))
         raise Error("Unsupported dtype")
 
     @staticmethod
     def create(dtype: DType, device: Device, numel: Int, fill: Optional[Float64] = None) raises -> AnyBuffer:
-        comptime for k in range(Self.BufVariant.Ts.size):
+        comptime for k in range(Self.BufVariant.Ts.length):
             comptime T = Self.BufVariant.Ts[k]
             comptime assert conforms_to(T, BufferArm)
             comptime d = T.node_dtype
@@ -163,6 +174,5 @@ struct AnyBuffer(Copyable, Movable):
                 if fill:
                     return AnyBuffer(Buffer[d].full(device, Scalar[d](fill.value()), numel))
                 else:
-                    var dev_buf = device.ctx.enqueue_create_buffer[d](numel)
-                    return AnyBuffer(Buffer[d](dev_buf^, numel))
+                    return AnyBuffer(Buffer[d].empty(device, numel))
         raise Error("Unsupported dtype: " + String(dtype))

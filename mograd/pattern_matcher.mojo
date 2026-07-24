@@ -12,7 +12,7 @@ struct Rule[F: TrivialRegisterPassable](Copyable, ImplicitlyDeletable, Movable):
 
 
 # TODO Clean up wildcard semantics
-struct Pat(Copyable, ImplicitlyCopyable, Movable):
+struct Pat(Copyable, ImplicitlyCopyable, ImplicitlyDeletable, Movable):
     var op_type: OpType
     var srcs: List[Pat]
     var _any_op: Bool
@@ -36,6 +36,10 @@ struct Pat(Copyable, ImplicitlyCopyable, Movable):
         self.op_type = copy.op_type
         self.srcs = copy.srcs.copy()
         self._any_op = copy._any_op
+
+    # Explicit so `ImplicitlyDeletable` doesn't recurse through `List[Pat]`.
+    def __del__(deinit self):
+        pass
 
     def matches(self, node: OpRef) -> Bool:
         if not self._any_op and node.op_type() != self.op_type:

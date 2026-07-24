@@ -20,8 +20,8 @@ mojo-compiler = "*"
 mojo-compiler = "*"
 
 [dependencies]
-mojo = "==1.0.0b3.dev2026062206"
-max = "==26.5.0.dev2026062206"
+mojo = ">=1.0.0b3.dev2026072406,<2"
+max = ">=26.5.0.dev2026072406,<27"
 numpy = "*" # (LazyLoader)
 
 [target.linux-64.dependencies]
@@ -34,7 +34,7 @@ MOGRAD_SO = "$CONDA_PREFIX/lib/mograd/libmograd_gpu.so"
 lint = { features = ["lint"], no-default-feature = true }
 
 [feature.lint.dependencies]
-mojo = "==1.0.0b3.dev2026062206"
+mojo = ">=1.0.0b3.dev2026072406,<2"
 
 # ===-------------------------------------------------------------------===#
 # Tasks

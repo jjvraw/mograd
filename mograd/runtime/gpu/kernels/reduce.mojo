@@ -1,11 +1,11 @@
 from std.utils import StaticTuple, IndexList
-from std.algorithm.backend.gpu.reduction import reduce_kernel
-from std.algorithm.functional import elementwise
+from max.algorithm.backend.gpu.reduction import reduce_kernel
+from max.algorithm.functional import elementwise
 from std.gpu.host import DeviceContext
 
 from layout import Coord
 
-from mograd.runtime.gpu.kernels.utils import strided_offset
+from mograd.runtime.gpu.kernels.utils import CE_BLOCK, strided_offset
 
 # ===-------------------------------------------------------------------===#
 # Sum
@@ -28,11 +28,11 @@ def sum[
         return a.load(strided_offset(coords[0], rank, inner, sa))._refine[_d]()
 
     @always_inline
-    def output_fn[_d: DType, w: SIMDSize, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
+    def output_fn[_d: DType, w: SIMDLength, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
         dst.store[width=w](coords[0], val[0]._refine[dtype]())
 
     @always_inline
-    def reduce_fn[ty: DType, w: SIMDSize, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
+    def reduce_fn[ty: DType, w: SIMDLength, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
         return v1 + v2
 
     comptime kernel = reduce_kernel[1, 0, 1, CE_BLOCK, input_fn, output_fn, reduce_fn, dtype, 1]
@@ -67,11 +67,11 @@ def mean[
         return a.load(strided_offset(coords[0], rank, inner, sa))._refine[_d]()
 
     @always_inline
-    def output_fn[_d: DType, w: SIMDSize, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
+    def output_fn[_d: DType, w: SIMDLength, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
         dst.store[width=w](coords[0], val[0]._refine[dtype]() * scale)
 
     @always_inline
-    def reduce_fn[ty: DType, w: SIMDSize, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
+    def reduce_fn[ty: DType, w: SIMDLength, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
         return v1 + v2
 
     comptime kernel = reduce_kernel[1, 0, 1, CE_BLOCK, input_fn, output_fn, reduce_fn, dtype, 1]
@@ -109,12 +109,12 @@ def mean_axis[
         return a.load(strided_offset(flat, rank, inner_sizes, sa))._refine[_d]()
 
     @always_inline
-    def output_fn[_d: DType, w: SIMDSize, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
+    def output_fn[_d: DType, w: SIMDLength, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
         var flat = coords[0] * inner + coords[2]
         dst.store[width=w](flat, val[0]._refine[dtype]() * scale)
 
     @always_inline
-    def reduce_fn[ty: DType, w: SIMDSize, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
+    def reduce_fn[ty: DType, w: SIMDLength, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
         return v1 + v2
 
     comptime kernel = reduce_kernel[3, 1, 1, CE_BLOCK, input_fn, output_fn, reduce_fn, dtype, 1]
@@ -152,13 +152,13 @@ def sum_axis[
         return a.load(strided_offset(flat, rank, inner_sizes, sa))._refine[_d]()
 
     @always_inline
-    def output_fn[_d: DType, w: SIMDSize, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
+    def output_fn[_d: DType, w: SIMDLength, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
         # coords: [outer_idx, 0, inner_idx]
         var flat = coords[0] * inner + coords[2]
         dst.store[width=w](flat, val[0]._refine[dtype]())
 
     @always_inline
-    def reduce_fn[ty: DType, w: SIMDSize, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
+    def reduce_fn[ty: DType, w: SIMDLength, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
         return v1 + v2
 
     comptime kernel = reduce_kernel[3, 1, 1, CE_BLOCK, input_fn, output_fn, reduce_fn, dtype, 1]

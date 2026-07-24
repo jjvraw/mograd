@@ -121,7 +121,7 @@ comptime Attrs = Dict[String, AttrVal]
 comptime AttrVal = Variant[Int, Float32, Bool, String]
 
 
-struct Op(Copyable, Movable, Writable):
+struct Op(Copyable, ImplicitlyDeletable, Movable, Writable):
     var op_type: OpType
     var layout: Layout
     var dtype: DType
@@ -173,6 +173,11 @@ struct Op(Copyable, Movable, Writable):
         self.buf = List[AnyBuffer]()
         self.attrs = attrs^
 
+    # Explicit so `ImplicitlyDeletable` doesn't recurse through
+    # `List[OpRef]` -> `ArcPointer[Op]`.
+    def __del__(deinit self):
+        pass
+
     def __str__(self) -> String:
         return self.op_type._name
 
@@ -185,7 +190,7 @@ struct Op(Copyable, Movable, Writable):
 # ===-------------------------------------------------------------------===#
 
 
-struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
+struct OpRef(Copyable, ImplicitlyCopyable, ImplicitlyDeletable, KeyElement, Movable, Writable):
     var _ptr: ArcPointer[Op]
 
     # ===-------------------------------------------------------------------===#

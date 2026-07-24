@@ -8,6 +8,22 @@ from std.os.env import getenv
 # ===-------------------------------------------------------------------===#
 
 
+struct CtxKeeper(Movable):
+    """Synchronizes the context when its last reference dies, so it is never
+    destroyed with work still enqueued."""
+
+    var ctx: DeviceContext
+
+    def __init__(out self, ctx: DeviceContext):
+        self.ctx = ctx.copy()
+
+    def __del__(deinit self):
+        try:
+            self.ctx.synchronize()
+        except:
+            pass
+
+
 def device(out device: Device) raises:
     device = Device()
 
@@ -16,6 +32,7 @@ def device(out device: Device) raises:
 struct Device(Copyable, ImplicitlyCopyable, Movable):
     var ctx: DeviceContext
     var handle: ArcPointer[OwnedDLHandle]
+    var keeper: ArcPointer[CtxKeeper]
 
     # ===-------------------------------------------------------------------===#
     # Lifecycle
@@ -29,11 +46,14 @@ struct Device(Copyable, ImplicitlyCopyable, Movable):
             raise Error("MOGRAD_SO not set: run `pixi run build-gpu` first")
 
         self.handle = ArcPointer(OwnedDLHandle(p))
+        self.keeper = ArcPointer(CtxKeeper(self.ctx))
 
     def __init__(out self, *, copy: Self):
         self.ctx = copy.ctx.copy()
         self.handle = copy.handle.copy()
+        self.keeper = copy.keeper.copy()
 
-    def __init__(out self, *, deinit take: Self):
-        self.ctx = take.ctx^
-        self.handle = take.handle^
+    def __init__(out self, *, deinit move: Self):
+        self.ctx = move.ctx^
+        self.handle = move.handle^
+        self.keeper = move.keeper^

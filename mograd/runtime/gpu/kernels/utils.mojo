@@ -1,10 +1,14 @@
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from std.gpu.host import DeviceContext
 
 from layout import Coord
 
 from mograd.buffer import AnyBuffer, BufferArm
+from mograd.device_ctx import Device
 from mograd.layout import Layout
+from mograd.op import OpRef
+
+comptime CE_BLOCK = 256
 
 # ===-------------------------------------------------------------------===#
 # Strided offset helpers
@@ -143,7 +147,7 @@ def dispatch_dtype[
     body: def[d: DType]() capturing raises -> None,
     float_only: Bool = False,
 ](dtype: DType) raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+    comptime for k in range(AnyBuffer.BufVariant.Ts.length):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
         comptime d = T.node_dtype
@@ -334,19 +338,17 @@ comptime FactoryKernel = def(
 comptime UnaryStrided = def(
     a: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
 
 
 @always_inline
-def unary_strided(
-    read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
-) raises -> AnyBuffer:
+def unary_strided(name: String, node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var layout = node.src(0).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[UnaryStrided](name)(
+    device.handle[].borrow().get_function[UnaryStrided](name)(
         inputs[0].data_ptr(),
         out.data_ptr(),
         layout,
@@ -359,8 +361,8 @@ def unary_strided(
 comptime StridedCopy = def(
     a: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read ld: Layout,
+    la: Layout,
+    ld: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
@@ -368,15 +370,15 @@ comptime StridedCopy = def(
 
 @always_inline
 def strided_copy(
-    read name: String,
-    read src_layout: Layout,
-    read dst_layout: Layout,
-    read src: AnyBuffer,
-    read dst: AnyBuffer,
-    read dtype: DType,
-    read device: Device,
+    name: String,
+    src_layout: Layout,
+    dst_layout: Layout,
+    src: AnyBuffer,
+    dst: AnyBuffer,
+    dtype: DType,
+    device: Device,
 ) raises:
-    device.handle[].get_function[StridedCopy](name)(
+    device.handle[].borrow().get_function[StridedCopy](name)(
         src.data_ptr(),
         dst.data_ptr(),
         src_layout,
@@ -389,7 +391,7 @@ def strided_copy(
 comptime AxisReduceKernel = def(
     a: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    layout: Layout,
     axis: Int,
     dtype: DType,
     ctx: DeviceContext,
@@ -397,13 +399,11 @@ comptime AxisReduceKernel = def(
 
 
 @always_inline
-def axis_reduce_strided(
-    read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
-) raises -> AnyBuffer:
+def axis_reduce_strided(name: String, node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var layout = node.src(0).layout()
     var axis = node.attr_int("axis")
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[AxisReduceKernel](name)(
+    device.handle[].borrow().get_function[AxisReduceKernel](name)(
         inputs[0].data_ptr(),
         out.data_ptr(),
         layout,
@@ -418,8 +418,8 @@ comptime MatmulStrided = def(
     a: UnsafePointer[NoneType, ImmutAnyOrigin],
     b: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    la: Layout,
+    lb: Layout,
     N: Int,
     dtype: DType,
     ctx: DeviceContext,
@@ -427,13 +427,11 @@ comptime MatmulStrided = def(
 
 
 @always_inline
-def matmul_strided(
-    read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
-) raises -> AnyBuffer:
+def matmul_strided(name: String, node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[MatmulStrided](name)(
+    device.handle[].borrow().get_function[MatmulStrided](name)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         out.data_ptr(),
@@ -451,8 +449,8 @@ comptime MatmulBiasStrided = def(
     b: UnsafePointer[NoneType, ImmutAnyOrigin],
     bias: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    la: Layout,
+    lb: Layout,
     N: Int,
     dtype: DType,
     ctx: DeviceContext,
@@ -460,13 +458,11 @@ comptime MatmulBiasStrided = def(
 
 
 @always_inline
-def matmul_bias_strided(
-    read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
-) raises -> AnyBuffer:
+def matmul_bias_strided(name: String, node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[MatmulBiasStrided](name)(
+    device.handle[].borrow().get_function[MatmulBiasStrided](name)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         inputs[2].data_ptr(),
@@ -484,8 +480,8 @@ comptime BinaryStrided = def(
     a: UnsafePointer[NoneType, ImmutAnyOrigin],
     b: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    la: Layout,
+    lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
@@ -560,7 +556,7 @@ comptime FlashAttnBwdKernel = def(
 
 @always_inline
 def flash_attn_fwd_dispatch(
-    read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+    name: String, node: OpRef, inputs: List[AnyBuffer], device: Device
 ) raises -> List[AnyBuffer]:
     # node.srcs = [Q, K, V, mask], all BSHD (B, S, H, D)
     # Returns [O_buf (BHSD), LSE_buf (BHS, float32)]
@@ -576,7 +572,7 @@ def flash_attn_fwd_dispatch(
         has_bias = node.attrs()["has_bias"][Bool]
     var dst = AnyBuffer.create(node.dtype(), device, node.numel())
     var lse = AnyBuffer.create(DType.float32, device, B * H * S)
-    device.handle[].get_function[FlashAttnFwdKernel](name)(
+    device.handle[].borrow().get_function[FlashAttnFwdKernel](name)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         inputs[2].data_ptr(),
@@ -598,7 +594,7 @@ def flash_attn_fwd_dispatch(
 
 @always_inline
 def flash_attn_bwd_dispatch(
-    read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+    name: String, node: OpRef, inputs: List[AnyBuffer], device: Device
 ) raises -> List[AnyBuffer]:
     # node.srcs = [dO, O, Q, K, V, mask, LSE]  attrs: scale
     var q_layout = node.src(2).layout()
@@ -615,7 +611,7 @@ def flash_attn_bwd_dispatch(
     var dq = AnyBuffer.create(node.dtype(), device, numel)
     var dk = AnyBuffer.create(node.dtype(), device, numel)
     var dv = AnyBuffer.create(node.dtype(), device, numel)
-    device.handle[].get_function[FlashAttnBwdKernel](name)(
+    device.handle[].borrow().get_function[FlashAttnBwdKernel](name)(
         inputs[0].data_ptr(),  # dO
         inputs[1].data_ptr(),  # O
         inputs[2].data_ptr(),  # Q
@@ -640,15 +636,13 @@ def flash_attn_bwd_dispatch(
 
 
 @always_inline
-def layer_norm_fwd_dispatch(
-    read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
-) raises -> AnyBuffer:
+def layer_norm_fwd_dispatch(name: String, node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var x_layout = node.src(0).layout()
     var cols = x_layout.shape(x_layout.rank() - 1)
     var rows = x_layout.numel() // cols
     var eps = node.attrs()["eps"][Float32]
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[LayerNormFwdKernel](name)(
+    device.handle[].borrow().get_function[LayerNormFwdKernel](name)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         inputs[2].data_ptr(),
@@ -664,7 +658,7 @@ def layer_norm_fwd_dispatch(
 
 @always_inline
 def layer_norm_bwd_dispatch(
-    read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+    name: String, node: OpRef, inputs: List[AnyBuffer], device: Device
 ) raises -> List[AnyBuffer]:
     # inputs: [dy, x, gamma]  attrs: eps, axis  srcs: [dy, x, gamma]
     var x_layout = node.src(1).layout()
@@ -675,7 +669,7 @@ def layer_norm_bwd_dispatch(
     var dx = AnyBuffer.create(node.dtype(), device, x_layout.numel())
     var dgamma = AnyBuffer.create(node.dtype(), device, gamma_layout.numel(), fill=0.0)
     var dbeta = AnyBuffer.create(node.dtype(), device, gamma_layout.numel(), fill=0.0)
-    device.handle[].get_function[LayerNormBwdKernel](name)(
+    device.handle[].borrow().get_function[LayerNormBwdKernel](name)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         inputs[2].data_ptr(),
@@ -692,13 +686,11 @@ def layer_norm_bwd_dispatch(
 
 
 @always_inline
-def binary_strided(
-    read name: String, read node: OpRef, read inputs: List[AnyBuffer], read device: Device
-) raises -> AnyBuffer:
+def binary_strided(name: String, node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> AnyBuffer:
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[BinaryStrided](name)(
+    device.handle[].borrow().get_function[BinaryStrided](name)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         out.data_ptr(),

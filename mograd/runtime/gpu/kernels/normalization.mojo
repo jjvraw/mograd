@@ -35,8 +35,8 @@ def layer_norm_fwd[
     @__copy_capture(x, cols)
     @always_inline
     @parameter
-    def input_fn[width: Int, rank: Int, alignment: Int](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        return x.load[width=width](Int(coords[0]) * cols + Int(coords[rank - 1]))
+    def input_fn[width: Int, alignment: Int](coords: Coord) -> SIMD[dtype, width]:
+        return x.load[width=width](Int(coords[0].value()) * cols + Int(coords[1].value()))
 
     @__copy_capture(gamma)
     @always_inline
@@ -47,10 +47,10 @@ def layer_norm_fwd[
     @__copy_capture(dst, cols)
     @always_inline
     @parameter
-    def output_fn[width: SIMDSize, rank: Int, alignment: Int](coords: IndexList[rank], val: SIMD[dtype, width]):
-        dst.store[width=width](Int(coords[0]) * cols + Int(coords[rank - 1]), val)
+    def output_fn[width: SIMDLength, alignment: Int](coords: Coord, val: SIMD[dtype, width]):
+        dst.store[width=width](Int(coords[0].value()) * cols + Int(coords[1].value()), val)
 
-    layer_norm_gpu[input_fn, gamma_fn, output_fn](IndexList[2](rows, cols), beta_tile, eps, ctx=ctx)
+    layer_norm_gpu[2, input_fn, gamma_fn, output_fn](Coord(rows, cols), beta_tile, eps.cast[DType.float32](), ctx=ctx)
 
 
 # ===-------------------------------------------------------------------===#
@@ -374,8 +374,8 @@ def layer_norm_bwd[
     var k2_block = min(256, ceildiv(cols, simd_width))
     var k2_grid = ceildiv(ceildiv(cols, simd_width), k2_block)
     ctx.enqueue_function[k2](
-        dg_tmp.unsafe_ptr().as_immutable(),
-        db_tmp.unsafe_ptr().as_immutable(),
+        dg_tmp.unsafe_ptr().as_imm(),
+        db_tmp.unsafe_ptr().as_imm(),
         dgamma,
         dbeta,
         num_groups,

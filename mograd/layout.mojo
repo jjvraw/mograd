@@ -241,14 +241,14 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Writable):
         var p = alloc[Int](self.rank())
         for i in range(self.rank()):
             p[i] = self.shape(i)
-        return p
+        return p.as_unsafe_any_origin()
 
     def stride_ptr(self) -> UnsafePointer[Int, MutAnyOrigin]:
         """Returns a heap-allocated array of `rank` ints containing the strides."""
         var p = alloc[Int](self.rank())
         for i in range(self.rank()):
             p[i] = self._strides.value(i)
-        return p
+        return p.as_unsafe_any_origin()
 
     def strides_buffer(self, ctx: DeviceContext) raises -> DeviceBuffer[DType.int64]:
         """Uploads strides to a device buffer."""
