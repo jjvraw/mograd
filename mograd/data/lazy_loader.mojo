@@ -101,7 +101,9 @@ struct LazyLoader:
             ids.append(stoi[Int(cp)])
 
         with open(out_path, "w") as outf:
-            var bytes = Span[Byte, origin_of(ids)](ptr=ids.unsafe_ptr().bitcast[Byte](), length=len(ids) * 8)
+            var bytes = Span[Byte, origin_of(ids)](
+                unsafe_ptr=Span(ids).unsafe_ptr().unsafe_bitcast[Byte](), length=len(ids) * 8
+            )
             outf.write_all(bytes)
 
     def file_len(self, path: String) raises -> Int:

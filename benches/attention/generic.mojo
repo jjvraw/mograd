@@ -22,7 +22,7 @@ from mograd.runtime.gpu.kernels.attention.generic import _flash_attn_fwd_launch,
 
 @always_inline
 def _imm[dtype: DType](buf: CacheBustingBuffer[dtype], i: Int) -> UnsafePointer[Scalar[dtype], ImmutAnyOrigin]:
-    return buf.offset_ptr(i).as_immutable().as_unsafe_any_origin()
+    return buf.offset_ptr(i).as_imm().as_unsafe_any_origin()
 
 
 @always_inline

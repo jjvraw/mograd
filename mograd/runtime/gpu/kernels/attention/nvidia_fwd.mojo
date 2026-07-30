@@ -20,6 +20,7 @@ from std.gpu.primitives.warp import shuffle_idx as warp_shuffle_idx
 from std.gpu.primitives.warp import shuffle_xor as warp_shuffle_xor
 from std.gpu.primitives.warp import sum as warp_sum
 from std.math import exp2, log, min
+from std.memory import stack_allocation
 from std.sys import size_of
 from std.utils import StaticTuple
 from layout import Layout, LayoutTensor
@@ -172,23 +173,23 @@ def flash_attn_fwd_kernel_mma[
         def process_tile(
             j_tile: Int, causal_diag: Bool
         ) {
-            read tid,
-            read S,
-            read D,
-            read HD,
-            read k,
-            read v,
-            read qkv_bh,
-            read smem,
-            read p_tile_smem,
-            read pv_op,
-            read q_frag,
-            read o_frag,
-            read q_row_base,
-            read frag_r0,
-            read frag_c0,
-            read frag_k0,
-            read scale_l2,
+            imm tid,
+            imm S,
+            imm D,
+            imm HD,
+            imm k,
+            imm v,
+            imm qkv_bh,
+            imm smem,
+            imm p_tile_smem,
+            imm pv_op,
+            imm q_frag,
+            imm o_frag,
+            imm q_row_base,
+            imm frag_r0,
+            imm frag_c0,
+            imm frag_k0,
+            imm scale_l2,
             mut rowmax0,
             mut rowmax1,
             mut rowsum0,
@@ -581,7 +582,7 @@ def flash_attn_fwd_kernel_mma[
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE_MMA)))
 # Cap registers so a third 128-thread block fits per SM: measured faster
 # despite the spills it forces (occupancy beats spills on this latency-bound kernel).
-@__llvm_metadata(`nvvm.maxnreg`=SIMDSize(FWD_HALF_MAXNREG))
+@__llvm_metadata(`nvvm.maxnreg`=SIMDLength(FWD_HALF_MAXNREG))
 @__name(
     t"flash_attn_fwd_mma_half_{dtype}_d{D_BUCKET}_causal_{CAUSAL}_bias_{HAS_BIAS}_ragged_{RAGGED_D}_ovs_{MASK_OVERSIZE}"
 )
@@ -713,26 +714,26 @@ def flash_attn_fwd_kernel_mma_half[
     def qk_tile(
         j_tile: Int, causal_diag: Bool, score: UnsafePointer[Float32, MutAnyOrigin]
     ) {
-        read tid,
-        read D,
-        read HD,
-        read S,
-        read k,
-        read qkv_bh,
-        read q_smem,
-        read k_smem,
-        read mask_smem,
-        read tile_i,
-        read warp_id,
-        read qk_op,
-        read q_row_base,
-        read frag_r0,
-        read frag_c0,
-        read scale_l2,
-        read mask,
-        read b,
-        read H,
-        read h,
+        imm tid,
+        imm D,
+        imm HD,
+        imm S,
+        imm k,
+        imm qkv_bh,
+        imm q_smem,
+        imm k_smem,
+        imm mask_smem,
+        imm tile_i,
+        imm warp_id,
+        imm qk_op,
+        imm q_row_base,
+        imm frag_r0,
+        imm frag_c0,
+        imm scale_l2,
+        imm mask,
+        imm b,
+        imm H,
+        imm h,
     }:
         comptime KV_VECS_F = Bc_HMMA * D_CHUNKS
         comptime if RAGGED_D:
@@ -862,18 +863,18 @@ def flash_attn_fwd_kernel_mma_half[
     def softmax_pv(
         j_tile: Int, score: UnsafePointer[Float32, MutAnyOrigin]
     ) {
-        read tid,
-        read D,
-        read HD,
-        read H,
-        read S,
-        read v,
-        read qkv_bh,
-        read v_smem,
-        read frag_r0,
-        read frag_c0,
-        read q_row_base,
-        read pv_op,
+        imm tid,
+        imm D,
+        imm HD,
+        imm H,
+        imm S,
+        imm v,
+        imm qkv_bh,
+        imm v_smem,
+        imm frag_r0,
+        imm frag_c0,
+        imm q_row_base,
+        imm pv_op,
         mut rowmax0,
         mut rowmax1,
         mut rowsum0,

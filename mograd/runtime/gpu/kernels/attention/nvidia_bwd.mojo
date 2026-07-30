@@ -1224,7 +1224,7 @@ def flash_attn_bwd_kernel_mma_half[
             var t_q_col = warp_r * MMA_M + (m_idx % 2) * 8
             var t_addr = p_swizzle(t_kv_row * P_CHUNKS + t_q_col // COPY_VEC) * COPY_VEC
             a_dst[0, 0] = rebind[type_of(a_dst[0, 0])](
-                ld_matrix[a_frag_size, transpose=True](ds_smem.as_immutable() + t_addr)
+                ld_matrix[a_frag_size, transpose=True](ds_smem.as_imm() + t_addr)
             )
             comptime if DW_TILES >= 8:
                 # Split the B-fragment batches in half to bound register

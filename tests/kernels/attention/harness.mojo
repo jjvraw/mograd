@@ -244,10 +244,10 @@ def run_fwd[
         ctx.synchronize()
 
         launch(
-            q_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            k_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            v_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            m_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+            q_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            k_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            v_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            m_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
             o_buf.unsafe_ptr().as_unsafe_any_origin(),
             lse_buf.unsafe_ptr().as_unsafe_any_origin(),
             B,
@@ -302,10 +302,10 @@ def run_bwd[
         ctx.synchronize()
 
         fwd_launch(
-            q_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            k_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            v_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            m_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+            q_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            k_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            v_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            m_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
             o_buf.unsafe_ptr().as_unsafe_any_origin(),
             lse_buf.unsafe_ptr().as_unsafe_any_origin(),
             B,
@@ -317,13 +317,13 @@ def run_bwd[
         )
         ctx.synchronize()
         bwd_launch(
-            dy_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            o_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            q_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            k_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            v_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            m_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            lse_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+            dy_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            o_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            q_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            k_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            v_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            m_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            lse_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
             dq_buf.unsafe_ptr().as_unsafe_any_origin(),
             dk_buf.unsafe_ptr().as_unsafe_any_origin(),
             dv_buf.unsafe_ptr().as_unsafe_any_origin(),

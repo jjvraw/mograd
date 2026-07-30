@@ -7,7 +7,7 @@ from mograd import Device
 from mograd.op import AttrVal, Op, OpRef, OpType
 from mograd.op import concat as op_concat
 from mograd.layout import Layout
-from mograd.buffer import AnyBuffer
+from mograd.buffer import AnyBuffer, Buffer
 from mograd.runtime import NativeRuntime
 from mograd.scheduler import SchedulerRules
 from mograd.grad import Grad
@@ -17,13 +17,30 @@ from mograd.grad import Grad
 # ===-------------------------------------------------------------------===#
 
 
-struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
+struct _GradBox(Copyable, ImplicitlyCopyable, ImplicitlyDeletable, Movable):
+    """Boxes `Optional[Tensor]` with explicit lifecycle conformances so
+    `ArcPointer[_GradBox]` doesn't recurse through `Tensor` when the compiler
+    checks `ArcPointer`'s `ImplicitlyDeletable & Movable` parameter bound."""
+
+    var val: Optional[Tensor]
+
+    def __init__(out self, var val: Optional[Tensor]):
+        self.val = val^
+
+    def __init__(out self, *, copy: Self):
+        self.val = copy.val.copy()
+
+    def __del__(deinit self):
+        pass
+
+
+struct Tensor(Copyable, ImplicitlyCopyable, ImplicitlyDeletable, Movable, Writable):
     var op: OpRef
     var dtype: DType
     var requires_grad: Bool
     # TODO: Use ArcPointer when Optional[ArcPointer] is resolved:
     # https://github.com/modular/modular/issues/3293
-    var _grad: ArcPointer[Optional[Tensor]]
+    var _grad: ArcPointer[_GradBox]
     var device: Optional[Device]
 
     # ===-------------------------------------------------------------------===#
@@ -39,7 +56,7 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         self.device = device
         self.op = op^
         self.requires_grad = requires_grad
-        self._grad = ArcPointer(Optional[Tensor](None))
+        self._grad = ArcPointer(_GradBox(None))
         self.dtype = self.op.dtype()
 
     def __init__[
@@ -50,7 +67,12 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         self.op = OpRef(Op(OpType.BUFFER, shape, D, [], b^))
         self.requires_grad = requires_grad
         self.dtype = D
-        self._grad = ArcPointer(Optional[Tensor](None))
+        self._grad = ArcPointer(_GradBox(None))
+
+    # Explicit so `ImplicitlyDeletable` doesn't recurse through
+    # `ArcPointer[_GradBox]`.
+    def __del__(deinit self):
+        pass
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
