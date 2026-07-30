@@ -19,7 +19,32 @@ providing:
     - Custom Mojo, and [Modular MAX](https://www.modular.com/open-source-max) powered 
     kernels
 
-### Design
+---
+
+A minimal training step, see [examples/](./examples) for complete models: 
+
+```mojo
+import mograd.nn as nn
+from mograd import Tensor, Device
+
+def main() raises:
+var device = Device()
+var model = nn.Linear(784, 10)
+var opt = nn.SGD(model.parameters(), lr=0.01)
+
+var x = Tensor.randn(device, (32, 784))
+var y = Tensor.randint(device, (32,), 0, 10)
+
+var logits = model(x)
+var loss = logits.cross_entropy(y.one_hot(10).cast(DType.float32))
+
+var grads = loss.gradient(opt.params())
+opt.step(grads)
+
+print("loss:", loss.item())
+```
+
+## Design
 
 The intention is to keep the graph IR between the Tensor API and kernels thin such that
 `PatternMatcher` drives all graph transformations through rewrite passes. For instance, 
