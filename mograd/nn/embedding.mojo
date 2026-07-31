@@ -8,7 +8,7 @@ from mograd.nn.module import Module, ModuleParam
 # ===-------------------------------------------------------------------===#
 
 
-struct Embedding(Copyable, ImplicitlyCopyable, Module, Movable):
+struct Embedding(Module):
     var num_embeddings: Int
     var embedding_dim: Int
     var _weight: ArcPointer[Optional[Tensor]]

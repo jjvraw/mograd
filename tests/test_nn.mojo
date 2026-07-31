@@ -33,12 +33,12 @@ def test_sgd_updates_weights() raises:
     var opt = nn.SGD(l.parameters(), lr=Float32(0.1))
     var x = Tensor(device, [Float32(1), 2, 3, 4], (1, 4))
     var logits = l(x)
-    var params = opt.params()
+    var params = opt.parameters()
     var before = params[0].to_list()
     var loss = logits.sum()
     var grads = loss.gradient(params)
     opt.step(grads)
-    var after = opt.params()[0].to_list()
+    var after = opt.parameters()[0].to_list()
     var changed = False
     for i in range(len(before)):
         if abs(before[i] - after[i]) > Float32(1e-6):
@@ -96,7 +96,7 @@ def test_sgd_arc_sharing() raises:
     var opt = nn.SGD(l.parameters(), lr=Float32(0.1))
     var x = Tensor(device, [Float32(1), 2, 3, 4], (1, 4))
     _ = l(x)
-    var params = opt.params()
+    var params = opt.parameters()
     var before = l._weight[].value().to_list()
     var loss = l(x).sum()
     var grads = loss.gradient(params)
@@ -177,7 +177,7 @@ def test_adam_updates_weights() raises:
     var opt = nn.Adam(l.parameters(), lr=Float32(0.1))
     var x = Tensor(device, [Float32(1), 2, 3, 4], (1, 4))
     var loss = l(x).sum()
-    var grads = loss.gradient(opt.params())
+    var grads = loss.gradient(opt.parameters())
     var before = l._weight[].value().to_list()
     opt.step(grads)
     var after = l._weight[].value().to_list()
@@ -195,7 +195,7 @@ def test_adam_moments_initialised_on_first_step() raises:
     var opt = nn.Adam(l.parameters(), lr=Float32(0.01))
     var x = Tensor(device, [Float32(1), 1], (1, 2))
     var loss = l(x).sum()
-    var grads = loss.gradient(opt.params())
+    var grads = loss.gradient(opt.parameters())
     opt.step(grads)
     var m_set = False
     if opt._m[0]:
@@ -216,7 +216,7 @@ def test_adam_step_count_increments() raises:
     var x = Tensor(device, [Float32(1), 1], (1, 2))
     for _ in range(3):
         var loss = l(x).sum()
-        var grads = loss.gradient(opt.params())
+        var grads = loss.gradient(opt.parameters())
         opt.step(grads)
     if opt._step != 3:
         raise Error("step count should be 3, got " + String(opt._step))
@@ -234,10 +234,10 @@ def test_adam_weight_decay_changes_moments() raises:
     var opt_wd = nn.Adam(l_wd.parameters(), lr=Float32(0.01), weight_decay=Float32(0.1))
 
     var loss1 = l_no_wd(x).sum()
-    opt_no_wd.step(loss1.gradient(opt_no_wd.params()))
+    opt_no_wd.step(loss1.gradient(opt_no_wd.parameters()))
 
     var loss2 = l_wd(x).sum()
-    opt_wd.step(loss2.gradient(opt_wd.params()))
+    opt_wd.step(loss2.gradient(opt_wd.parameters()))
 
     var m_no_wd = opt_no_wd._m[0].value().to_list()
     var m_wd = opt_wd._m[0].value().to_list()
@@ -262,9 +262,9 @@ def test_adamw_shrinks_weights() raises:
 
     for _ in range(5):
         var loss1 = l_adam(x).sum()
-        opt_adam.step(loss1.gradient(opt_adam.params()))
+        opt_adam.step(loss1.gradient(opt_adam.parameters()))
         var loss2 = l_adamw(x).sum()
-        opt_adamw.step(loss2.gradient(opt_adamw.params()))
+        opt_adamw.step(loss2.gradient(opt_adamw.parameters()))
 
     var w_adam = l_adam._weight[].value().to_list()
     var w_adamw = l_adamw._weight[].value().to_list()

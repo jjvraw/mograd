@@ -1,8 +1,9 @@
 from mograd.tensor import Tensor
 from mograd.nn.module import ModuleParam
+from mograd.nn.optimizer import Optimizer
 
 
-struct SGD(Copyable, Movable):
+struct SGD(Optimizer):
     var lr: Float32
     var _weights: List[ModuleParam]
 
@@ -10,12 +11,15 @@ struct SGD(Copyable, Movable):
         self.lr = lr
         self._weights = params^
 
-    def params(self) -> List[Tensor]:
+    def parameters(self) -> List[Tensor]:
         var ps = List[Tensor]()
         for i in range(len(self._weights)):
             if self._weights[i][]:
                 ps.append(self._weights[i][].value())
         return ps^
+
+    def set_lr(mut self, lr: Float32):
+        self.lr = lr
 
     def step(mut self, grads: List[Tensor]) raises:
         var updates = List[Tensor]()

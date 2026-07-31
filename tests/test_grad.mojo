@@ -518,13 +518,13 @@ def test_simple_mlp_grad() raises:
     var h1 = l1(x).relu()
     var h2 = l2(h1).relu()
     var loss = l3(h2).cross_entropy(labels.one_hot(3).cast(DType.float32))
-    var params = opt.params()
+    var params = opt.parameters()
     var grads = loss.gradient(params)
 
     var w1_data = l1._weight[].value().to_list()
     var w2_data = l2._weight[].value().to_list()
     var w3_data = l3._weight[].value().to_list()
-    # opt.params() interleaves each layer's bias after its weight:
+    # opt.parameters() interleaves each layer's bias after its weight:
     # [w1, b1, w2, b2, w3, b3], so the weight grads sit at indices 0, 2, 4.
     assert_allclose(grads[0], numerical_grad[fwd_w1](device, w1_data, (8, 4)), tol=0.05)
     assert_allclose(grads[2], numerical_grad[fwd_w2](device, w2_data, (4, 8)), tol=0.05)

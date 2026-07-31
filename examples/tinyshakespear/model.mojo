@@ -7,7 +7,7 @@ import mograd.nn as nn
 from mograd.nn import Module, ModuleParam
 
 
-struct TinyTransformer(Module, Movable):
+struct TinyTransformer(Module):
     var embed: nn.Embedding
     var blocks: List[TransformerBlock]
     var lm_head: nn.Linear
@@ -49,7 +49,7 @@ struct TinyTransformer(Module, Movable):
         return tokens^
 
 
-struct TransformerBlock(Module, Movable):
+struct TransformerBlock(Module):
     var attn: MultiHeadAttention
     var ffn: FFN
     var norm1: nn.LayerNorm
@@ -73,7 +73,7 @@ struct TransformerBlock(Module, Movable):
         return ps^
 
 
-struct MultiHeadAttention(Module, Movable):
+struct MultiHeadAttention(Module):
     var d_model: Int
     var n_heads: Int
     var d_head: Int
@@ -112,7 +112,7 @@ struct MultiHeadAttention(Module, Movable):
         return ps^
 
 
-struct FFN(Module, Movable):
+struct FFN(Module):
     var W1: nn.Linear
     var W2: nn.Linear
 

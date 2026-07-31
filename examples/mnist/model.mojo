@@ -1,9 +1,9 @@
 from mograd import Tensor
 import mograd.nn as nn
-from mograd.nn.module import ModuleParam
+from mograd.nn.module import Module, ModuleParam
 
 
-struct MLP:
+struct MLP(Module):
     var l1: nn.Linear
     var l2: nn.Linear
     var l3: nn.Linear

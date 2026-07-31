@@ -9,7 +9,7 @@ from mograd.nn.module import Module, ModuleParam
 # ===-------------------------------------------------------------------===#
 
 
-struct Linear(Copyable, ImplicitlyCopyable, Module, Movable):
+struct Linear(Module):
     var in_features: Int
     var out_features: Int
     var use_bias: Bool

@@ -40,7 +40,7 @@ def main() raises:
             y.reshape((-1,)).one_hot(VOCAB_SIZE).cast(DType.float32)
         )
 
-        var grads = loss.gradient(opt.params())
+        var grads = loss.gradient(opt.parameters())
         opt.step(grads)
 
         if step % 100 == 0:

@@ -5,7 +5,7 @@ from mograd.tensor import Tensor
 comptime ModuleParam = ArcPointer[Optional[Tensor]]
 
 
-trait Module:
+trait Module(Movable):
     def parameters(mut self) -> List[ModuleParam]:
         ...
 

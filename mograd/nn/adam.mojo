@@ -1,5 +1,6 @@
 from mograd.tensor import Tensor
 from mograd.nn.module import ModuleParam
+from mograd.nn.optimizer import Optimizer
 
 
 def _adam_step[
@@ -77,7 +78,7 @@ def _adam_step[
         v[idx] = Tensor.from_buffer(new_vs[j].device.value(), new_vs[j].op.layout().copy(), bufs[2 * n + j].copy())
 
 
-struct Adam(Copyable, Movable):
+struct Adam(Optimizer):
     var lr: Float32
     var beta1: Float32
     var beta2: Float32
@@ -110,7 +111,7 @@ struct Adam(Copyable, Movable):
             self._m.append(Optional[Tensor](None))
             self._v.append(Optional[Tensor](None))
 
-    def params(self) -> List[Tensor]:
+    def parameters(self) -> List[Tensor]:
         var ps = List[Tensor]()
         for i in range(len(self._weights)):
             if self._weights[i][]:
@@ -136,7 +137,7 @@ struct Adam(Copyable, Movable):
         self.lr = lr
 
 
-struct AdamW(Copyable, Movable):
+struct AdamW(Optimizer):
     var lr: Float32
     var beta1: Float32
     var beta2: Float32
@@ -169,7 +170,7 @@ struct AdamW(Copyable, Movable):
             self._m.append(Optional[Tensor](None))
             self._v.append(Optional[Tensor](None))
 
-    def params(self) -> List[Tensor]:
+    def parameters(self) -> List[Tensor]:
         var ps = List[Tensor]()
         for i in range(len(self._weights)):
             if self._weights[i][]:

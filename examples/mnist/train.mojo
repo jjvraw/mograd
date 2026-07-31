@@ -35,7 +35,7 @@ def main() raises:
         var logits = model(x)
         var loss = logits.cross_entropy(y.one_hot(10).cast(DType.float32))
 
-        var params = opt.params()
+        var params = opt.parameters()
         var grads = loss.gradient(params)
         opt.step(grads)
 

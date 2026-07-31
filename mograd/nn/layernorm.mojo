@@ -4,7 +4,7 @@ from mograd.tensor import Tensor, Device
 from mograd.nn.module import Module, ModuleParam
 
 
-struct LayerNorm(Copyable, ImplicitlyCopyable, Module, Movable):
+struct LayerNorm(Module):
     var d_model: Int
     var eps: Float32
     var _weight: ArcPointer[Optional[Tensor]]

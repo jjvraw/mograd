@@ -1,4 +1,5 @@
 from .module import Module, ModuleParam
+from .optimizer import Optimizer
 from .embedding import Embedding
 from .layernorm import LayerNorm
 from .linear import Linear
