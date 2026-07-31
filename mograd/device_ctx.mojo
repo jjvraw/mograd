@@ -37,3 +37,7 @@ struct Device(Copyable, ImplicitlyCopyable, Movable):
     def __init__(out self, *, deinit take: Self):
         self.ctx = take.ctx^
         self.handle = take.handle^
+
+    def get_function[T: TrivialRegisterPassable](self, var name: String) -> T:
+        """Looks up an exported kernel in the mograd GPU library."""
+        return self.handle[].get_function[T](name^)

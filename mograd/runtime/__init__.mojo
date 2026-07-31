@@ -231,7 +231,7 @@ def randn(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[A
     params[1] = node.attr("std")
     params[2] = node.attr("seed")
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[FactoryKernel]("mograd_randn")(
+    device.get_function[FactoryKernel]("mograd_randn")(
         params.bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
         node.numel(),
@@ -248,7 +248,7 @@ def uniform(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List
     params[1] = node.attr("high")
     params[2] = node.attr("seed")
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[FactoryKernel]("mograd_uniform")(
+    device.get_function[FactoryKernel]("mograd_uniform")(
         params.bitcast[NoneType]().as_unsafe_any_origin(), out.data_ptr(), node.numel(), node.dtype(), device.ctx
     )
     params.free()
@@ -271,7 +271,7 @@ def full(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[An
     var v = alloc[Float32](1)
     v[0] = node.attr("value")
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[FactoryKernel]("mograd_full")(
+    device.get_function[FactoryKernel]("mograd_full")(
         v.bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
         node.numel(),
@@ -290,7 +290,7 @@ def scatter_add(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> 
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel(), fill=0.0)
-    device.handle[].get_function[BinaryStrided]("mograd_scatter_add")(
+    device.get_function[BinaryStrided]("mograd_scatter_add")(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         out.data_ptr(),
@@ -306,7 +306,7 @@ def one_hot(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List
     var la = node.src(0).layout()
     var ld = node.layout()
     var out = AnyBuffer.create(node.dtype(), device, ld.numel())
-    device.handle[].get_function[OneHotOp]("mograd_one_hot")(
+    device.get_function[OneHotOp]("mograd_one_hot")(
         inputs[0].data_ptr(),
         out.data_ptr(),
         node.src(0).dtype(),
@@ -346,7 +346,7 @@ def relu(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[An
 def cast(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var layout = node.src(0).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[CastOp]("mograd_cast")(
+    device.get_function[CastOp]("mograd_cast")(
         inputs[0].data_ptr(),
         out.data_ptr(),
         layout,
@@ -368,7 +368,7 @@ def add(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[Any
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
     if la.is_contiguous() and lb.is_contiguous():
         null = alloc[Int64](1)
-        device.handle[].get_function[BinaryElementWise]("mograd_add")(
+        device.get_function[BinaryElementWise]("mograd_add")(
             inputs[0].data_ptr(),
             inputs[1].data_ptr(),
             out.data_ptr(),
@@ -403,7 +403,7 @@ def scale(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[A
     var s = alloc[Float32](1)
     s[0] = node.attrs()["scalar"][Float32]
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[BinaryScalarElementWiseStrided]("mograd_scale")(
+    device.get_function[BinaryScalarElementWiseStrided]("mograd_scale")(
         inputs[0].data_ptr(),
         s.bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
@@ -418,7 +418,7 @@ def slice_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> L
     var slice_layout = node.src(1).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel(), fill=0.0)
     var out_view = out.view(slice_layout)
-    device.handle[].get_function[UnaryStrided]("mograd_slice_grad")(
+    device.get_function[UnaryStrided]("mograd_slice_grad")(
         inputs[0].data_ptr(),
         out_view.data_ptr(),
         slice_layout,
@@ -529,7 +529,7 @@ def concat(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[
 def triu(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
     var diagonal = node.attr_int("diagonal")
-    device.handle[].get_function[TriuOp]("mograd_triu")(
+    device.get_function[TriuOp]("mograd_triu")(
         inputs[0].data_ptr(),
         out.data_ptr(),
         node.src(0).layout(),
@@ -570,7 +570,7 @@ def transpose(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> Li
     p[0] = Float32(node.src(0).layout().shape(0))
     p[1] = Float32(node.src(0).layout().shape(1))
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[BinaryOp]("mograd_transpose")(
+    device.get_function[BinaryOp]("mograd_transpose")(
         inputs[0].data_ptr(),
         p.bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
@@ -634,7 +634,7 @@ def cross_entropy_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) rai
     var name = "mograd_cross_entropy_grad"
     if not (la.is_contiguous() and lb.is_contiguous()):
         name = "mograd_cross_entropy_grad_strided"
-    device.handle[].get_function[TernaryStrided](name)(
+    device.get_function[TernaryStrided](name)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         inputs[2].data_ptr(),
