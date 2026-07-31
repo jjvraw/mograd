@@ -1127,6 +1127,34 @@ def test_flash_attn_bwd_shapes() raises:
     assert_true(grads[2].shape() == V_bshd.shape())
 
 
+# ===-------------------------------------------------------------------===#
+# Disconnected targets
+# ===-------------------------------------------------------------------===#
+
+
+def test_grad_of_disconnected_target_is_zero() raises:
+    # `unused` never reaches the loss, so its gradient is zero. Returning an
+    # uninitialised buffer here would feed an optimizer whatever bytes the
+    # allocator happened to hand back.
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2, 3, 4], (2, 2), requires_grad=True)
+    var unused = Tensor(device, [Float32(5), 6, 7, 8], (2, 2), requires_grad=True)
+    var loss = (x * x).sum()
+    var grads = loss.gradient([x, unused])
+    assert_allclose(grads[0], [Float32(2), 4, 6, 8])
+    assert_allclose(grads[1], [Float32(0), 0, 0, 0])
+
+
+def test_grad_of_disconnected_target_keeps_dtype() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 2], (2,), requires_grad=True)
+    var unused = Tensor(device, [Float16(3), 4], (2,), requires_grad=True)
+    var loss = (x * x).sum()
+    var grads = loss.gradient([unused])
+    assert_true(grads[0].dtype == DType.float16)
+    assert_allclose(grads[0], [Float16(0), 0])
+
+
 def main() raises:
     comptime assert has_accelerator(), "GPU required to run gradient tests"
     TestSuite.discover_tests[__functions_in_module()]().run()
