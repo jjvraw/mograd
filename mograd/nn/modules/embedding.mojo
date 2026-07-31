@@ -1,7 +1,7 @@
 from std.memory import ArcPointer
 
 from mograd.tensor import Tensor, Device
-from mograd.nn.module import Module, ModuleParam
+from mograd.nn.modules import Module, ModuleParam
 
 # ===-------------------------------------------------------------------===#
 # Embedding

@@ -1,6 +1,6 @@
 from mograd import Tensor
 import mograd.nn as nn
-from mograd.nn.module import Module, ModuleParam
+from mograd.nn import Module, ModuleParam
 
 
 struct MLP(Module):

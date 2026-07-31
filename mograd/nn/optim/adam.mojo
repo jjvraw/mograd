@@ -1,6 +1,6 @@
 from mograd.tensor import Tensor
-from mograd.nn.module import ModuleParam
-from mograd.nn.optimizer import Optimizer
+from mograd.nn.modules import ModuleParam
+from mograd.nn.optim import Optimizer
 
 
 def _adam_step[
