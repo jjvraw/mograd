@@ -56,6 +56,7 @@ test-ops                = { cmd = "mojo -I . tests/test_ops.mojo",              
 test-data               = { cmd = "mojo -I . tests/test_data.mojo",             depends-on = ["ensure-gpu"] }
 test-non-contiguous     = { cmd = "mojo -I . tests/test_non_contiguous.mojo",   depends-on = ["ensure-gpu"] }
 test-scheduler          = { cmd = "mojo -I . tests/test_scheduler.mojo" }
+test-debug              = { cmd = "mojo -D MOGRAD_DEBUG=3 -I . tests/test_debug.mojo", depends-on = ["ensure-gpu"] }
 test-gpu                = { depends-on = [  "test-grad",
                                             "test-nn",
                                             "test-ops",

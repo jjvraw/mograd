@@ -1,5 +1,6 @@
 from std.memory import ArcPointer
 from std.gpu.host import DeviceContext, DeviceBuffer
+from std.sys import size_of
 from std.utils import Variant
 
 from mograd.layout import Layout
@@ -126,6 +127,16 @@ struct AnyBuffer(Copyable, Movable):
             comptime d = T.node_dtype
             if self._buf.isa[T]():
                 return d
+        raise Error("Unsupported dtype")
+
+    def size_bytes(self) raises -> Int:
+        """Physical size of the underlying device allocation."""
+        comptime for k in range(Self.BufVariant.Ts.size):
+            comptime T = Self.BufVariant.Ts[k]
+            comptime assert conforms_to(T, BufferArm)
+            comptime d = T.node_dtype
+            if self._buf.isa[T]():
+                return len(self.unsafe_get[d]().buf()) * size_of[Scalar[d]]()
         raise Error("Unsupported dtype")
 
     def item[dtype: DType](self) raises -> Scalar[dtype]:
