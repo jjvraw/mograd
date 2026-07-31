@@ -21,9 +21,6 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
     var op: OpRef
     var dtype: DType
     var requires_grad: Bool
-    # TODO: Use ArcPointer when Optional[ArcPointer] is resolved:
-    # https://github.com/modular/modular/issues/3293
-    var _grad: ArcPointer[Optional[Tensor]]
     var device: Optional[Device]
 
     # ===-------------------------------------------------------------------===#
@@ -39,7 +36,6 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         self.device = device
         self.op = op^
         self.requires_grad = requires_grad
-        self._grad = ArcPointer(Optional[Tensor](None))
         self.dtype = self.op.dtype()
 
     def __init__[
@@ -50,7 +46,6 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         self.op = OpRef(Op(OpType.BUFFER, shape, D, [], b^))
         self.requires_grad = requires_grad
         self.dtype = D
-        self._grad = ArcPointer(Optional[Tensor](None))
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
