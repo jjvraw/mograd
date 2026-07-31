@@ -1,4 +1,4 @@
-from .module import Module, ModuleParam
+from .module import Module, Parameter
 
 from .embedding import Embedding
 from .linear import Linear

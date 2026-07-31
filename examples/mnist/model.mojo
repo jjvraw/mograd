@@ -1,6 +1,6 @@
 from mograd import Tensor
 import mograd.nn as nn
-from mograd.nn import Module, ModuleParam
+from mograd.nn import Module, Parameter
 
 
 struct MLP(Module):
@@ -19,7 +19,7 @@ struct MLP(Module):
         h = self.l2(h).relu()
         return self.l3(h)
 
-    def parameters(mut self) -> List[ModuleParam]:
+    def parameters(mut self) -> List[Parameter]:
         var ps = self.l1.parameters()
         ps += self.l2.parameters()
         ps += self.l3.parameters()

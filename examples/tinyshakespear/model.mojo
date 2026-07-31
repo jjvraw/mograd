@@ -4,7 +4,7 @@ from std.utils.numerics import neg_inf
 
 from mograd import Tensor, Device
 import mograd.nn as nn
-from mograd.nn import Module, ModuleParam
+from mograd.nn import Module, Parameter
 
 
 struct TinyTransformer(Module):
@@ -25,7 +25,7 @@ struct TinyTransformer(Module):
             h = self.blocks[i](h)
         return self.lm_head(h)
 
-    def parameters(mut self) -> List[ModuleParam]:
+    def parameters(mut self) -> List[Parameter]:
         var ps = self.embed.parameters()
         for i in range(len(self.blocks)):
             ps += self.blocks[i].parameters()
@@ -65,7 +65,7 @@ struct TransformerBlock(Module):
         var h = x + self.attn(self.norm1(x))
         return h + self.ffn(self.norm2(h))
 
-    def parameters(mut self) -> List[ModuleParam]:
+    def parameters(mut self) -> List[Parameter]:
         var ps = self.attn.parameters()
         ps += self.ffn.parameters()
         ps += self.norm1.parameters()
@@ -104,7 +104,7 @@ struct MultiHeadAttention(Module):
         var ctx = Q.scaled_dot_product_attention(K, V, is_causal=True).transpose(1, 2).reshape((B, T, self.d_model))
         return self.W_O(ctx)
 
-    def parameters(mut self) -> List[ModuleParam]:
+    def parameters(mut self) -> List[Parameter]:
         var ps = self.W_Q.parameters()
         ps += self.W_K.parameters()
         ps += self.W_V.parameters()
@@ -123,7 +123,7 @@ struct FFN(Module):
     def __call__(mut self, x: Tensor) raises -> Tensor:
         return self.W2(self.W1(x).relu())
 
-    def parameters(mut self) -> List[ModuleParam]:
+    def parameters(mut self) -> List[Parameter]:
         var ps = self.W1.parameters()
         ps += self.W2.parameters()
         return ps^

@@ -1,7 +1,5 @@
-from std.memory import ArcPointer
-
 from mograd.tensor import Tensor, Device
-from mograd.nn.modules import Module, ModuleParam
+from mograd.nn.modules import Module, Parameter
 
 # ===-------------------------------------------------------------------===#
 # Embedding
@@ -11,27 +9,29 @@ from mograd.nn.modules import Module, ModuleParam
 struct Embedding(Module):
     var num_embeddings: Int
     var embedding_dim: Int
-    var _weight: ArcPointer[Optional[Tensor]]
+    var weight: Parameter
 
     def __init__(out self, num_embeddings: Int, embedding_dim: Int):
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
-        self._weight = ArcPointer(Optional[Tensor](None))
+        self.weight = Parameter()
 
     def __call__(mut self, indices: Tensor) raises -> Tensor:
-        if not self._weight[]:
+        if not self.weight:
             if not indices.device:
                 raise Error("Embedding requires a device context on first call")
             var seed = UInt32(self.num_embeddings * self.embedding_dim)
-            self._weight[] = Tensor.randn(
-                indices.device.value(),
-                (self.num_embeddings, self.embedding_dim),
-                seed=seed,
-                requires_grad=True,
+            self.weight.set(
+                Tensor.randn(
+                    indices.device.value(),
+                    (self.num_embeddings, self.embedding_dim),
+                    seed=seed,
+                    requires_grad=True,
+                )
             )
-        return self._weight[].value().gather(indices)
+        return self.weight.tensor().gather(indices)
 
-    def parameters(mut self) -> List[ModuleParam]:
-        var ps = List[ModuleParam]()
-        ps.append(self._weight)
+    def parameters(mut self) -> List[Parameter]:
+        var ps = List[Parameter]()
+        ps.append(self.weight)
         return ps^

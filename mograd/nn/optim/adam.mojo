@@ -1,12 +1,12 @@
 from mograd.tensor import Tensor
-from mograd.nn.modules import ModuleParam
+from mograd.nn.modules import Parameter
 from mograd.nn.optim import Optimizer
 
 
 def _adam_step[
     decoupled_wd: Bool
 ](
-    mut weights: List[ModuleParam],
+    mut weights: List[Parameter],
     mut m: List[Optional[Tensor]],
     mut v: List[Optional[Tensor]],
     grads: List[Tensor],
@@ -27,10 +27,10 @@ def _adam_step[
 
     var grad_idx = 0
     for i in range(len(weights)):
-        if not weights[i][]:
+        if not weights[i]:
             continue
 
-        var w = weights[i][].value()
+        var w = weights[i].tensor()
         var g = grads[grad_idx]
         grad_idx += 1
 
@@ -73,7 +73,7 @@ def _adam_step[
     var bufs = Tensor.values(all_tensors)
     for j in range(n):
         var idx = indices[j]
-        weights[idx][] = Tensor.from_buffer(updates[j].device.value(), updates[j].op.layout().copy(), bufs[j].copy())
+        weights[idx].set(Tensor.from_buffer(updates[j].device.value(), updates[j].op.layout().copy(), bufs[j].copy()))
         m[idx] = Tensor.from_buffer(new_ms[j].device.value(), new_ms[j].op.layout().copy(), bufs[n + j].copy())
         v[idx] = Tensor.from_buffer(new_vs[j].device.value(), new_vs[j].op.layout().copy(), bufs[2 * n + j].copy())
 
@@ -84,14 +84,14 @@ struct Adam(Optimizer):
     var beta2: Float32
     var eps: Float32
     var weight_decay: Float32
-    var _weights: List[ModuleParam]
-    var _m: List[Optional[Tensor]]
-    var _v: List[Optional[Tensor]]
-    var _step: Int
+    var weights: List[Parameter]
+    var m: List[Optional[Tensor]]
+    var v: List[Optional[Tensor]]
+    var t: Int
 
     def __init__(
         out self,
-        var params: List[ModuleParam],
+        var params: List[Parameter],
         lr: Float32 = 1e-3,
         beta1: Float32 = 0.9,
         beta2: Float32 = 0.999,
@@ -103,34 +103,34 @@ struct Adam(Optimizer):
         self.beta2 = beta2
         self.eps = eps
         self.weight_decay = weight_decay
-        self._step = 0
-        self._weights = params^
-        self._m = List[Optional[Tensor]]()
-        self._v = List[Optional[Tensor]]()
-        for _ in range(len(self._weights)):
-            self._m.append(Optional[Tensor](None))
-            self._v.append(Optional[Tensor](None))
+        self.t = 0
+        self.weights = params^
+        self.m = List[Optional[Tensor]]()
+        self.v = List[Optional[Tensor]]()
+        for _ in range(len(self.weights)):
+            self.m.append(Optional[Tensor](None))
+            self.v.append(Optional[Tensor](None))
 
     def parameters(self) -> List[Tensor]:
         var ps = List[Tensor]()
-        for i in range(len(self._weights)):
-            if self._weights[i][]:
-                ps.append(self._weights[i][].value())
+        for i in range(len(self.weights)):
+            if self.weights[i]:
+                ps.append(self.weights[i].tensor())
         return ps^
 
     def step(mut self, grads: List[Tensor]) raises:
-        self._step += 1
+        self.t += 1
         _adam_step[False](
-            self._weights,
-            self._m,
-            self._v,
+            self.weights,
+            self.m,
+            self.v,
             grads,
             self.lr,
             self.beta1,
             self.beta2,
             self.eps,
             self.weight_decay,
-            self._step,
+            self.t,
         )
 
     def set_lr(mut self, lr: Float32):
@@ -143,14 +143,14 @@ struct AdamW(Optimizer):
     var beta2: Float32
     var eps: Float32
     var weight_decay: Float32
-    var _weights: List[ModuleParam]
-    var _m: List[Optional[Tensor]]
-    var _v: List[Optional[Tensor]]
-    var _step: Int
+    var weights: List[Parameter]
+    var m: List[Optional[Tensor]]
+    var v: List[Optional[Tensor]]
+    var t: Int
 
     def __init__(
         out self,
-        var params: List[ModuleParam],
+        var params: List[Parameter],
         lr: Float32 = 1e-3,
         beta1: Float32 = 0.9,
         beta2: Float32 = 0.999,
@@ -162,34 +162,34 @@ struct AdamW(Optimizer):
         self.beta2 = beta2
         self.eps = eps
         self.weight_decay = weight_decay
-        self._step = 0
-        self._weights = params^
-        self._m = List[Optional[Tensor]]()
-        self._v = List[Optional[Tensor]]()
-        for _ in range(len(self._weights)):
-            self._m.append(Optional[Tensor](None))
-            self._v.append(Optional[Tensor](None))
+        self.t = 0
+        self.weights = params^
+        self.m = List[Optional[Tensor]]()
+        self.v = List[Optional[Tensor]]()
+        for _ in range(len(self.weights)):
+            self.m.append(Optional[Tensor](None))
+            self.v.append(Optional[Tensor](None))
 
     def parameters(self) -> List[Tensor]:
         var ps = List[Tensor]()
-        for i in range(len(self._weights)):
-            if self._weights[i][]:
-                ps.append(self._weights[i][].value())
+        for i in range(len(self.weights)):
+            if self.weights[i]:
+                ps.append(self.weights[i].tensor())
         return ps^
 
     def step(mut self, grads: List[Tensor]) raises:
-        self._step += 1
+        self.t += 1
         _adam_step[True](
-            self._weights,
-            self._m,
-            self._v,
+            self.weights,
+            self.m,
+            self.v,
             grads,
             self.lr,
             self.beta1,
             self.beta2,
             self.eps,
             self.weight_decay,
-            self._step,
+            self.t,
         )
 
     def set_lr(mut self, lr: Float32):

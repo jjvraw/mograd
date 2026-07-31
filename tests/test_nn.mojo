@@ -11,18 +11,18 @@ def test_linear_lazy_init() raises:
     var device = Device()
     var l = nn.Linear(4, 2)
     var is_none = False
-    if not l._weight[]:
+    if not l.weight:
         is_none = True
     if not is_none:
         raise Error("weight should be None before first call")
     var x = Tensor(device, [Float32(1), 0, 0, 0], (1, 4))
     _ = l(x)
     var is_set = False
-    if l._weight[]:
+    if l.weight:
         is_set = True
     if not is_set:
         raise Error("weight should be initialized after first call")
-    var layout = l._weight[].value()
+    var layout = l.weight.tensor()
     if layout.shape(0) != 2 or layout.shape(1) != 4:
         raise Error("weight shape should be [2, 4], got " + String(layout.shape(0)) + "x" + String(layout.shape(1)))
 
@@ -51,14 +51,14 @@ def test_embedding_lazy_init() raises:
     var device = Device()
     var emb = nn.Embedding(10, 4)
     var is_none = False
-    if not emb._weight[]:
+    if not emb.weight:
         is_none = True
     if not is_none:
         raise Error("weight should be None before first call")
     var indices = Tensor(device, [Int64(1), 3], (2,))
     var out = emb(indices)
     var is_set = False
-    if emb._weight[]:
+    if emb.weight:
         is_set = True
     if not is_set:
         raise Error("weight should be initialized after first call")
@@ -71,7 +71,7 @@ def test_embedding_lookup_matches_weight_rows() raises:
     var emb = nn.Embedding(5, 3)
     var indices = Tensor(device, [Int64(0)], (1,))
     _ = emb(indices)
-    var weight = emb._weight[].value()
+    var weight = emb.weight.tensor()
     var indices2 = Tensor(device, [Int64(2), 4], (2,))
     var out = emb(indices2)
     assert_allclose(out, weight.gather(indices2))
@@ -83,7 +83,7 @@ def test_embedding_grad_accumulates_repeated_indices() raises:
     var indices = Tensor(device, [Int64(1), 1], (2,))
     var out = emb(indices)
     var loss = out.sum()
-    var grads = loss.gradient([emb._weight[].value()])
+    var grads = loss.gradient([emb.weight.tensor()])
     var grad_vals = grads[0].to_list()
     # Index 1 is used twice, so its gradient row should accumulate to 2, not 1.
     for col in range(3):
@@ -97,11 +97,11 @@ def test_sgd_arc_sharing() raises:
     var x = Tensor(device, [Float32(1), 2, 3, 4], (1, 4))
     _ = l(x)
     var params = opt.parameters()
-    var before = l._weight[].value().to_list()
+    var before = l.weight.tensor().to_list()
     var loss = l(x).sum()
     var grads = loss.gradient(params)
     opt.step(grads)
-    var after = l._weight[].value().to_list()
+    var after = l.weight.tensor().to_list()
     var changed = False
     for i in range(len(before)):
         if abs(before[i] - after[i]) > Float32(1e-6):
@@ -145,7 +145,7 @@ def test_linear_3d_grad_flows() raises:
     var x = Tensor(device, [Float32(0), 1, 2, 3, 4, 5, 6, 7], (2, 1, 4), requires_grad=True)
     var out = l(x)
     var loss = out.sum()
-    var grads = loss.gradient([l._weight[].value(), x])
+    var grads = loss.gradient([l.weight.tensor(), x])
     var w_grad = grads[0]
     var x_grad = grads[1]
     if w_grad.shape(0) != 8 or w_grad.shape(1) != 4:
@@ -162,7 +162,7 @@ def test_linear_4d_grad_flows() raises:
     )
     var out = l(x)
     var loss = out.sum()
-    var grads = loss.gradient([l._weight[].value(), x])
+    var grads = loss.gradient([l.weight.tensor(), x])
     var w_grad = grads[0]
     var x_grad = grads[1]
     if w_grad.shape(0) != 6 or w_grad.shape(1) != 4:
@@ -178,9 +178,9 @@ def test_adam_updates_weights() raises:
     var x = Tensor(device, [Float32(1), 2, 3, 4], (1, 4))
     var loss = l(x).sum()
     var grads = loss.gradient(opt.parameters())
-    var before = l._weight[].value().to_list()
+    var before = l.weight.tensor().to_list()
     opt.step(grads)
-    var after = l._weight[].value().to_list()
+    var after = l.weight.tensor().to_list()
     var changed = False
     for i in range(len(before)):
         if abs(before[i] - after[i]) > Float32(1e-6):
@@ -198,12 +198,12 @@ def test_adam_moments_initialised_on_first_step() raises:
     var grads = loss.gradient(opt.parameters())
     opt.step(grads)
     var m_set = False
-    if opt._m[0]:
+    if opt.m[0]:
         m_set = True
     if not m_set:
         raise Error("first moment should be initialised after first step")
     var v_set = False
-    if opt._v[0]:
+    if opt.v[0]:
         v_set = True
     if not v_set:
         raise Error("second moment should be initialised after first step")
@@ -218,8 +218,8 @@ def test_adam_step_count_increments() raises:
         var loss = l(x).sum()
         var grads = loss.gradient(opt.parameters())
         opt.step(grads)
-    if opt._step != 3:
-        raise Error("step count should be 3, got " + String(opt._step))
+    if opt.t != 3:
+        raise Error("step count should be 3, got " + String(opt.t))
 
 
 def test_adam_weight_decay_changes_moments() raises:
@@ -239,8 +239,8 @@ def test_adam_weight_decay_changes_moments() raises:
     var loss2 = l_wd(x).sum()
     opt_wd.step(loss2.gradient(opt_wd.parameters()))
 
-    var m_no_wd = opt_no_wd._m[0].value().to_list()
-    var m_wd = opt_wd._m[0].value().to_list()
+    var m_no_wd = opt_no_wd.m[0].value().to_list()
+    var m_wd = opt_wd.m[0].value().to_list()
     var different = False
     for i in range(len(m_no_wd)):
         if abs(m_no_wd[i] - m_wd[i]) > Float32(1e-6):
@@ -266,8 +266,8 @@ def test_adamw_shrinks_weights() raises:
         var loss2 = l_adamw(x).sum()
         opt_adamw.step(loss2.gradient(opt_adamw.parameters()))
 
-    var w_adam = l_adam._weight[].value().to_list()
-    var w_adamw = l_adamw._weight[].value().to_list()
+    var w_adam = l_adam.weight.tensor().to_list()
+    var w_adamw = l_adamw.weight.tensor().to_list()
     var smaller_norm = False
     var norm_adam = Float32(0)
     var norm_adamw = Float32(0)
@@ -284,8 +284,8 @@ def test_layer_norm_fwd_single_row() raises:
     var device = Device()
     var x = Tensor(device, [Float32(1), 2, 3, 4], (1, 4))
     var ln = nn.LayerNorm(4)
-    ln._weight[] = Tensor(device, [Float32(1), 2, 1, 2], (4,), requires_grad=True)
-    ln._bias[] = Tensor(device, [Float32(0.1), 0.2, 0.1, 0.2], (4,), requires_grad=True)
+    ln.weight.set(Tensor(device, [Float32(1), 2, 1, 2], (4,), requires_grad=True))
+    ln.bias.set(Tensor(device, [Float32(0.1), 0.2, 0.1, 0.2], (4,), requires_grad=True))
     assert_allclose(
         ln(x),
         [Float32(-1.241641), Float32(-0.694427), Float32(0.547214), Float32(2.883282)],
@@ -297,8 +297,8 @@ def test_layer_norm_fwd_two_rows() raises:
     var device = Device()
     var x = Tensor(device, [Float32(1), 2, 3, 4, -1, -2, -3, -4], (2, 4))
     var ln = nn.LayerNorm(4)
-    ln._weight[] = Tensor(device, [Float32(1), 1, 1, 1], (4,), requires_grad=True)
-    ln._bias[] = Tensor(device, [Float32(0), 0, 0, 0], (4,), requires_grad=True)
+    ln.weight.set(Tensor(device, [Float32(1), 1, 1, 1], (4,), requires_grad=True))
+    ln.bias.set(Tensor(device, [Float32(0), 0, 0, 0], (4,), requires_grad=True))
     assert_allclose(
         ln(x),
         [
@@ -319,8 +319,8 @@ def test_layer_norm_fwd_constant_row_gives_beta() raises:
     var device = Device()
     var x = Tensor(device, [Float32(3), 3, 3, 3], (1, 4))
     var ln = nn.LayerNorm(4)
-    ln._weight[] = Tensor(device, [Float32(1), 1, 1, 1], (4,), requires_grad=True)
-    ln._bias[] = Tensor(device, [Float32(0.5), 0.5, 0.5, 0.5], (4,), requires_grad=True)
+    ln.weight.set(Tensor(device, [Float32(1), 1, 1, 1], (4,), requires_grad=True))
+    ln.bias.set(Tensor(device, [Float32(0.5), 0.5, 0.5, 0.5], (4,), requires_grad=True))
     assert_allclose(ln(x), [Float32(0.5), Float32(0.5), Float32(0.5), Float32(0.5)], tol=Float32(1e-4))
 
 

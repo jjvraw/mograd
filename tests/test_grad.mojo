@@ -521,9 +521,9 @@ def test_simple_mlp_grad() raises:
     var params = opt.parameters()
     var grads = loss.gradient(params)
 
-    var w1_data = l1._weight[].value().to_list()
-    var w2_data = l2._weight[].value().to_list()
-    var w3_data = l3._weight[].value().to_list()
+    var w1_data = l1.weight.tensor().to_list()
+    var w2_data = l2.weight.tensor().to_list()
+    var w3_data = l3.weight.tensor().to_list()
     # opt.parameters() interleaves each layer's bias after its weight:
     # [w1, b1, w2, b2, w3, b3], so the weight grads sit at indices 0, 2, 4.
     assert_allclose(grads[0], numerical_grad[fwd_w1](device, w1_data, (8, 4)), tol=0.05)
@@ -710,8 +710,8 @@ def test_layer_norm_grad_dx() raises:
     var x = Tensor(device, [Float32(1), 2, 3, 4], (1, 4), requires_grad=True)
     var dy = Tensor(device, [Float32(0.1), 0.2, 0.3, 0.4], (1, 4))
     var ln = nn.LayerNorm(4)
-    ln._weight[] = Tensor(device, [Float32(1), 2, 1, 2], (4,), requires_grad=True)
-    ln._bias[] = Tensor(device, [Float32(0), 0, 0, 0], (4,), requires_grad=True)
+    ln.weight.set(Tensor(device, [Float32(1), 2, 1, 2], (4,), requires_grad=True))
+    ln.bias.set(Tensor(device, [Float32(0), 0, 0, 0], (4,), requires_grad=True))
     var loss = (ln(x) * dy).sum()
     var grads = loss.gradient([x])
     assert_allclose(
@@ -727,8 +727,8 @@ def test_layer_norm_grad_dgamma() raises:
     var gamma = Tensor(device, [Float32(1), 2, 1, 2], (4,), requires_grad=True)
     var dy = Tensor(device, [Float32(0.1), 0.2, 0.3, 0.4], (1, 4))
     var ln = nn.LayerNorm(4)
-    ln._weight[] = gamma
-    ln._bias[] = Tensor(device, [Float32(0), 0, 0, 0], (4,), requires_grad=True)
+    ln.weight.set(gamma)
+    ln.bias.set(Tensor(device, [Float32(0), 0, 0, 0], (4,), requires_grad=True))
     var loss = (ln(x) * dy).sum()
     var grads = loss.gradient([gamma])
     assert_allclose(
@@ -744,8 +744,8 @@ def test_layer_norm_grad_dbeta() raises:
     var beta = Tensor(device, [Float32(0), 0, 0, 0], (4,), requires_grad=True)
     var dy = Tensor(device, [Float32(0.1), 0.2, 0.3, 0.4], (1, 4))
     var ln = nn.LayerNorm(4)
-    ln._weight[] = Tensor(device, [Float32(1), 2, 1, 2], (4,), requires_grad=True)
-    ln._bias[] = beta
+    ln.weight.set(Tensor(device, [Float32(1), 2, 1, 2], (4,), requires_grad=True))
+    ln.bias.set(beta)
     var loss = (ln(x) * dy).sum()
     var grads = loss.gradient([beta])
     assert_allclose(
@@ -761,8 +761,8 @@ def test_layer_norm_grad_dbeta_two_rows_accumulates() raises:
     var beta = Tensor(device, [Float32(0), 0, 0, 0], (4,), requires_grad=True)
     var dy = Tensor(device, [Float32(0.1), 0.2, 0.3, 0.4, 0.1, 0.2, 0.3, 0.4], (2, 4))
     var ln = nn.LayerNorm(4)
-    ln._weight[] = Tensor(device, [Float32(1), 1, 1, 1], (4,), requires_grad=True)
-    ln._bias[] = beta
+    ln.weight.set(Tensor(device, [Float32(1), 1, 1, 1], (4,), requires_grad=True))
+    ln.bias.set(beta)
     var loss = (ln(x) * dy).sum()
     var grads = loss.gradient([beta])
     assert_allclose(
@@ -777,8 +777,8 @@ def test_layer_norm_grad_uniform_dy_gives_zero_dx() raises:
     var x = Tensor(device, [Float32(1), 2, 3, 4], (1, 4), requires_grad=True)
     var dy = Tensor(device, [Float32(1), 1, 1, 1], (1, 4))
     var ln = nn.LayerNorm(4)
-    ln._weight[] = Tensor(device, [Float32(1), 1, 1, 1], (4,), requires_grad=True)
-    ln._bias[] = Tensor(device, [Float32(0), 0, 0, 0], (4,), requires_grad=True)
+    ln.weight.set(Tensor(device, [Float32(1), 1, 1, 1], (4,), requires_grad=True))
+    ln.bias.set(Tensor(device, [Float32(0), 0, 0, 0], (4,), requires_grad=True))
     var loss = (ln(x) * dy).sum()
     var grads = loss.gradient([x])
     assert_allclose(

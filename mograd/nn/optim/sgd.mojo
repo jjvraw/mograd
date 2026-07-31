@@ -1,21 +1,21 @@
 from mograd.tensor import Tensor
-from mograd.nn.modules import ModuleParam
+from mograd.nn.modules import Parameter
 from mograd.nn.optim import Optimizer
 
 
 struct SGD(Optimizer):
     var lr: Float32
-    var _weights: List[ModuleParam]
+    var weights: List[Parameter]
 
-    def __init__(out self, var params: List[ModuleParam], lr: Float32):
+    def __init__(out self, var params: List[Parameter], lr: Float32):
         self.lr = lr
-        self._weights = params^
+        self.weights = params^
 
     def parameters(self) -> List[Tensor]:
         var ps = List[Tensor]()
-        for i in range(len(self._weights)):
-            if self._weights[i][]:
-                ps.append(self._weights[i][].value())
+        for i in range(len(self.weights)):
+            if self.weights[i]:
+                ps.append(self.weights[i].tensor())
         return ps^
 
     def set_lr(mut self, lr: Float32):
@@ -24,9 +24,9 @@ struct SGD(Optimizer):
     def step(mut self, grads: List[Tensor]) raises:
         var updates = List[Tensor]()
         var indices = List[Int]()
-        for i in range(len(self._weights)):
-            if self._weights[i][]:
-                var w = self._weights[i][].value()
+        for i in range(len(self.weights)):
+            if self.weights[i]:
+                var w = self.weights[i].tensor()
                 updates.append(w - grads[i] * self.lr)
                 indices.append(i)
 
@@ -36,4 +36,4 @@ struct SGD(Optimizer):
         var bufs = Tensor.values(updates)
         for j in range(len(indices)):
             var t = updates[j]
-            self._weights[indices[j]][] = Tensor.from_buffer(t.device.value(), t.op.layout().copy(), bufs[j].copy())
+            self.weights[indices[j]].set(Tensor.from_buffer(t.device.value(), t.op.layout().copy(), bufs[j].copy()))
