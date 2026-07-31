@@ -22,7 +22,6 @@ mojo-compiler = "*"
 [dependencies]
 mojo = "==1.0.0b3.dev2026062206"
 max = "==26.5.0.dev2026062206"
-numpy = "*" # (LazyLoader)
 
 [target.linux-64.dependencies]
 gcc = "*"
