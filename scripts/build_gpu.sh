@@ -96,7 +96,16 @@ $CC -c -fPIC \
     -o "$PIN_OBJ" \
     "$PIN_SRC"
 
+# TODO: Investigate further. Cold-cache builds on macOS overflow compiler worker
+# thread stack (AsyncRT recursion) and die with SIGILL.
+# Single-threaded compilation avoids.
+MOJO_BUILD_THREADS=""
+if [[ "$PLATFORM" == "Darwin" && "${CI:-}" == "true" ]]; then
+    MOJO_BUILD_THREADS="--num-threads 1"
+fi
+
 mojo build --emit shared-lib \
+    $MOJO_BUILD_THREADS \
     "$KERNEL_SRC" \
     -o "$SO_PATH" \
     -Xlinker "$PIN_OBJ"
