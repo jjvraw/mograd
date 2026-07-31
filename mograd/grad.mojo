@@ -51,6 +51,7 @@ struct Grad:
                 Rule(Pat(OpType.SCATTER_ADD), scatter_add_grad),
                 Rule(Pat(OpType.SQUEEZE), squeeze_grad),
                 Rule(Pat(OpType.UNSQUEEZE), unsqueeze_grad),
+                Rule(Pat(OpType.CAST), cast_grad),
                 Rule(Pat(OpType.TRIU), triu_grad),
                 Rule(Pat(OpType.EXPAND), expand_grad),
                 Rule(Pat(OpType.CONCAT), concat_grad),
@@ -253,6 +254,18 @@ def squeeze_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
 def unsqueeze_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     var dim = node.attr_int("dim")
     return [upstream.squeeze(dim)]
+
+
+def cast_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
+    # Casting to an integer dtype is a quantisation step with a zero derivative
+    # almost everywhere, and integer sources (indices, labels) are not
+    # differentiable to begin with, so neither direction gets a gradient edge.
+    var src = node.src(0)
+    if not src.dtype().is_floating_point() or not node.dtype().is_floating_point():
+        return [None]
+    if src.dtype() == upstream.dtype():
+        return [upstream]
+    return [upstream.cast(src.dtype())]
 
 
 def triu_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:

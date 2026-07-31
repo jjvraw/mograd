@@ -1,7 +1,7 @@
 from std.testing import TestSuite, assert_true, assert_false, assert_equal, assert_raises
 
 from mograd.op import OpType, concat
-from mograd.grad import concat_grad
+from mograd.grad import Grad, concat_grad
 from mograd.testing import leaf
 
 
@@ -93,6 +93,50 @@ def test_concat_grad_splits_along_axis1() raises:
     var grads = concat_grad(node, upstream)
     assert_equal(grads[0].value().shape(1), 3)
     assert_equal(grads[1].value().shape(1), 5)
+
+
+# ===-------------------------------------------------------------------===#
+# CAST grad
+# ===-------------------------------------------------------------------===#
+
+
+def test_cast_grad_reaches_pre_cast_source() raises:
+    # A float->float cast is differentiable, so backprop must not stop at it.
+    var x = leaf((2, 3), DType.float16)
+    var y = x.cast(DType.float32)
+    var loss = y * leaf((2, 3), DType.float32)
+    var grads = Grad.compute(loss, leaf((2, 3), DType.float32), [x])
+    assert_true(Bool(grads[0]))
+
+
+def test_cast_grad_restores_source_dtype() raises:
+    var x = leaf((2, 3), DType.float16)
+    var y = x.cast(DType.float32)
+    var grads = Grad.compute(y, leaf((2, 3), DType.float32), [x])
+    assert_true(grads[0].value().dtype() == DType.float16)
+
+
+def test_cast_grad_same_dtype_is_passthrough() raises:
+    # A no-op cast should not introduce a redundant CAST node in the backward graph.
+    var x = leaf((2, 3), DType.float32)
+    var upstream = leaf((2, 3), DType.float32)
+    var grads = Grad.compute(x.cast(DType.float32), upstream, [x])
+    assert_true(grads[0].value() == upstream)
+
+
+def test_cast_grad_stops_at_integer_source() raises:
+    # Labels/indices cast up to float stay non-differentiable.
+    var ids = leaf((4,), DType.int64)
+    var y = ids.cast(DType.float32)
+    var grads = Grad.compute(y, leaf((4,), DType.float32), [ids])
+    assert_false(Bool(grads[0]))
+
+
+def test_cast_grad_stops_when_casting_to_integer() raises:
+    var x = leaf((4,), DType.float32)
+    var y = x.cast(DType.int64)
+    var grads = Grad.compute(y, leaf((4,), DType.int64), [x])
+    assert_false(Bool(grads[0]))
 
 
 def main() raises:
