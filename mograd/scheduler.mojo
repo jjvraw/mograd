@@ -1,6 +1,7 @@
 from std.gpu.host import DeviceContext
 
 from mograd import Device
+from mograd.debug import Tracer
 from mograd.op import OpRef, OpType, sink
 from mograd.buffer import Buffer, AnyBuffer, BufferArm
 from mograd.pattern_matcher import Rule, PatternMatcher, GraphUtils, Pat
@@ -39,6 +40,8 @@ struct Scheduler:
         var pm = PatternMatcher[BoundExecFn](self.rules)
         var bufs = Dict[OpRef, List[AnyBuffer]]()
         var topo = GraphUtils.toposort(root)
+        var tracer = Tracer()
+        tracer.run_begin(root)
 
         for i in range(len(topo)):
             var node = topo[i]
@@ -65,7 +68,9 @@ struct Scheduler:
             var rule = pm.match(node)
             if not rule:
                 raise Error("no exec rule for op: " + node.op_type()._name)
+            tracer.node_begin(node, device)
             var results = rule.value().func(node, inputs, device)
+            tracer.node_end(node, inputs, results, device)
             var to_cache = List[AnyBuffer]()
             for i in range(len(results)):
                 to_cache.append(results[i].copy())
@@ -73,4 +78,5 @@ struct Scheduler:
             bufs[node] = results^
 
         device.ctx.synchronize()
+        tracer.run_end(device)
         return bufs^
