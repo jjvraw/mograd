@@ -24,10 +24,14 @@ struct SGD(Optimizer):
     def step(mut self, grads: List[Tensor]) raises:
         var updates = List[Tensor]()
         var indices = List[Int]()
+        # `grads` lines up with `parameters()`, which skips unset slots, so it is
+        # indexed by its own running counter rather than the slot index.
+        var grad_idx = 0
         for i in range(len(self.weights)):
             if self.weights[i]:
                 var w = self.weights[i].tensor()
-                updates.append(w - grads[i] * self.lr)
+                updates.append(w - grads[grad_idx] * self.lr)
+                grad_idx += 1
                 indices.append(i)
 
         if len(updates) == 0:
