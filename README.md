@@ -21,27 +21,76 @@ providing:
 
 ---
 
-A minimal training step, see [examples/](./examples) for complete models: 
+Define a Neural Network, (see [examples/](./examples) for complete models with training): 
 
 ```mojo
+from mograd import Tensor
 import mograd.nn as nn
-from mograd import Tensor, Device
+from mograd.nn import Module, Parameter
 
-def main() raises:
-var device = Device()
-var model = nn.Linear(784, 10)
-var opt = nn.SGD(model.parameters(), lr=0.01)
+struct MLP(Module):
+    var l1: nn.Linear
+    var norm: nn.LayerNorm
+    var l2: nn.Linear
+    var l3: nn.Linear
 
-var x = Tensor.randn(device, (32, 784))
-var y = Tensor.randint(device, (32,), 0, 10)
+    def __init__(out self):
+        self.l1 = nn.Linear(4096, 4096)
+        self.norm = nn.LayerNorm(4096)
+        self.l2 = nn.Linear(4096, 4096)
+        self.l3 = nn.Linear(4096, 10)
 
-var logits = model(x)
-var loss = logits.cross_entropy(y.one_hot(10).cast(DType.float32))
+    def __call__(mut self, x: Tensor) raises -> Tensor:
+        var h = self.norm(self.l1(x).relu())
+        h = self.l2(h).relu()
+        return self.l3(h)
 
-var grads = loss.gradient(opt.params())
-opt.step(grads)
+    def parameters(mut self) -> List[Parameter]:
+        var ps = self.l1.parameters()
+        ps += self.norm.parameters()
+        ps += self.l2.parameters()
+        ps += self.l3.parameters()
+        return ps^
+```
 
-print("loss:", loss.item())
+Benchmark a single forward pass with `DEBUG_MOGRAD` flag:
+
+```
+→ mojo -D MOGRAD_DEBUG=3 demo.mojo # =4 reveals OpGraph
+
+    kernel                                time        tput
+RANDN (2048,4096)
+  ↳ mograd_randn                       859.8µs   39.0 GB/s
+UNIFORM (4096,4096)
+  ↳ mograd_uniform                      92.2µs  727.3 GB/s
+UNIFORM (4096)
+  ↳ mograd_uniform                       9.7µs    1.6 GB/s
+MATMUL_BIAS_BT (2048,4096)
+  ↳ mograd_matmul_bias_bt               58.7ms    2.2 GB/s
+RELU (2048,4096)
+  ↳ mograd_relu                        123.0µs  545.5 GB/s
+FULL (4096)
+  ↳ mograd_full                         29.5µs    0.5 GB/s
+FULL (4096)
+  ↳ mograd_full                          7.3µs    2.2 GB/s
+LAYER_NORM (2048,4096)
+  ↳ mograd_layer_norm_fwd              163.8µs  409.7 GB/s
+UNIFORM (4096,4096)
+  ↳ mograd_uniform                      65.0µs 1031.7 GB/s
+UNIFORM (4096)
+  ↳ mograd_uniform                       8.8µs    1.8 GB/s
+MATMUL_BIAS_BT (2048,4096)
+  ↳ mograd_matmul_bias_bt                1.0ms  122.0 GB/s
+RELU (2048,4096)
+  ↳ mograd_relu                         69.9µs  959.2 GB/s
+UNIFORM (10,4096)
+  ↳ mograd_uniform                       9.6µs   16.9 GB/s
+UNIFORM (10)
+  ↳ mograd_uniform                      42.0µs    0.0 GB/s
+MATMUL_BIAS_BT (2048,10)
+  ↳ mograd_matmul_bias_bt                2.5ms   13.4 GB/s
+
+Σ run: 15 kernels  63.9ms  = 63.8ms gpu + 98.7µs dispatch
 ```
 
 ## Design
@@ -69,10 +118,12 @@ def add_grad(node: OpRef, upstream: OpRef) raises -> List[OpRef]:
 ```
 
 A similar approach is used to enable fusions, simplifications and runtime dispatching.
-Rewrite rules are designed to be extensible through external, user-defined rules. A larger
-initiative is to support rule sets for common architectures. This approach is infamously
-known for its scaling issues, but it is motivated by evident tension between framework
-compilers, external operators, and custom rewrite passes in current inference and training
-engines. The spirit is close to [TVM Unity](https://tvm.apache.org/2021/12/15/tvm-unity).
-That being, remove boundaries between the operator graph, transformations, and the
-kernels. Mograd chases that idea in pure Mojo, with eager PyTorch-like ergonomics.
+Rewrite rules are designed to be extensible through external, user-defined rules. This 
+allows everything to remain in Mojo, from model definition, to kernels, model profiling, 
+and graph rewrites. A larger initiative is for Mograd to support rule sets for common
+architectures. This approach is infamously known for its scaling issues, but it is
+motivated by evident tension between framework compilers and external operators in current
+inference and training engines, which to custom passes regardless. The spirit is close to
+[TVM Unity](https://tvm.apache.org/2021/12/15/tvm-unity). That being, remove boundaries 
+between the operator graph, transformations, and the kernels. Mograd chases that idea in
+pure Mojo.

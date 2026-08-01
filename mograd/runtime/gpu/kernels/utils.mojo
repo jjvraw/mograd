@@ -346,7 +346,7 @@ def unary_strided(
 ) raises -> AnyBuffer:
     var layout = node.src(0).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[UnaryStrided](name)(
+    device.get_function[UnaryStrided](name)(
         inputs[0].data_ptr(),
         out.data_ptr(),
         layout,
@@ -376,7 +376,7 @@ def strided_copy(
     read dtype: DType,
     read device: Device,
 ) raises:
-    device.handle[].get_function[StridedCopy](name)(
+    device.get_function[StridedCopy](name)(
         src.data_ptr(),
         dst.data_ptr(),
         src_layout,
@@ -403,7 +403,7 @@ def axis_reduce_strided(
     var layout = node.src(0).layout()
     var axis = node.attr_int("axis")
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[AxisReduceKernel](name)(
+    device.get_function[AxisReduceKernel](name)(
         inputs[0].data_ptr(),
         out.data_ptr(),
         layout,
@@ -433,7 +433,7 @@ def matmul_strided(
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[MatmulStrided](name)(
+    device.get_function[MatmulStrided](name)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         out.data_ptr(),
@@ -466,7 +466,7 @@ def matmul_bias_strided(
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[MatmulBiasStrided](name)(
+    device.get_function[MatmulBiasStrided](name)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         inputs[2].data_ptr(),
@@ -576,7 +576,7 @@ def flash_attn_fwd_dispatch(
         has_bias = node.attrs()["has_bias"][Bool]
     var dst = AnyBuffer.create(node.dtype(), device, node.numel())
     var lse = AnyBuffer.create(DType.float32, device, B * H * S)
-    device.handle[].get_function[FlashAttnFwdKernel](name)(
+    device.get_function[FlashAttnFwdKernel](name)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         inputs[2].data_ptr(),
@@ -615,7 +615,7 @@ def flash_attn_bwd_dispatch(
     var dq = AnyBuffer.create(node.dtype(), device, numel)
     var dk = AnyBuffer.create(node.dtype(), device, numel)
     var dv = AnyBuffer.create(node.dtype(), device, numel)
-    device.handle[].get_function[FlashAttnBwdKernel](name)(
+    device.get_function[FlashAttnBwdKernel](name)(
         inputs[0].data_ptr(),  # dO
         inputs[1].data_ptr(),  # O
         inputs[2].data_ptr(),  # Q
@@ -648,7 +648,7 @@ def layer_norm_fwd_dispatch(
     var rows = x_layout.numel() // cols
     var eps = node.attrs()["eps"][Float32]
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[LayerNormFwdKernel](name)(
+    device.get_function[LayerNormFwdKernel](name)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         inputs[2].data_ptr(),
@@ -675,7 +675,7 @@ def layer_norm_bwd_dispatch(
     var dx = AnyBuffer.create(node.dtype(), device, x_layout.numel())
     var dgamma = AnyBuffer.create(node.dtype(), device, gamma_layout.numel(), fill=0.0)
     var dbeta = AnyBuffer.create(node.dtype(), device, gamma_layout.numel(), fill=0.0)
-    device.handle[].get_function[LayerNormBwdKernel](name)(
+    device.get_function[LayerNormBwdKernel](name)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         inputs[2].data_ptr(),
@@ -698,7 +698,7 @@ def binary_strided(
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.handle[].get_function[BinaryStrided](name)(
+    device.get_function[BinaryStrided](name)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         out.data_ptr(),
