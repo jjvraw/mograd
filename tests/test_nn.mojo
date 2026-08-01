@@ -327,14 +327,17 @@ def test_layer_norm_fwd_constant_row_gives_beta() raises:
 def test_sgd_step_with_uninitialized_parameter() raises:
     # `unused` is never called, so its weight slot stays empty and `parameters()`
     # returns one tensor for two slots. `step` must follow that same numbering.
+    # The empty slot has to come first: with it last, the slot index and the
+    # gradient index still agree for every initialized weight and the mismatch
+    # goes unnoticed.
     var device = Device()
-    var l = nn.Linear(4, 2, bias=False)
     var unused = nn.Linear(4, 2, bias=False)
+    var l = nn.Linear(4, 2, bias=False)
     var x = Tensor(device, [Float32(1), 2, 3, 4], (1, 4))
     _ = l(x)
 
-    var slots = l.parameters()
-    slots += unused.parameters()
+    var slots = unused.parameters()
+    slots += l.parameters()
     var opt = nn.SGD(slots^, lr=Float32(0.1))
 
     var params = opt.parameters()
