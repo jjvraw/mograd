@@ -1,9 +1,8 @@
 from std.collections import Set
-from std.os import makedirs
+from std.os import makedirs, remove
 from std.os.path import exists, expanduser, getsize, join
+from std.pathlib.path import Path
 from std.python import Python, PythonObject
-
-# TODO: Investigate https://github.com/ehsanmok/flare.
 
 
 struct LazyLoader:
@@ -38,20 +37,28 @@ struct LazyLoader:
         return out_path
 
     def _convert_idx(self, gz_path: String, out_path: String, scale: Float32) raises:
-        var gzip = Python.import_module("gzip")
-        var np = Python.import_module("numpy")
+        def gunzip(src: String, dst: String) raises:
+            var gzip = Python.import_module("gzip")
+            var pathlib = Python.import_module("pathlib")
+            _ = pathlib.Path(dst).write_bytes(gzip.open(src, "rb").read())
 
-        var f = gzip.open(gz_path, "rb")
-        var raw = f.read()
-        _ = f.close()
+        var raw_path = gz_path + ".raw"
+        gunzip(gz_path, raw_path)
+        var raw = Path(raw_path).read_bytes()
+        remove(raw_path)
 
         # IDX header: 2 zero bytes, dtype byte, ndims byte, then ndims x 4-byte
         # big-endian dim sizes (8 bytes for IDX1 labels, 16 for IDX3 images, etc).
         # Output is always written flat, so the shape itself doesn't matter here.
-        var header_bytes = 4 + 4 * raw[3]
+        var header_bytes = 4 + 4 * Int(raw[3])
 
-        var arr = np.frombuffer(raw, dtype=np.uint8, offset=header_bytes).astype(np.float32) * scale
-        arr.tofile(out_path)
+        var out = List[Float32](capacity=len(raw) - header_bytes)
+        for i in range(header_bytes, len(raw)):
+            out.append(Float32(Int(raw[i])) * scale)
+
+        with open(out_path, "w") as f:
+            var bytes = Span[Byte, origin_of(out)](ptr=out.unsafe_ptr().bitcast[Byte](), length=len(out) * 4)
+            f.write_all(bytes)
 
     def ensure_cached_text_encoded(
         self,
