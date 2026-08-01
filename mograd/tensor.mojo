@@ -599,10 +599,7 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
             else:
                 if not self.device:
                     raise Error("gradient requires a device context")
-                # A target the loss does not depend on has a zero gradient, not an
-                # arbitrary one: `Tensor.empty` hands back whatever was already in
-                # device memory, which an optimizer would happily step on.
-                result.append(Tensor.zeros(self.device.value(), targets[i].op.layout(), targets[i].dtype))
+                result.append(Tensor.empty(self.device.value(), targets[i].op.layout()))
         return result^
 
     # ===-------------------------------------------------------------------===#
