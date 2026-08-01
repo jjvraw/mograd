@@ -97,3 +97,10 @@ bench-matmul            = { cmd = "mojo -I . benches/matmul.mojo",              
 bench-attention         = { cmd = "mojo -I . benches/attention/dispatch.mojo", depends-on = ["ensure-gpu"] }
 bench-attention-generic = { cmd = "mojo -I . benches/attention/generic.mojo",   depends-on = ["ensure-gpu"] }
 bench-attention-apple   = { cmd = "mojo -I . benches/attention/apple.mojo",     depends-on = ["ensure-gpu"] }
+
+# Documentation site
+docs-api                = { cmd = "mkdir -p docs/static/img && cp assets/logo.png docs/static/img/logo.png && mojo doc -I . -o docs/.mojodoc.json mograd/ && python3 scripts/gen_api_docs.py docs/.mojodoc.json -o docs/docs/api" }
+docs-install            = { cmd = "npm --prefix docs install" }
+docs-dev                = { cmd = "npm --prefix docs start",       depends-on = ["docs-api"] }
+docs-build              = { cmd = "npm --prefix docs run build",   depends-on = ["docs-api"] }
+docs-serve              = { cmd = "npm --prefix docs run serve" }

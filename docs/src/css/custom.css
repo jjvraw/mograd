@@ -1,0 +1,121 @@
+:root {
+  /* Light mode: darkened CEC19D, since the tan itself fails on white. */
+  --ifm-color-primary: #7b6b3e;
+  --ifm-color-primary-dark: #6d5f37;
+  --ifm-color-primary-darker: #675934;
+  --ifm-color-primary-darkest: #524829;
+  --ifm-color-primary-light: #897745;
+  --ifm-color-primary-lighter: #8f7d48;
+  --ifm-color-primary-lightest: #a48e53;
+
+  --ifm-font-color-base: #1a1a1a;
+  --ifm-heading-color: #000000;
+
+  --ifm-code-font-size: 95%;
+  --ifm-code-background: #faf8f3;
+  --ifm-pre-background: #faf8f3;
+  --docusaurus-highlighted-code-line-bg: rgba(126, 107, 62, 0.12);
+}
+
+[data-theme='dark'] {
+  /* Dark mode uses the palette as given. */
+  --ifm-color-primary: #cec19d;
+  --ifm-color-primary-dark: #c6b68c;
+  --ifm-color-primary-darker: #c0b082;
+  --ifm-color-primary-darkest: #b4a16a;
+  --ifm-color-primary-light: #d7ccae;
+  --ifm-color-primary-lighter: #dcd2b8;
+  --ifm-color-primary-lightest: #e8e1d0;
+
+  --ifm-background-color: #1a1a1a;
+  --ifm-background-surface-color: #202020;
+  --ifm-navbar-background-color: #111111;
+  --ifm-navbar-search-input-background-color: #1e1e1e;
+
+  --ifm-font-color-base: #ffffff;
+  --ifm-heading-color: #ffffff;
+
+  /* Code sits above the page rather than recessed into it. */
+  --ifm-code-background: #292828;
+  --ifm-pre-background: #292828;
+  --ifm-toc-border-color: #2e2e2e;
+  --ifm-color-emphasis-100: #202020;
+  --ifm-color-emphasis-200: #262626;
+  --ifm-color-emphasis-300: #333333;
+
+  --docusaurus-highlighted-code-line-bg: rgba(206, 193, 157, 0.15);
+}
+
+/* Inline code reads as part of the prose rather than as a button. */
+code {
+  border: none;
+  font-weight: 500;
+}
+
+[data-theme='dark'] code {
+  color: #cec19d;
+}
+
+/**
+ * Navbar right side, ordered: color mode, GitHub, search.
+ */
+.navbar__items--right > .navbar-github-link {
+  order: 2;
+}
+
+.navbar__items--right > *:has(.navbar__search) {
+  order: 3;
+}
+
+/**
+ * GitHub mark in the navbar. Drawn as a mask rather than an image so it takes
+ * its color from the navbar link color and follows light and dark mode without
+ * needing two assets.
+ */
+.navbar-github-link {
+  display: flex;
+  align-items: center;
+}
+
+.navbar-github-link::before {
+  --github-mark: url("data:image/svg+xml,%3Csvg viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z'/%3E%3C/svg%3E");
+
+  content: '';
+  width: 22px;
+  height: 22px;
+  background-color: var(--ifm-navbar-link-color);
+  transition: background-color var(--ifm-transition-fast);
+  mask: var(--github-mark) center / contain no-repeat;
+}
+
+.navbar-github-link:hover::before {
+  background-color: var(--ifm-navbar-link-hover-color);
+}
+
+/* Code blocks are outlined in a warm tone drawn from the syntax accents. */
+.theme-code-block {
+  border: 1px solid #ffa68c;
+}
+
+[data-theme='dark'] .theme-code-block {
+  border-color: #593d25;
+}
+
+/* Footnote backreferences are controls, so they should not read as prose. */
+.markdown a[data-footnote-backref] {
+  margin-left: 0.5em;
+  font-size: 0.8em;
+  text-decoration: none;
+  opacity: 0.5;
+}
+
+.markdown a[data-footnote-backref]:hover {
+  opacity: 1;
+}
+
+/* Symbol names are headings, so they should not read as inline code chips. */
+.markdown :is(h2, h3, h4) > code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
