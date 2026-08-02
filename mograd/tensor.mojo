@@ -576,7 +576,7 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def gradient(
-        mut self,
+        self,
         targets: List[Tensor],
         var gradient: Optional[Tensor] = None,
     ) raises -> List[Tensor]:
@@ -599,7 +599,7 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
             else:
                 if not self.device:
                     raise Error("gradient requires a device context")
-                result.append(Tensor.empty(self.device.value(), targets[i].op.layout()))
+                result.append(Tensor.zeros(self.device.value(), targets[i].op.layout(), targets[i].dtype))
         return result^
 
     # ===-------------------------------------------------------------------===#
