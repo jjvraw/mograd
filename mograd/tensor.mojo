@@ -576,7 +576,7 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def gradient(
-        mut self,
+        self,
         targets: List[Tensor],
         var gradient: Optional[Tensor] = None,
     ) raises -> List[Tensor]:
