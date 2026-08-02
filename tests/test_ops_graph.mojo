@@ -139,6 +139,25 @@ def test_cast_grad_stops_at_integer_source() raises:
     assert_false(Bool(grads[0]))
 
 
+def test_grad_skips_integer_sources_for_any_rule() raises:
+    # `add_grad` hands the upstream to every source without inspecting dtypes.
+    # The check in `Grad.compute` is what stops the integer one, so rules do not
+    # each have to remember.
+    var f = leaf((2, 3), DType.float32)
+    var i = leaf((2, 3), DType.int64)
+    var grads = Grad.compute(f + i, leaf((2, 3), DType.float32), [f, i])
+    assert_true(Bool(grads[0]))
+    assert_false(Bool(grads[1]))
+
+
+def test_grad_does_not_propagate_through_integer_node() raises:
+    # An integer-valued node has no derivative even when it is the root and gets
+    # the seed gradient directly.
+    var x = leaf((4,), DType.float32)
+    var grads = Grad.compute(x.cast(DType.int64), leaf((4,), DType.int64), [x])
+    assert_false(Bool(grads[0]))
+
+
 def test_cast_grad_stops_when_casting_to_integer() raises:
     var x = leaf((4,), DType.float32)
     var y = x.cast(DType.int64)

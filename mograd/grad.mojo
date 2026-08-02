@@ -257,13 +257,11 @@ def unsqueeze_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]
 
 
 def cast_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
-    # Casting to an integer dtype is a quantisation step with a zero derivative
-    # almost everywhere, and integer sources (indices, labels) are not
-    # differentiable to begin with, so neither direction gets a gradient edge.
-    var src = node.src(0)
-    if not src.dtype().is_floating_point() or not node.dtype().is_floating_point():
-        return [None]
-    return [upstream.cast(src.dtype())]
+    # Both non-differentiable directions are handled in `Grad.compute`: an
+    # integer source is skipped there, and a cast *to* an integer dtype never
+    # receives an upstream in the first place, because the edge into it would
+    # have been skipped by that same check.
+    return [upstream.cast(node.src(0).dtype())]
 
 
 def triu_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
