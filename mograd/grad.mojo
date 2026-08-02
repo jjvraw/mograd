@@ -263,8 +263,6 @@ def cast_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
     var src = node.src(0)
     if not src.dtype().is_floating_point() or not node.dtype().is_floating_point():
         return [None]
-    if src.dtype() == upstream.dtype():
-        return [upstream]
     return [upstream.cast(src.dtype())]
 
 

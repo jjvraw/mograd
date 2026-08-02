@@ -116,8 +116,15 @@ def test_cast_grad_restores_source_dtype() raises:
     assert_true(grads[0].value().dtype() == DType.float16)
 
 
+def test_cast_to_same_dtype_folds_at_construction() raises:
+    # Decidable from the arguments alone, so no CAST node is built at all.
+    var x = leaf((2, 3), DType.float32)
+    assert_true(x.cast(DType.float32) == x)
+
+
 def test_cast_grad_same_dtype_is_passthrough() raises:
-    # A no-op cast should not introduce a redundant CAST node in the backward graph.
+    # With the forward cast folded away there is nothing to differentiate, so
+    # the upstream reaches the source untouched.
     var x = leaf((2, 3), DType.float32)
     var upstream = leaf((2, 3), DType.float32)
     var grads = Grad.compute(x.cast(DType.float32), upstream, [x])
