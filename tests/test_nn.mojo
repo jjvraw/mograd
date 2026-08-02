@@ -1,5 +1,5 @@
 from std.sys import has_accelerator
-from std.testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal, assert_equal
 from std.math import abs
 
 from mograd import Tensor, Device
@@ -322,6 +322,38 @@ def test_layer_norm_fwd_constant_row_gives_beta() raises:
     ln.weight.set(Tensor(device, [Float32(1), 1, 1, 1], (4,), requires_grad=True))
     ln.bias.set(Tensor(device, [Float32(0.5), 0.5, 0.5, 0.5], (4,), requires_grad=True))
     assert_allclose(ln(x), [Float32(0.5), Float32(0.5), Float32(0.5), Float32(0.5)], tol=Float32(1e-4))
+
+
+def test_sgd_step_with_uninitialized_parameter() raises:
+    # `unused` is never called, so its weight slot stays empty and `parameters()`
+    # returns one tensor for two slots. `step` must follow that same numbering.
+    # The empty slot has to come first: with it last, the slot index and the
+    # gradient index still agree for every initialized weight and the mismatch
+    # goes unnoticed.
+    var device = Device()
+    var unused = nn.Linear(4, 2, bias=False)
+    var l = nn.Linear(4, 2, bias=False)
+    var x = Tensor(device, [Float32(1), 2, 3, 4], (1, 4))
+    _ = l(x)
+
+    var slots = unused.parameters()
+    slots += l.parameters()
+    var opt = nn.SGD(slots^, lr=Float32(0.1))
+
+    var params = opt.parameters()
+    assert_equal(len(params), 1)
+    var before = params[0].to_list()
+    var loss = l(x).sum()
+    var grads = loss.gradient(params)
+    opt.step(grads)
+
+    var after = opt.parameters()[0].to_list()
+    var changed = False
+    for i in range(len(before)):
+        if abs(before[i] - after[i]) > Float32(1e-6):
+            changed = True
+    if not changed:
+        raise Error("SGD should update the initialized weight")
 
 
 def main() raises:
