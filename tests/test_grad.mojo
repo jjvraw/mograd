@@ -1132,39 +1132,33 @@ def test_flash_attn_bwd_shapes() raises:
 # ===-------------------------------------------------------------------===#
 
 
-def _dirty_device_pool(device: Device, numel: Int) raises:
-    """Fills and releases blocks of `numel` elements so the allocator has stale
-    non-zero memory to hand back. Without this the disconnected-target test is
-    vacuous: a fresh allocation reads back as zeros, so an uninitialised buffer
+def _dirty_device_pool(device: Device, numel: Int, dtype: DType) raises:
+    """Fills and releases `numel`-element blocks of `dtype` so the allocator has
+    stale non-zero memory to hand back. Without this the disconnected-target test
+    is vacuous: a fresh allocation reads back as zeros, so an uninitialised buffer
     is indistinguishable from a correct zero gradient.
     """
     for i in range(128):
-        var t = Tensor.full(device, (numel,), Float32(7777 + i))
+        var t = Tensor.full(device, (numel,), Float32(7777 + i), dtype)
         _ = t.value()
 
 
 def test_grad_of_disconnected_target_is_zero() raises:
-    # `unused` never reaches the loss, so its gradient is zero. Handing back an
-    # uninitialised buffer feeds an optimizer whatever the allocator last left
-    # in that block.
+    # `unused` never reaches the loss, so its gradient is zero, in its own dtype.
+    # Handing back an uninitialised buffer feeds an optimizer whatever the
+    # allocator last left in that block.
     var device = Device()
-    _dirty_device_pool(device, 64)
+    _dirty_device_pool(device, 64, DType.float32)
     var x = Tensor.full(device, (64,), 2.0, requires_grad=True)
     var unused = Tensor.full(device, (64,), 3.0, requires_grad=True)
+    var unused_f16 = Tensor.full(device, (64,), 3.0, DType.float16, requires_grad=True)
     var loss = (x * x).sum()
-    var grads = loss.gradient([x, unused])
+    var grads = loss.gradient([x, unused, unused_f16])
     assert_allclose(grads[0], Tensor.full(device, (64,), 4.0))
+    # Zero, not whatever the allocator last left in that block.
     assert_allclose(grads[1], Tensor.full(device, (64,), 0.0))
-
-
-def test_grad_of_disconnected_target_keeps_dtype() raises:
-    var device = Device()
-    var x = Tensor(device, [Float32(1), 2], (2,), requires_grad=True)
-    var unused = Tensor(device, [Float16(3), 4], (2,), requires_grad=True)
-    var loss = (x * x).sum()
-    var grads = loss.gradient([unused])
-    assert_true(grads[0].dtype == DType.float16)
-    assert_allclose(grads[0], [Float16(0), 0])
+    # And in the target's own dtype, not the float32 default.
+    assert_true(grads[2].dtype == DType.float16)
 
 
 def main() raises:
