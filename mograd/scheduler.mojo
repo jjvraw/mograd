@@ -72,8 +72,8 @@ struct Scheduler:
             var results = rule.value().func(node, inputs, device)
             tracer.node_end(node, inputs, results, device)
             var to_cache = List[AnyBuffer]()
-            for i in range(len(results)):
-                to_cache.append(results[i].copy())
+            for ref res in results:
+                to_cache.append(res.copy())
             node.op().buf = to_cache^
             bufs[node] = results^
 

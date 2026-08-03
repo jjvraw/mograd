@@ -95,10 +95,10 @@ struct Tracer:
                 device.ctx.synchronize()
                 var dt = Int(perf_counter_ns()) - self.node_t0
                 var bytes_touched = 0
-                for i in range(len(inputs)):
-                    bytes_touched += inputs[i].size_bytes()
-                for i in range(len(results)):
-                    bytes_touched += results[i].size_bytes()
+                for ref inp in inputs:
+                    bytes_touched += inp.size_bytes()
+                for ref res in results:
+                    bytes_touched += res.size_bytes()
                 self.stats.gpu_ns += dt
                 self.stats.bytes_moved += bytes_touched
                 var tput = Self.fmt1(Float64(bytes_touched) / Float64(dt)) + " GB/s" if dt > 0 else String("")
