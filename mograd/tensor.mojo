@@ -150,8 +150,8 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         (see `value` for the single-tensor equivalent).
         """
         var ops = List[OpRef]()
-        for i in range(len(tensors)):
-            ops.append(tensors[i].op)
+        for t in tensors:
+            ops.append(t.op)
         return NativeRuntime.run_many(ops^, tensors[0].device, simplifier, rules.copy())
 
     def item[
@@ -349,9 +349,9 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         """
         var refs = List[OpRef]()
         var requires_grad = False
-        for i in range(len(tensors)):
-            refs.append(tensors[i].op)
-            requires_grad = requires_grad or tensors[i].requires_grad
+        for t in tensors:
+            refs.append(t.op)
+            requires_grad = requires_grad or t.requires_grad
         return Self(tensors[0].device, op_concat(refs^, axis), requires_grad)
 
     def cast(self, dtype: DType) -> Tensor:

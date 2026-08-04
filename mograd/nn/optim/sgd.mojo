@@ -13,9 +13,9 @@ struct SGD(Optimizer):
 
     def parameters(self) -> List[Tensor]:
         var ps = List[Tensor]()
-        for i in range(len(self.weights)):
-            if self.weights[i]:
-                ps.append(self.weights[i].tensor())
+        for w in self.weights:
+            if w:
+                ps.append(w.tensor())
         return ps^
 
     def set_lr(mut self, lr: Float32):

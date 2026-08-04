@@ -78,8 +78,8 @@ struct Grad:
                         grad.accum(node.srcs()[j], src_grads[j].value())
 
         var result = List[Optional[OpRef]]()
-        for i in range(len(target_ops)):
-            result.append(grad.grad_map.get(target_ops[i]))
+        for target in target_ops:
+            result.append(grad.grad_map.get(target))
         return result^
 
     def accum(mut self, op: OpRef, g: OpRef) raises:
