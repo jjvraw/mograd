@@ -64,7 +64,8 @@ struct Grad:
         for i in reversed(range(len(topo))):
             var node = topo[i]
             var upstream = grad.grad_map.get(node)
-            if not upstream:
+
+            if not (Self.has_tangent(node.dtype()) and upstream):
                 continue
 
             var up = upstream.value()
@@ -72,8 +73,9 @@ struct Grad:
             if rule:
                 var src_grads = rule.value().func(node, up)
                 for j in range(len(node.srcs())):
-                    # None marks a non-differentiable input (indices, labels, masks):
-                    # no gradient edge is created, so backprop never enters that subgraph
+                    # None marks a non-differentiable input a rule knows to stop at
+                    # (e.g. masks): no gradient edge is created, so backprop never enters
+                    # that subgraph
                     if src_grads[j]:
                         grad.accum(node.srcs()[j], src_grads[j].value())
 
@@ -85,6 +87,20 @@ struct Grad:
     def accum(mut self, op: OpRef, g: OpRef) raises:
         var existing = self.grad_map.get(op)
         self.grad_map[op] = existing.value() + g if existing else g
+
+    @staticmethod
+    def has_tangent(d: DType) -> Bool:
+        """Whether values of this dtype have a tangent space.
+
+        i.e. does `d` participate in differentiation? Integer and boolean values do not.
+
+        Args:
+            d: The datatype.
+
+        Returns:
+            True if `d` has a tangent space, False otherwise.
+        """
+        return d.is_floating_point()
 
 
 # ===-------------------------------------------------------------------===#

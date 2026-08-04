@@ -580,6 +580,10 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         targets: List[Tensor],
         var gradient: Optional[Tensor] = None,
     ) raises -> List[Tensor]:
+        var non_float = [not Grad.has_tangent(t.dtype) for t in targets]
+        if not Grad.has_tangent(self.dtype) or any(non_float):
+            raise Error("gradient: only floating-point tensors have gradients")
+
         var initial_grad_op: OpRef
         if gradient:
             initial_grad_op = gradient.take().op
@@ -593,13 +597,13 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         var grads = Grad.compute(self.op, initial_grad_op, target_ops)
 
         var result = List[Tensor]()
-        for i in range(len(grads)):
-            if grads[i]:
-                result.append(Tensor(self.device, grads[i].value()))
+        for grad, target in zip(grads, targets):
+            if grad:
+                result.append(Tensor(self.device, grad.value()))
             else:
                 if not self.device:
                     raise Error("gradient requires a device context")
-                result.append(Tensor.zeros(self.device.value(), targets[i].op.layout(), targets[i].dtype))
+                result.append(Tensor.zeros(self.device.value(), target.op.layout(), target.dtype))
         return result^
 
     # ===-------------------------------------------------------------------===#

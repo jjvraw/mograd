@@ -1,6 +1,6 @@
 from std.math import sqrt
 from std.sys import has_accelerator
-from std.testing import TestSuite, assert_almost_equal, assert_equal, assert_true
+from std.testing import TestSuite, assert_almost_equal, assert_equal, assert_raises, assert_true
 
 import mograd.nn as nn
 from mograd import Tensor, Device
@@ -1159,6 +1159,23 @@ def test_grad_of_disconnected_target_is_zero() raises:
     assert_allclose(grads[1], Tensor.full(device, (64,), 0.0))
     # And in the target's own dtype, not the float32 default.
     assert_true(grads[2].dtype == DType.float16)
+
+
+def test_gradient_raises_on_integer_loss() raises:
+    var device = Device()
+    var x = Tensor.full(device, (4,), 2.0, requires_grad=True)
+    var int_loss = Tensor.randint(device, (4,), 0, 10)
+    with assert_raises(contains="only floating-point"):
+        _ = int_loss.gradient([x])
+
+
+def test_gradient_raises_on_integer_target() raises:
+    var device = Device()
+    var x = Tensor.full(device, (4,), 2.0, requires_grad=True)
+    var labels = Tensor.randint(device, (4,), 0, 10)
+    var loss = (x * x).sum()
+    with assert_raises(contains="only floating-point"):
+        _ = loss.gradient([x, labels])
 
 
 def main() raises:
