@@ -95,9 +95,9 @@ struct Tracer:
                 device.ctx.synchronize()
                 var dt = Int(perf_counter_ns()) - self.node_t0
                 var bytes_touched = 0
-                for ref inp in inputs:
+                for inp in inputs:
                     bytes_touched += inp.size_bytes()
-                for ref res in results:
+                for res in results:
                     bytes_touched += res.size_bytes()
                 self.stats.gpu_ns += dt
                 self.stats.bytes_moved += bytes_touched

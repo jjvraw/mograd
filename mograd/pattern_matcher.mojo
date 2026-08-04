@@ -50,7 +50,7 @@ struct Pat(Copyable, ImplicitlyCopyable, Movable):
         return True
 
     def is_compound(self) -> Bool:
-        for ref src in self.srcs:
+        for src in self.srcs:
             if not src._any_op:
                 return True
             if src.is_compound():
@@ -63,7 +63,7 @@ struct PatternMatcher[F: TrivialRegisterPassable]:
 
     def __init__(out self, ref rules: List[Rule[Self.F]]):
         self.rule_table = Dict[OpType, List[Rule[Self.F]]]()
-        for ref rule in rules:
+        for rule in rules:
             var key = rule.pat.op_type
             self.rule_table.setdefault(key, List[Rule[Self.F]]()).append(rule.copy())
 

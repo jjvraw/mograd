@@ -503,8 +503,8 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     def write_to(self, mut writer: Some[Writer]):
         var cache = Dict[Self, _NodeEntry]()
         var topo = GraphUtils.toposort(self)
-        for ref n in topo:
-            for ref s in n.srcs():
+        for n in topo:
+            for s in n.srcs():
                 var e = cache.get(s)
                 if e:
                     var entry = e.value()
@@ -553,7 +553,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
 
 def concat(var tensors: List[OpRef], axis: Int) raises -> OpRef:
     var layouts = List[Layout]()
-    for ref t in tensors:
+    for t in tensors:
         layouts.append(t.layout())
     var out_layout = Layout.concat(layouts, axis)
     var ax = tensors[0].layout().normalise_dim(axis)

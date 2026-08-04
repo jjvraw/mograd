@@ -113,7 +113,7 @@ struct Adam(Optimizer):
 
     def parameters(self) -> List[Tensor]:
         var ps = List[Tensor]()
-        for ref w in self.weights:
+        for w in self.weights:
             if w:
                 ps.append(w.tensor())
         return ps^
@@ -172,7 +172,7 @@ struct AdamW(Optimizer):
 
     def parameters(self) -> List[Tensor]:
         var ps = List[Tensor]()
-        for ref w in self.weights:
+        for w in self.weights:
             if w:
                 ps.append(w.tensor())
         return ps^

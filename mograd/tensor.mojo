@@ -150,7 +150,7 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         (see `value` for the single-tensor equivalent).
         """
         var ops = List[OpRef]()
-        for ref t in tensors:
+        for t in tensors:
             ops.append(t.op)
         return NativeRuntime.run_many(ops^, tensors[0].device, simplifier, rules.copy())
 
@@ -349,7 +349,7 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         """
         var refs = List[OpRef]()
         var requires_grad = False
-        for ref t in tensors:
+        for t in tensors:
             refs.append(t.op)
             requires_grad = requires_grad or t.requires_grad
         return Self(tensors[0].device, op_concat(refs^, axis), requires_grad)

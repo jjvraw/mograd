@@ -24,7 +24,7 @@ struct Simplifier:
         var subst = Dict[OpRef, OpRef]()
         var topo = GraphUtils.toposort(root)
 
-        for ref node in topo:
+        for node in topo:
             # Per-node fixed point: matchers run in priority of user rules.
             var node_r = _apply_subst(node, subst)
             var seen = Dict[OpRef, Bool]()
@@ -43,7 +43,7 @@ struct Simplifier:
                             var stype = OpType("__fuse_" + String(j))
                             node_r = OpRef(Op(stype, node_r.layout(), node_r.dtype(), leaves^))
                             var already = False
-                            for ref sched in extra_sched:
+                            for sched in extra_sched:
                                 if sched.pat.op_type == stype:
                                     already = True
                                     break
@@ -53,7 +53,7 @@ struct Simplifier:
                     break
 
                 var progressed = False
-                for ref rule in self.rules:
+                for rule in self.rules:
                     if not rule.pat.matches(node_r):
                         continue
                     var rewritten = rule.func(node_r)

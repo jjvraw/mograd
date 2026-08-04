@@ -78,7 +78,7 @@ struct Grad:
                         grad.accum(node.srcs()[j], src_grads[j].value())
 
         var result = List[Optional[OpRef]]()
-        for ref target in target_ops:
+        for target in target_ops:
             result.append(grad.grad_map.get(target))
         return result^
 
