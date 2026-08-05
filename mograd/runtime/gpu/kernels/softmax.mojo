@@ -6,7 +6,7 @@ from std.sys.info import simd_width_of
 from layout import Coord, TileTensor, row_major
 from nn.softmax import softmax as nn_softmax
 
-from mograd.runtime.gpu.kernels.utils import strided_offset
+from mograd.runtime.gpu.kernels.strided import strided_offset
 
 # ===-------------------------------------------------------------------===#
 # Softmax

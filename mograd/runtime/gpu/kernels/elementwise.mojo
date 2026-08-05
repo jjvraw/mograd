@@ -1,7 +1,7 @@
 from std.math import log as math_log, exp as math_exp, sqrt as math_sqrt
 from std.algorithm.functional import elementwise
 
-from mograd.runtime.gpu.kernels.utils import strided_offset, unary_strided_map
+from mograd.runtime.gpu.kernels.strided import strided_offset, unary_strided_map
 
 # ===-------------------------------------------------------------------===#
 # Scalar ops (used with dispatch_unary_map / dispatch_binary_map)

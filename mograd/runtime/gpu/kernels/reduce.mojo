@@ -5,7 +5,7 @@ from std.gpu.host import DeviceContext
 
 from layout import Coord
 
-from mograd.runtime.gpu.kernels.utils import strided_offset
+from mograd.runtime.gpu.kernels.strided import strided_offset
 
 # ===-------------------------------------------------------------------===#
 # Sum

@@ -3,7 +3,7 @@ from std.algorithm.functional import elementwise
 from nn.rand_normal import random_normal
 from nn.rand_uniform import random_uniform
 
-from mograd.runtime.gpu.kernels.utils import strided_offset
+from mograd.runtime.gpu.kernels.strided import strided_offset
 
 # ===-------------------------------------------------------------------===#
 # Tensor.randn

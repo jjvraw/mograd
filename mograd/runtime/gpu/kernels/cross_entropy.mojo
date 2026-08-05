@@ -3,7 +3,7 @@ from std.gpu import thread_idx, block_idx, barrier
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
 
-from mograd.runtime.gpu.kernels.utils import strided_offset
+from mograd.runtime.gpu.kernels.strided import strided_offset
 
 # ===-------------------------------------------------------------------===#
 # Cross Entropy

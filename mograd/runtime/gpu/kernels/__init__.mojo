@@ -23,15 +23,15 @@ from mograd.runtime.gpu.kernels.gather_scatter import *
 from mograd.runtime.gpu.kernels.cross_entropy import *
 from mograd.runtime.gpu.kernels.normalization import layer_norm_fwd, layer_norm_bwd
 from mograd.runtime.gpu.kernels.attention import flash_attn_fwd, flash_attn_bwd
-from mograd.runtime.gpu.kernels.utils import (
+from mograd.runtime.gpu.kernels.dispatch import (
     dispatch_binary_contiguous,
     dispatch_binary_map,
     dispatch_binary_scalar_map,
     dispatch_dtype,
     dispatch_unary,
     dispatch_unary_map,
-    strided_copy_map,
 )
+from mograd.runtime.gpu.kernels.strided import strided_copy_map
 
 # ===-------------------------------------------------------------------===#
 # Factory Kernels

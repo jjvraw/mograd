@@ -23,11 +23,8 @@ from mograd.runtime.gpu.rewrites import (
     FLASH_ATTN_GRAD,
     GPU_REWRITES,
 )
-from mograd.runtime.gpu.kernels.utils import (
-    FactoryKernel,
-    RandomFactoryKernel,
-    UnaryStrided,
-    BinaryStrided,
+from mograd.runtime.gpu.kernels.dispatch import KernelRegistry as K
+from mograd.runtime.gpu.kernels.dispatch import (
     unary_strided,
     binary_strided,
     axis_reduce_strided,
@@ -172,56 +169,6 @@ struct NativeRuntime(Runtime):
 
 
 # ===-------------------------------------------------------------------===#
-# Signatures
-# ===-------------------------------------------------------------------===#
-
-comptime OneHotOp = def(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    in_dtype: DType,
-    out_dtype: DType,
-    read ld: Layout,
-    read la: Layout,
-    ctx: DeviceContext,
-) thin abi("Mojo") raises -> None
-
-comptime BinaryElementWise = def(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    numel: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) thin abi("Mojo") raises -> None
-
-comptime BinaryScalarElementWiseStrided = def(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
-    dtype: DType,
-    ctx: DeviceContext,
-) thin abi("Mojo") raises -> None
-
-comptime CastOp = def(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
-    in_dtype: DType,
-    out_dtype: DType,
-    ctx: DeviceContext,
-) thin abi("Mojo") raises -> None
-
-comptime TriuOp = def(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
-    diagonal: Int,
-    dtype: DType,
-    ctx: DeviceContext,
-) thin abi("Mojo") raises -> None
-
-# ===-------------------------------------------------------------------===#
 # Factory
 # ===-------------------------------------------------------------------===#
 
@@ -231,7 +178,7 @@ def randn(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[A
     params[0] = node.attr("mean")
     params[1] = node.attr("std")
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.get_function[RandomFactoryKernel]("mograd_randn")(
+    K.randn.load(device)(
         params.bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
         node.numel(),
@@ -248,7 +195,7 @@ def uniform(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List
     params[0] = node.attr("low")
     params[1] = node.attr("high")
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.get_function[RandomFactoryKernel]("mograd_uniform")(
+    K.uniform.load(device)(
         params.bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
         node.numel(),
@@ -276,7 +223,7 @@ def full(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[An
     var v = alloc[Float32](1)
     v[0] = node.attr("value")
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.get_function[FactoryKernel]("mograd_full")(
+    K.full.load(device)(
         v.bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
         node.numel(),
@@ -288,14 +235,14 @@ def full(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[An
 
 
 def gather(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    return [binary_strided("mograd_gather", node, inputs, device)]
+    return [binary_strided(K.gather, node, inputs, device)]
 
 
 def scatter_add(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel(), fill=0.0)
-    device.get_function[BinaryStrided]("mograd_scatter_add")(
+    K.scatter_add.load(device)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         out.data_ptr(),
@@ -311,7 +258,7 @@ def one_hot(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List
     var la = node.src(0).layout()
     var ld = node.layout()
     var out = AnyBuffer.create(node.dtype(), device, ld.numel())
-    device.get_function[OneHotOp]("mograd_one_hot")(
+    K.one_hot.load(device)(
         inputs[0].data_ptr(),
         out.data_ptr(),
         node.src(0).dtype(),
@@ -329,29 +276,29 @@ def one_hot(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List
 
 
 def neg(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    return [unary_strided("mograd_neg", node, inputs, device)]
+    return [unary_strided(K.neg, node, inputs, device)]
 
 
 def log(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    return [unary_strided("mograd_log", node, inputs, device)]
+    return [unary_strided(K.log, node, inputs, device)]
 
 
 def exp(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    return [unary_strided("mograd_exp", node, inputs, device)]
+    return [unary_strided(K.exp, node, inputs, device)]
 
 
 def sqrt(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    return [unary_strided("mograd_sqrt", node, inputs, device)]
+    return [unary_strided(K.sqrt, node, inputs, device)]
 
 
 def relu(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    return [unary_strided("mograd_relu", node, inputs, device)]
+    return [unary_strided(K.relu, node, inputs, device)]
 
 
 def cast(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var layout = node.src(0).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.get_function[CastOp]("mograd_cast")(
+    K.cast.load(device)(
         inputs[0].data_ptr(),
         out.data_ptr(),
         layout,
@@ -373,7 +320,7 @@ def add(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[Any
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
     if la.is_contiguous() and lb.is_contiguous():
         null = alloc[Int64](1)
-        device.get_function[BinaryElementWise]("mograd_add")(
+        K.add.load(device)(
             inputs[0].data_ptr(),
             inputs[1].data_ptr(),
             out.data_ptr(),
@@ -384,23 +331,23 @@ def add(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[Any
         null.free()
         return [out^]
 
-    return [binary_strided("mograd_add_strided", node, inputs, device)]
+    return [binary_strided(K.add_strided, node, inputs, device)]
 
 
 def mul(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    return [binary_strided("mograd_mul", node, inputs, device)]
+    return [binary_strided(K.mul, node, inputs, device)]
 
 
 def div(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    return [binary_strided("mograd_div", node, inputs, device)]
+    return [binary_strided(K.div, node, inputs, device)]
 
 
 def eq(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    return [binary_strided("mograd_eq", node, inputs, device)]
+    return [binary_strided(K.eq, node, inputs, device)]
 
 
 def relu_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    return [binary_strided("mograd_relu_grad", node, inputs, device)]
+    return [binary_strided(K.relu_grad, node, inputs, device)]
 
 
 def scale(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
@@ -408,7 +355,7 @@ def scale(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[A
     var s = alloc[Float32](1)
     s[0] = node.attrs()["scalar"][Float32]
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.get_function[BinaryScalarElementWiseStrided]("mograd_scale")(
+    K.scale.load(device)(
         inputs[0].data_ptr(),
         s.bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
@@ -423,7 +370,7 @@ def slice_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> L
     var slice_layout = node.src(1).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel(), fill=0.0)
     var out_view = out.view(slice_layout)
-    device.get_function[UnaryStrided]("mograd_slice_grad")(
+    K.slice_grad.load(device)(
         inputs[0].data_ptr(),
         out_view.data_ptr(),
         slice_layout,
@@ -440,20 +387,20 @@ def slice_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> L
 
 def sum(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     if "axis" in node.attrs():
-        return [axis_reduce_strided("mograd_sum_axis", node, inputs, device)]
-    return [unary_strided("mograd_sum", node, inputs, device)]
+        return [axis_reduce_strided(K.sum_axis, node, inputs, device)]
+    return [unary_strided(K.sum, node, inputs, device)]
 
 
 def mean(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     if "axis" in node.attrs():
-        return [axis_reduce_strided("mograd_mean_axis", node, inputs, device)]
-    return [unary_strided("mograd_mean", node, inputs, device)]
+        return [axis_reduce_strided(K.mean_axis, node, inputs, device)]
+    return [unary_strided(K.mean, node, inputs, device)]
 
 
 def argmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     if "axis" in node.attrs():
-        return [axis_reduce_strided("mograd_argmax_axis", node, inputs, device)]
-    return [unary_strided("mograd_argmax", node, inputs, device)]
+        return [axis_reduce_strided(K.argmax_axis, node, inputs, device)]
+    return [unary_strided(K.argmax, node, inputs, device)]
 
 
 # ===-------------------------------------------------------------------===#
@@ -462,31 +409,31 @@ def argmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[
 
 
 def matmul(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    return [matmul_strided("mograd_matmul", node, inputs, device)]
+    return [matmul_strided(K.matmul, node, inputs, device)]
 
 
 def matmul_t(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    return [matmul_strided("mograd_matmul_bt", node, inputs, device)]
+    return [matmul_strided(K.matmul_bt, node, inputs, device)]
 
 
 def matmul_bias_bt(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    return [matmul_bias_strided("mograd_matmul_bias_bt", node, inputs, device)]
+    return [matmul_bias_strided(K.matmul_bias_bt, node, inputs, device)]
 
 
 def layer_norm_fwd(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    return [layer_norm_fwd_dispatch("mograd_layer_norm_fwd", node, inputs, device)]
+    return [layer_norm_fwd_dispatch(K.layer_norm_fwd, node, inputs, device)]
 
 
 def layer_norm_bwd(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    return layer_norm_bwd_dispatch("mograd_layer_norm_bwd", node, inputs, device)
+    return layer_norm_bwd_dispatch(K.layer_norm_bwd, node, inputs, device)
 
 
 def flash_attn_fwd_sched(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    return flash_attn_fwd_dispatch("mograd_flash_attn_fwd", node, inputs, device)
+    return flash_attn_fwd_dispatch(K.flash_attn_fwd, node, inputs, device)
 
 
 def flash_attn_bwd_sched(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    return flash_attn_bwd_dispatch("mograd_flash_attn_bwd", node, inputs, device)
+    return flash_attn_bwd_dispatch(K.flash_attn_bwd, node, inputs, device)
 
 
 # ===-------------------------------------------------------------------===#
@@ -508,8 +455,8 @@ def contiguous(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> L
     var layout = node.src(0).layout()
     var order = layout.permutation_of_contiguous()
     if order and _is_last_two_swap(order.value(), layout.rank()):
-        return [unary_strided("mograd_transpose_last2", node, inputs, device)]
-    return [unary_strided("mograd_contiguous", node, inputs, device)]
+        return [unary_strided(K.transpose_last2, node, inputs, device)]
+    return [unary_strided(K.contiguous, node, inputs, device)]
 
 
 def view(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
@@ -526,7 +473,7 @@ def concat(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[
         var size = src_layout.shape(ax)
         var dst_layout = out_layout.slice_axis(ax, offset, offset + size)
         var dst_view = out.view(dst_layout)
-        strided_copy("mograd_strided_copy", src_layout, dst_layout, inputs[i], dst_view, node.dtype(), device)
+        strided_copy(K.strided_copy, src_layout, dst_layout, inputs[i], dst_view, node.dtype(), device)
         offset += size
     return [out^]
 
@@ -534,7 +481,7 @@ def concat(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[
 def triu(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
     var diagonal = node.attr_int("diagonal")
-    device.get_function[TriuOp]("mograd_triu")(
+    K.triu.load(device)(
         inputs[0].data_ptr(),
         out.data_ptr(),
         node.src(0).layout(),
@@ -552,22 +499,13 @@ def triu(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[An
 
 def softmax(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     if node.src(0).layout().is_contiguous():
-        return [unary_strided("mograd_softmax", node, inputs, device)]
-    return [unary_strided("mograd_softmax_strided", node, inputs, device)]
+        return [unary_strided(K.softmax, node, inputs, device)]
+    return [unary_strided(K.softmax_strided, node, inputs, device)]
 
 
 # ===-------------------------------------------------------------------===#
 # BinaryOps
 # ===-------------------------------------------------------------------===#
-
-comptime BinaryOp = def(
-    UnsafePointer[NoneType, ImmutAnyOrigin],
-    UnsafePointer[NoneType, ImmutAnyOrigin],
-    UnsafePointer[NoneType, MutAnyOrigin],
-    Int,
-    DType,
-    DeviceContext,
-) thin abi("Mojo") raises -> None
 
 
 def transpose(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
@@ -575,7 +513,7 @@ def transpose(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> Li
     p[0] = Float32(node.src(0).layout().shape(0))
     p[1] = Float32(node.src(0).layout().shape(1))
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.get_function[BinaryOp]("mograd_transpose")(
+    K.transpose.load(device)(
         inputs[0].data_ptr(),
         p.bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
@@ -589,8 +527,8 @@ def transpose(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> Li
 
 def cross_entropy(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     if node.src(0).layout().is_contiguous() and node.src(1).layout().is_contiguous():
-        return [binary_strided("mograd_cross_entropy", node, inputs, device)]
-    return [binary_strided("mograd_cross_entropy_strided", node, inputs, device)]
+        return [binary_strided(K.cross_entropy, node, inputs, device)]
+    return [binary_strided(K.cross_entropy_strided, node, inputs, device)]
 
 
 # TODO: Revisit this, this is slop and can probably be cleaned up.
@@ -617,29 +555,17 @@ def disk(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[An
 
 
 def softmax_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    return [binary_strided("mograd_softmax_grad", node, inputs, device)]
-
-
-comptime TernaryStrided = def(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    c: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
-    dtype: DType,
-    ctx: DeviceContext,
-) thin abi("Mojo") raises -> None
+    return [binary_strided(K.softmax_grad, node, inputs, device)]
 
 
 def cross_entropy_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    var name = "mograd_cross_entropy_grad"
+    var sym = K.cross_entropy_grad
     if not (la.is_contiguous() and lb.is_contiguous()):
-        name = "mograd_cross_entropy_grad_strided"
-    device.get_function[TernaryStrided](name)(
+        sym = K.cross_entropy_grad_strided
+    sym.load(device)(
         inputs[0].data_ptr(),
         inputs[1].data_ptr(),
         inputs[2].data_ptr(),
