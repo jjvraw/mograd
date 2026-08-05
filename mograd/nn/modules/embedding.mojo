@@ -20,12 +20,10 @@ struct Embedding(Module):
         if not self.weight:
             if not indices.device:
                 raise Error("Embedding requires a device context on first call")
-            var seed = UInt32(self.num_embeddings * self.embedding_dim)
             self.weight.set(
                 Tensor.randn(
                     indices.device.value(),
                     (self.num_embeddings, self.embedding_dim),
-                    seed=seed,
                     requires_grad=True,
                 )
             )

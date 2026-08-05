@@ -25,6 +25,7 @@ from mograd.runtime.gpu.rewrites import (
 )
 from mograd.runtime.gpu.kernels.utils import (
     FactoryKernel,
+    RandomFactoryKernel,
     UnaryStrided,
     BinaryStrided,
     unary_strided,
@@ -226,16 +227,16 @@ comptime TriuOp = def(
 
 
 def randn(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    var params = alloc[Float32](3)
+    var params = alloc[Float32](2)
     params[0] = node.attr("mean")
     params[1] = node.attr("std")
-    params[2] = node.attr("seed")
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.get_function[FactoryKernel]("mograd_randn")(
+    device.get_function[RandomFactoryKernel]("mograd_randn")(
         params.bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
         node.numel(),
         node.dtype(),
+        UInt64(node.attr_int("seed")),
         device.ctx,
     )
     params.free()
@@ -243,13 +244,17 @@ def randn(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[A
 
 
 def uniform(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    var params = alloc[Float32](3)
+    var params = alloc[Float32](2)
     params[0] = node.attr("low")
     params[1] = node.attr("high")
-    params[2] = node.attr("seed")
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
-    device.get_function[FactoryKernel]("mograd_uniform")(
-        params.bitcast[NoneType]().as_unsafe_any_origin(), out.data_ptr(), node.numel(), node.dtype(), device.ctx
+    device.get_function[RandomFactoryKernel]("mograd_uniform")(
+        params.bitcast[NoneType]().as_unsafe_any_origin(),
+        out.data_ptr(),
+        node.numel(),
+        node.dtype(),
+        UInt64(node.attr_int("seed")),
+        device.ctx,
     )
     params.free()
     return [out^]

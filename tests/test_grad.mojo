@@ -467,47 +467,63 @@ def test_scatter_add_grad_is_gather() raises:
 
 
 def test_simple_mlp_grad() raises:
-    def linear_bias(device: Device, in_features: Int, out_features: Int) raises -> Tensor:
+    # Fixed per-tensor seeds shared by the module setup below and the
+    # numerical-gradient closures, which rebuild the same network around the
+    # perturbed weight (the closures cannot capture the outer tensors).
+    def uniform_w(device: Device, in_features: Int, shape: Layout, seed: Int) raises -> Tensor:
         var bound = Float32(sqrt(Float32(6) / Float32(in_features)))
-        var seed = UInt32(out_features * in_features) + 1
-        return Tensor.uniform(device, (out_features,), low=-bound, high=bound, seed=seed)
+        return Tensor.uniform(device, shape, low=-bound, high=bound, seed=seed, requires_grad=True)
 
     def fwd_w1(w1: Tensor) raises -> Tensor:
         var device = w1.device.value()
         var x = Tensor(device, [Float32(0.1), 0.2, 0.3, 0.4], (1, 4))
         var labels = Tensor(device, [Float32(0)], (1,)).cast(DType.float32)
-        var b1 = linear_bias(device, 4, 8)
+        var b1 = uniform_w(device, 4, (8,), seed=102)
+        var w2 = uniform_w(device, 8, (4, 8), seed=103)
+        var b2 = uniform_w(device, 8, (4,), seed=104)
+        var w3 = uniform_w(device, 4, (3, 4), seed=105)
+        var b3 = uniform_w(device, 4, (3,), seed=106)
         var h1 = (x @ w1.transpose() + b1.expand(1, 8)).relu()
-        var l2 = nn.Linear(8, 4)
-        var l3 = nn.Linear(4, 3)
-        return l3(l2(h1).relu()).cross_entropy(labels.one_hot(3).cast(DType.float32))
+        var h2 = (h1 @ w2.transpose() + b2.expand(1, 4)).relu()
+        return (h2 @ w3.transpose() + b3.expand(1, 3)).cross_entropy(labels.one_hot(3).cast(DType.float32))
 
     def fwd_w2(w2: Tensor) raises -> Tensor:
         var device = w2.device.value()
         var x = Tensor(device, [Float32(0.1), 0.2, 0.3, 0.4], (1, 4))
         var labels = Tensor(device, [Float32(0)], (1,)).cast(DType.float32)
-        var l1 = nn.Linear(4, 8)
-        var b2 = linear_bias(device, 8, 4)
-        var h2 = (l1(x).relu() @ w2.transpose() + b2.expand(1, 4)).relu()
-        var l3 = nn.Linear(4, 3)
-        return l3(h2).cross_entropy(labels.one_hot(3).cast(DType.float32))
+        var w1 = uniform_w(device, 4, (8, 4), seed=101)
+        var b1 = uniform_w(device, 4, (8,), seed=102)
+        var b2 = uniform_w(device, 8, (4,), seed=104)
+        var w3 = uniform_w(device, 4, (3, 4), seed=105)
+        var b3 = uniform_w(device, 4, (3,), seed=106)
+        var h1 = (x @ w1.transpose() + b1.expand(1, 8)).relu()
+        var h2 = (h1 @ w2.transpose() + b2.expand(1, 4)).relu()
+        return (h2 @ w3.transpose() + b3.expand(1, 3)).cross_entropy(labels.one_hot(3).cast(DType.float32))
 
     def fwd_w3(w3: Tensor) raises -> Tensor:
         var device = w3.device.value()
         var x = Tensor(device, [Float32(0.1), 0.2, 0.3, 0.4], (1, 4))
         var labels = Tensor(device, [Float32(0)], (1,))
-        var l1 = nn.Linear(4, 8)
-        var l2 = nn.Linear(8, 4)
-        var b3 = linear_bias(device, 4, 3)
-        return (l2(l1(x).relu()).relu() @ w3.transpose() + b3.expand(1, 3)).cross_entropy(
-            labels.one_hot(3).cast(DType.float32)
-        )
+        var w1 = uniform_w(device, 4, (8, 4), seed=101)
+        var b1 = uniform_w(device, 4, (8,), seed=102)
+        var w2 = uniform_w(device, 8, (4, 8), seed=103)
+        var b2 = uniform_w(device, 8, (4,), seed=104)
+        var b3 = uniform_w(device, 4, (3,), seed=106)
+        var h1 = (x @ w1.transpose() + b1.expand(1, 8)).relu()
+        var h2 = (h1 @ w2.transpose() + b2.expand(1, 4)).relu()
+        return (h2 @ w3.transpose() + b3.expand(1, 3)).cross_entropy(labels.one_hot(3).cast(DType.float32))
 
     var device = Device()
 
     var l1 = nn.Linear(4, 8)
     var l2 = nn.Linear(8, 4)
     var l3 = nn.Linear(4, 3)
+    l1.weight.set(uniform_w(device, 4, (8, 4), seed=101))
+    l1.bias.set(uniform_w(device, 4, (8,), seed=102))
+    l2.weight.set(uniform_w(device, 8, (4, 8), seed=103))
+    l2.bias.set(uniform_w(device, 8, (4,), seed=104))
+    l3.weight.set(uniform_w(device, 4, (3, 4), seed=105))
+    l3.bias.set(uniform_w(device, 4, (3,), seed=106))
     var ps = l1.parameters()
     ps += l2.parameters()
     ps += l3.parameters()

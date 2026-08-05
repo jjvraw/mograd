@@ -17,11 +17,11 @@ def randn[
     n: Int,
     mean: Float32,
     std: Float32,
-    seed: Float32,
+    seed: UInt64,
     ctx: DeviceContext,
 ) raises:
     var seed_buf = ctx.enqueue_create_buffer[DType.uint64](1)
-    seed_buf.enqueue_fill(UInt64(Int(seed)))
+    seed_buf.enqueue_fill(seed)
 
     def store[width: SIMDSize, rank: Int](idx: IndexList[rank], val: SIMD[dtype, width]) capturing:
         dst.store(idx[0], val)
@@ -47,12 +47,13 @@ def uniform[
     params: UnsafePointer[mut=False, Float32, _],
     dst: UnsafePointer[mut=True, Scalar[dtype], _],
     n: Int,
+    seed: UInt64,
     ctx: DeviceContext,
 ) raises where dtype.is_floating_point():
     var low = Scalar[dtype](params[0])
     var high = Scalar[dtype](params[1])
     var seed_buf = ctx.enqueue_create_buffer[DType.uint64](1)
-    seed_buf.enqueue_fill(UInt64(Int(params[2])))
+    seed_buf.enqueue_fill(seed)
 
     def store[width: SIMDSize, rank: Int](idx: IndexList[rank], val: SIMD[dtype, width]) capturing:
         dst.store(idx[0], val)

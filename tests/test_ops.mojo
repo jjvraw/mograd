@@ -1,15 +1,11 @@
 from std.math import sqrt
 from std.sys import has_accelerator
 from std.sys.info import has_apple_gpu_accelerator
-from std.testing import TestSuite, assert_almost_equal, assert_raises, assert_true
+from std.testing import TestSuite, assert_almost_equal, assert_raises, assert_true, assert_false
 from std.utils.numerics import neg_inf
 
 from mograd import Tensor, Device
 from mograd.testing import assert_allclose, assert_close
-
-# ===-------------------------------------------------------------------===#
-# Elementwise operations
-# ===-------------------------------------------------------------------===#
 
 
 def test_basic_mixed_add_sub_neg() raises:
@@ -1234,6 +1230,23 @@ def test_sdpa_causal_first_token_equals_v0() raises:
     var out = Q.scaled_dot_product_attention(K, V, is_causal=True).reshape((T, Dh))
     var v_seq = V.reshape((T, Dh))
     assert_allclose(out[0:1], v_seq[0:1], tol=1e-3)
+
+
+def test_manual_seed_replays() raises:
+    device = Device()
+    device.manual_seed(7)
+    a = Tensor.randn(device, (64,))
+    device.manual_seed(7)
+    b = Tensor.randn(device, (64,))
+    assert_allclose(a, b)
+
+
+def test_randn_is_random() raises:
+    device = Device()
+    a = Tensor.randn(device, (1024, 1024))
+    b = Tensor.randn(device, (1024, 1024))
+    with assert_raises():
+        assert_allclose(a, b)
 
 
 def main() raises:

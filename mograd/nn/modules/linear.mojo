@@ -27,14 +27,12 @@ struct Linear(Module):
             if not x.device:
                 raise Error("Linear requires a device context on first call")
             var bound = Float32(sqrt(Float32(6) / Float32(self.in_features)))
-            var seed = UInt32(self.out_features * self.in_features)
             self.weight.set(
                 Tensor.uniform(
                     x.device.value(),
                     (self.out_features, self.in_features),
                     low=-bound,
                     high=bound,
-                    seed=seed,
                     requires_grad=True,
                 )
             )
@@ -45,7 +43,6 @@ struct Linear(Module):
                         (self.out_features,),
                         low=-bound,
                         high=bound,
-                        seed=seed + 1,
                         requires_grad=True,
                     )
                 )

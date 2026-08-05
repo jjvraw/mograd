@@ -44,12 +44,13 @@ def mograd_randn(
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     n: Int,
     dtype: DType,
+    seed: UInt64,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
     @always_inline
     def body[d: DType]() capturing raises:
         var p = params.bitcast[Float32]()
-        randn[d](dst.bitcast[Scalar[d]](), n, p[0], p[1], p[2], ctx)
+        randn[d](dst.bitcast[Scalar[d]](), n, p[0], p[1], seed, ctx)
 
     dispatch_dtype[body](dtype)
 
@@ -60,12 +61,13 @@ def mograd_uniform(
     dst: UnsafePointer[NoneType, MutAnyOrigin],
     n: Int,
     dtype: DType,
+    seed: UInt64,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
     @always_inline
     def body[d: DType]() capturing raises:
         comptime assert d.is_floating_point()
-        uniform[d](params.bitcast[Float32](), dst.bitcast[Scalar[d]](), n, ctx)
+        uniform[d](params.bitcast[Float32](), dst.bitcast[Scalar[d]](), n, seed, ctx)
 
     dispatch_dtype[body, float_only=True](dtype)
 

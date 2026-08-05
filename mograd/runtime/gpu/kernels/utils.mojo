@@ -331,6 +331,15 @@ comptime FactoryKernel = def(
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
 
+comptime RandomFactoryKernel = def(
+    params: UnsafePointer[NoneType, ImmutAnyOrigin],
+    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    numel: Int,
+    dtype: DType,
+    seed: UInt64,
+    ctx: DeviceContext,
+) thin abi("Mojo") raises -> None
+
 comptime UnaryStrided = def(
     a: UnsafePointer[NoneType, ImmutAnyOrigin],
     dst: UnsafePointer[NoneType, MutAnyOrigin],

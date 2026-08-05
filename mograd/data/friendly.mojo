@@ -83,7 +83,7 @@ struct TinyShakespeareData(Copyable, Movable):
             s += String(Codepoint.from_u32(UInt32(self._vocab[Int(id)])).value())
         return s^
 
-    def get_batch(self, seq_len: Int, batch_size: Int, seed: Int = 42) raises -> Tuple[Tensor, Tensor]:
+    def get_batch(self, seq_len: Int, batch_size: Int, seed: Optional[Int] = None) raises -> Tuple[Tensor, Tensor]:
         """Samples a random batch of (x, y) windows from the training split.
 
         x[b, t] = data[offset[b] + t]

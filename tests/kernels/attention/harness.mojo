@@ -363,7 +363,7 @@ struct BwdErrs(Copyable, Movable):
 
 def fwd_case[
     dtype: DType, CAUSAL: Bool, HAS_BIAS: Bool, launch: FwdLaunch[dtype], WITH_NAIVE: Bool = False
-](B: Int, H: Int, S: Int, D: Int, seed: UInt32, std: Float32 = 1.0) raises -> FwdErrs:
+](B: Int, H: Int, S: Int, D: Int, seed: Int, std: Float32 = 1.0) raises -> FwdErrs:
     var device = Device()
     var Qt = Tensor.randn(device, (B, S, H, D), dtype=dtype, std=std, seed=seed)
     var Kt = Tensor.randn(device, (B, S, H, D), dtype=dtype, std=std, seed=seed + 1)
@@ -402,7 +402,7 @@ def fwd_case[
 
 def bwd_case[
     dtype: DType, CAUSAL: Bool, HAS_BIAS: Bool, fwd_launch: FwdLaunch[dtype], bwd_launch: BwdLaunch[dtype]
-](B: Int, H: Int, S: Int, D: Int, seed: UInt32) raises -> BwdErrs:
+](B: Int, H: Int, S: Int, D: Int, seed: Int) raises -> BwdErrs:
     var device = Device()
     var Qt = Tensor.randn(device, (B, S, H, D), dtype=dtype, seed=seed)
     var Kt = Tensor.randn(device, (B, S, H, D), dtype=dtype, seed=seed + 1)

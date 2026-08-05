@@ -76,10 +76,11 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         dtype: DType = DType.float32,
         low: Float32 = 0.0,
         high: Float32 = 1.0,
-        seed: UInt32 = 42,
+        seed: Optional[Int] = None,
         requires_grad: Bool = False,
     ) -> Self:
-        attrs: Dict[String, AttrVal] = {"low": low, "high": high, "seed": Float32(seed)}
+        var s = seed.value() if seed else device.next_seed()
+        attrs: Dict[String, AttrVal] = {"low": low, "high": high, "seed": s}
         return Tensor(device, OpRef(Op(OpType.UNIFORM, shape, dtype, [], attrs=attrs^)), requires_grad)
 
     @staticmethod
@@ -89,10 +90,11 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         dtype: DType = DType.float32,
         mean: Float32 = 0.0,
         std: Float32 = 1.0,
-        seed: UInt32 = 42,
+        seed: Optional[Int] = None,
         requires_grad: Bool = False,
     ) -> Self:
-        attrs: Dict[String, AttrVal] = {"mean": mean, "std": std, "seed": Float32(seed)}
+        var s = seed.value() if seed else device.next_seed()
+        attrs: Dict[String, AttrVal] = {"mean": mean, "std": std, "seed": s}
         return Tensor(device, OpRef(Op(OpType.RANDN, shape, dtype, [], attrs^)), requires_grad)
 
     @staticmethod
@@ -101,10 +103,11 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         shape: Layout,
         low: Int,
         high: Int,
-        seed: Int = 42,
+        seed: Optional[Int] = None,
     ) -> Self:
         """Returns random integers uniformly drawn from `[low, high)`."""
-        attrs: Dict[String, AttrVal] = {"low": low, "high": high, "seed": seed}
+        var s = seed.value() if seed else device.next_seed()
+        attrs: Dict[String, AttrVal] = {"low": low, "high": high, "seed": s}
         return Tensor(device, OpRef(Op(OpType.RANDINT, shape, DType.int64, [], attrs^)), requires_grad=False)
 
     @staticmethod
