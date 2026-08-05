@@ -1,6 +1,7 @@
+from std.algorithm import vectorize
 from std.memory import ArcPointer
 from std.gpu.host import DeviceContext, DeviceBuffer
-from std.sys import size_of
+from std.sys import simd_width_of, size_of
 from std.utils import Variant
 
 from mograd.layout import Layout
@@ -87,15 +88,16 @@ struct Buffer[dtype: DType](BufferArm, Copyable):
         return Self(dev_buf^, numel)
 
     @staticmethod
-    def from_data(
-        device: Device,
-        data: List[Scalar[Self.dtype]],
-    ) raises -> Self:
+    def from_data[S: DType = Self.dtype, /](device: Device, data: List[Scalar[S]]) raises -> Self:
         var size = len(data)
         var host_buf = device.ctx.enqueue_create_host_buffer[Self.dtype](size)
         var host_ptr = host_buf.unsafe_ptr()
-        for i in range(size):
-            host_ptr[i] = data[i]
+        var src = data.unsafe_ptr()
+
+        def fill[width: Int](i: Int) {read src, read host_ptr}:
+            host_ptr.store(i, src.load[width=width](i).cast[Self.dtype]())
+
+        vectorize[simd_width_of[Self.dtype]()](size, fill)
         var dev_buf = device.ctx.enqueue_create_buffer[Self.dtype](size)
         device.ctx.enqueue_copy(dst_buf=dev_buf, src_buf=host_buf)
         return Self(dev_buf^, size)
@@ -119,6 +121,15 @@ struct AnyBuffer(Copyable, Movable):
 
     def unsafe_get[dtype: DType](ref self) -> ref[self._buf] Buffer[dtype]:
         return self._buf.unsafe_get[Buffer[dtype]]()
+
+    @staticmethod
+    def supports(d: DType) -> Bool:
+        comptime for k in range(Self.BufVariant.Ts.size):
+            comptime T = Self.BufVariant.Ts[k]
+            comptime assert conforms_to(T, BufferArm)
+            if d == T.node_dtype:
+                return True
+        return False
 
     def dtype(self) raises -> DType:
         comptime for k in range(Self.BufVariant.Ts.size):

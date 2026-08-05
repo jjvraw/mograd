@@ -1,7 +1,7 @@
 from std.math import sqrt
 from std.sys import has_accelerator
 from std.sys.info import has_apple_gpu_accelerator
-from std.testing import TestSuite, assert_almost_equal, assert_raises, assert_true, assert_false
+from std.testing import TestSuite, assert_almost_equal, assert_equal, assert_raises, assert_true, assert_false
 from std.utils.numerics import neg_inf
 
 from mograd import Tensor, Device
@@ -1247,6 +1247,53 @@ def test_randn_is_random() raises:
     b = Tensor.randn(device, (1024, 1024))
     with assert_raises():
         assert_allclose(a, b)
+
+
+# ===-------------------------------------------------------------------===#
+# Tensor literal dtype inference & promotion
+# ===-------------------------------------------------------------------===#
+
+
+def test_literal_bare_ints_store_int64() raises:
+    var device = Device()
+    var t = Tensor(device, [1, 2, 3], (1, 3))
+    assert_true(t.dtype == DType.int64)
+    var vals = t.to_list[DType.int64]()
+    for i in range(3):
+        assert_equal(vals[i], Int64(i + 1))
+
+
+def test_literal_bare_floats_store_float32() raises:
+    var device = Device()
+    var t = Tensor(device, [1.5, 2.5], (1, 2))
+    assert_true(t.dtype == DType.float32)
+    assert_allclose(t, [Float32(1.5), 2.5])
+
+
+def test_literal_pinned_dtypes_preserved() raises:
+    var device = Device()
+    var f16 = Tensor(device, [Float16(1), 2], (1, 2))
+    var i64 = Tensor(device, [Int64(1), 2], (1, 2))
+    assert_true(f16.dtype == DType.float16)
+    assert_true(i64.dtype == DType.int64)
+
+
+def test_mixed_dtype_add_promotes_to_float() raises:
+    var device = Device()
+    var a = Tensor.ones(device, (1, 3))
+    var b = Tensor(device, [1, 2, 3], (1, 3))
+    var c = a + b
+    assert_true(c.dtype == DType.float32)
+    assert_allclose(c, [Float32(2), 3, 4])
+
+
+def test_f16_f32_add_promotes_to_float32() raises:
+    var device = Device()
+    var a = Tensor(device, [Float16(1), 2], (1, 2))
+    var b = Tensor(device, [Float32(0.5), 0.5], (1, 2))
+    var c = a + b
+    assert_true(c.dtype == DType.float32)
+    assert_allclose(c, [Float32(1.5), 2.5])
 
 
 def main() raises:

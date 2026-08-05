@@ -243,17 +243,32 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     # Elementwise operations
     # ===-------------------------------------------------------------------===#
 
+    def promote_dtype(self, rhs: OpRef) -> DType:
+        """Returns the dtype a mixed-dtype binary op computes in: floats beat
+        ints, and the wider float beats the narrower."""
+        var a = self.dtype()
+        var b = rhs.dtype()
+        if a == b:
+            return a
+        if a.is_floating_point() != b.is_floating_point():
+            return a if a.is_floating_point() else b
+        return a if b == DType.float16 else b
+
+    def bin_op(self, op_type: OpType, rhs: OpRef) -> Self:
+        var d = self.promote_dtype(rhs)
+        return Self(Op(op_type, self.layout().as_contiguous(), d, [self.cast(d), rhs.cast(d)]))
+
     def __add__(self, rhs: OpRef) -> Self:
-        return Self(Op(OpType.ADD, self.layout().as_contiguous(), self.dtype(), [self, rhs]))
+        return self.bin_op(OpType.ADD, rhs)
 
     def add(self, rhs: OpRef) -> Self:
         return self + rhs
 
     def __mul__(self, rhs: OpRef) -> Self:
-        return Self(Op(OpType.MUL, self.layout().as_contiguous(), self.dtype(), [self, rhs]))
+        return self.bin_op(OpType.MUL, rhs)
 
     def __truediv__(self, rhs: OpRef) -> Self:
-        return Self(Op(OpType.DIV, self.layout().as_contiguous(), self.dtype(), [self, rhs]))
+        return self.bin_op(OpType.DIV, rhs)
 
     def __neg__(self) -> Self:
         return Self(Op(OpType.NEG, self.layout().as_contiguous(), self.dtype(), [self]))
@@ -280,7 +295,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return Self(Op(OpType.SOFTMAX, self.layout().as_contiguous(), self.dtype(), [self]))
 
     def eq(self, other: OpRef) -> Self:
-        return Self(Op(OpType.EQ, self.layout().as_contiguous(), self.dtype(), [self, other]))
+        return self.bin_op(OpType.EQ, other)
 
     # ===-------------------------------------------------------------------===#
     # Reduction operations
@@ -404,6 +419,10 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def matmul(self, rhs: OpRef) raises -> Self:
+        var d = self.promote_dtype(rhs)
+        if d != self.dtype() or d != rhs.dtype():
+            return self.cast(d).matmul(rhs.cast(d))
+
         var la = self.layout()
         var lb = rhs.layout()
         var rank = la.rank()
@@ -487,7 +506,8 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def cross_entropy(self, labels: Self) -> Self:
-        return Self(Op(OpType.CROSS_ENTROPY, (1,), self.dtype(), [self, labels]))
+        var d = self.promote_dtype(labels)
+        return Self(Op(OpType.CROSS_ENTROPY, (1,), d, [self.cast(d), labels.cast(d)]))
 
     # ===-------------------------------------------------------------------===#
     # Trait methods

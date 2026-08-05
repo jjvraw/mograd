@@ -36,9 +36,11 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         self.dtype = self.op.dtype()
 
     def __init__[
-        D: DType = DType.float32, /
-    ](out self, device: Device, data: List[Scalar[D]], shape: Layout, requires_grad: Bool = False,) raises:
-        var b = Buffer.from_data(device, data)
+        S: DType,
+        //,
+        D: DType = S if AnyBuffer.supports(S) else (DType.int64 if S.is_integral() else DType.float32),
+    ](out self, device: Device, data: List[Scalar[S]], shape: Layout, requires_grad: Bool = False,) raises:
+        var b = Buffer[D].from_data(device, data)
         self.device = device
         self.op = OpRef(Op(OpType.BUFFER, shape, D, [], b^))
         self.requires_grad = requires_grad
