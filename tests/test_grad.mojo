@@ -1180,6 +1180,7 @@ def test_gradient_raises_on_integer_target() raises:
     with assert_raises(contains="only floating-point"):
         _ = loss.gradient([x, labels])
 
+
 def test_cast_grad_flows_through_f16_to_f32() raises:
     # d/dx sum(cast(x) * w) is w, cast back down to the source dtype.
     var device = Device()

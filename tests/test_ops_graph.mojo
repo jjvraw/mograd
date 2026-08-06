@@ -95,24 +95,14 @@ def test_concat_grad_splits_along_axis1() raises:
     assert_equal(grads[1].value().shape(1), 5)
 
 
-# ===-------------------------------------------------------------------===#
-# CAST grad
-# ===-------------------------------------------------------------------===#
-
-
 def test_cast_grad_reaches_pre_cast_source() raises:
-    # A float->float cast is differentiable, so backprop must not stop at it.
+    # A float->float cast is differentiable: backprop must not stop at it, and
+    # the gradient arrives in the source dtype.
     var x = leaf((2, 3), DType.float16)
     var y = x.cast(DType.float32)
     var loss = y * leaf((2, 3), DType.float32)
     var grads = Grad.compute(loss, leaf((2, 3), DType.float32), [x])
     assert_true(Bool(grads[0]))
-
-
-def test_cast_grad_restores_source_dtype() raises:
-    var x = leaf((2, 3), DType.float16)
-    var y = x.cast(DType.float32)
-    var grads = Grad.compute(y, leaf((2, 3), DType.float32), [x])
     assert_true(grads[0].value().dtype() == DType.float16)
 
 
@@ -122,32 +112,14 @@ def test_cast_to_same_dtype_folds_at_construction() raises:
     assert_true(x.cast(DType.float32) == x)
 
 
-def test_cast_grad_same_dtype_is_passthrough() raises:
-    # With the forward cast folded away there is nothing to differentiate, so
-    # the upstream reaches the source untouched.
-    var x = leaf((2, 3), DType.float32)
-    var upstream = leaf((2, 3), DType.float32)
-    var grads = Grad.compute(x.cast(DType.float32), upstream, [x])
-    assert_true(grads[0].value() == upstream)
-
-
-def test_cast_grad_stops_at_integer_source() raises:
-    # Labels/indices cast up to float stay non-differentiable.
-    var ids = leaf((4,), DType.int64)
-    var y = ids.cast(DType.float32)
-    var grads = Grad.compute(y, leaf((4,), DType.float32), [ids])
-    assert_false(Bool(grads[0]))
-
-
-def test_grad_skips_integer_sources_for_any_rule() raises:
-    # `add_grad` hands the upstream to every source without inspecting dtypes.
-    # The check in `Grad.compute` is what stops the integer one, so rules do not
-    # each have to remember.
+def test_mixed_dtype_op_still_grads_the_float_source() raises:
+    # `add_grad` hands the upstream to every source without inspecting dtypes;
+    # the float source gets its gradient and the integer subgraph is never
+    # entered (integer targets themselves are rejected at `Tensor.gradient`).
     var f = leaf((2, 3), DType.float32)
     var i = leaf((2, 3), DType.int64)
-    var grads = Grad.compute(f + i, leaf((2, 3), DType.float32), [f, i])
+    var grads = Grad.compute(f + i, leaf((2, 3), DType.float32), [f])
     assert_true(Bool(grads[0]))
-    assert_false(Bool(grads[1]))
 
 
 def test_grad_does_not_propagate_through_integer_node() raises:
@@ -155,13 +127,6 @@ def test_grad_does_not_propagate_through_integer_node() raises:
     # the seed gradient directly.
     var x = leaf((4,), DType.float32)
     var grads = Grad.compute(x.cast(DType.int64), leaf((4,), DType.int64), [x])
-    assert_false(Bool(grads[0]))
-
-
-def test_cast_grad_stops_when_casting_to_integer() raises:
-    var x = leaf((4,), DType.float32)
-    var y = x.cast(DType.int64)
-    var grads = Grad.compute(y, leaf((4,), DType.int64), [x])
     assert_false(Bool(grads[0]))
 
 

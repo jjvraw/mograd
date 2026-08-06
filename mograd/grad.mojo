@@ -257,10 +257,6 @@ def unsqueeze_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]
 
 
 def cast_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
-    # Both non-differentiable directions are handled in `Grad.compute`: an
-    # integer source is skipped there, and a cast *to* an integer dtype never
-    # receives an upstream in the first place, because the edge into it would
-    # have been skipped by that same check.
     return [upstream.cast(node.src(0).dtype())]
 
 
