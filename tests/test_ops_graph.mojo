@@ -1,7 +1,7 @@
 from std.testing import TestSuite, assert_true, assert_false, assert_equal, assert_raises
 
 from mograd.op import OpType, concat
-from mograd.grad import concat_grad
+from mograd.grad import Grad, concat_grad
 from mograd.testing import leaf
 
 
@@ -93,6 +93,41 @@ def test_concat_grad_splits_along_axis1() raises:
     var grads = concat_grad(node, upstream)
     assert_equal(grads[0].value().shape(1), 3)
     assert_equal(grads[1].value().shape(1), 5)
+
+
+def test_cast_grad_reaches_pre_cast_source() raises:
+    # A float->float cast is differentiable: backprop must not stop at it, and
+    # the gradient arrives in the source dtype.
+    var x = leaf((2, 3), DType.float16)
+    var y = x.cast(DType.float32)
+    var loss = y * leaf((2, 3), DType.float32)
+    var grads = Grad.compute(loss, leaf((2, 3), DType.float32), [x])
+    assert_true(Bool(grads[0]))
+    assert_true(grads[0].value().dtype() == DType.float16)
+
+
+def test_cast_to_same_dtype_folds_at_construction() raises:
+    # Decidable from the arguments alone, so no CAST node is built at all.
+    var x = leaf((2, 3), DType.float32)
+    assert_true(x.cast(DType.float32) == x)
+
+
+def test_mixed_dtype_op_still_grads_the_float_source() raises:
+    # `add_grad` hands the upstream to every source without inspecting dtypes;
+    # the float source gets its gradient and the integer subgraph is never
+    # entered (integer targets themselves are rejected at `Tensor.gradient`).
+    var f = leaf((2, 3), DType.float32)
+    var i = leaf((2, 3), DType.int64)
+    var grads = Grad.compute(f + i, leaf((2, 3), DType.float32), [f])
+    assert_true(Bool(grads[0]))
+
+
+def test_grad_does_not_propagate_through_integer_node() raises:
+    # An integer-valued node has no derivative even when it is the root and gets
+    # the seed gradient directly.
+    var x = leaf((4,), DType.float32)
+    var grads = Grad.compute(x.cast(DType.int64), leaf((4,), DType.int64), [x])
+    assert_false(Bool(grads[0]))
 
 
 def main() raises:

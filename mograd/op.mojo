@@ -331,6 +331,8 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         return OpRef(Op(OpType.ONE_HOT, (self.shape(0), num_classes), out_dtype, [self], attrs={"num_classes": n}))
 
     def cast(self, out_dtype: DType) -> OpRef:
+        if out_dtype == self.dtype():
+            return self
         return OpRef(Op(OpType.CAST, self.layout().as_contiguous(), out_dtype, [self]))
 
     def gather(self, indices: OpRef) raises -> OpRef:
