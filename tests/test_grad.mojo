@@ -6,7 +6,7 @@ import mograd.nn as nn
 from mograd import Tensor, Device
 from mograd.grad import Grad
 from mograd.layout import Layout
-from mograd.op import OpRef
+from mograd.op import Op, OpRef, OpType
 from mograd.runtime.gpu.rewrites import FLASH_ATTN_GRAD, GPU_REWRITES
 from mograd.simplify import Simplifier
 from mograd.testing import assert_allclose, assert_close
@@ -257,6 +257,58 @@ def test_div_grad_denominator() raises:
     assert_allclose(grads[0], num, tol=0.05)
     # d(a/x)/dx = -a/x^2
     assert_allclose(grads[0], [Float32(-1.0), -2.0, -4.0], tol=1e-4)
+
+
+def test_add_grad() raises:
+    def fwd(x: Tensor) raises -> Tensor:
+        return (x + x).sum()
+
+    var device = Device()
+    var data: List[Float32] = [1.0, 2.0, 3.0, 4.0]
+    var num = numerical_grad[fwd](device, data, (4,))
+    var x = Tensor(device, data, (4,), requires_grad=True)
+    var grads = (x + x).sum().gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], [Float32(2), 2, 2, 2])
+
+
+def test_slice_grad() raises:
+    def fwd(x: Tensor) raises -> Tensor:
+        return x[0:2].sum()
+
+    var device = Device()
+    var data: List[Float32] = [1.0, 2.0, 3.0, 4.0]
+    var num = numerical_grad[fwd](device, data, (4,))
+    var x = Tensor(device, data, (4,), requires_grad=True)
+    var grads = x[0:2].sum().gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], [Float32(1), 1, 0, 0])
+
+
+def test_view_grad() raises:
+    def fwd(x: Tensor) raises -> Tensor:
+        return (x.view((4,)) * x.view((4,))).sum()
+
+    var device = Device()
+    var data: List[Float32] = [1.0, 2.0, 3.0, 4.0]
+    var num = numerical_grad[fwd](device, data, (2, 2))
+    var x = Tensor(device, data, (2, 2), requires_grad=True)
+    var grads = fwd(x).gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], [Float32(2), 4, 6, 8])
+
+
+def test_contiguous_grad() raises:
+    def fwd(x: Tensor) raises -> Tensor:
+        return (x.transpose().contiguous() * x.transpose().contiguous()).sum()
+
+    var device = Device()
+    var data: List[Float32] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    var num = numerical_grad[fwd](device, data, (2, 3))
+    var x = Tensor(device, data, (2, 3), requires_grad=True)
+    var grads = fwd(x).gradient([x])
+    assert_allclose(grads[0], num, tol=0.05)
+    assert_allclose(grads[0], [Float32(2), 4, 6, 8, 10, 12])
 
 
 def test_reshape_grad() raises:
@@ -1179,6 +1231,46 @@ def test_gradient_raises_on_integer_target() raises:
     var loss = (x * x).sum()
     with assert_raises(contains="only floating-point"):
         _ = loss.gradient([x, labels])
+
+
+def test_gradient_raises_on_missing_rule() raises:
+    var device = Device()
+    var x = Tensor.full(device, (4,), 2.0, requires_grad=True)
+    var bogus = Tensor(device, OpRef(Op(OpType("BOGUS"), (4,), DType.float32, [x.op])), requires_grad=True)
+    var loss = bogus.sum()
+    with assert_raises(contains="no gradient rule"):
+        _ = loss.gradient([x])
+
+
+def test_eq_mask_grads_the_float_branch_only() raises:
+    var device = Device()
+    var pred = Tensor.full(device, (4,), 2.0, requires_grad=True)
+    var a = Tensor.full(device, (4,), 1.0, requires_grad=True)
+    var mask = a == Tensor.full(device, (4,), 1.0)
+    var loss = (pred * mask).sum()
+    var grads = loss.gradient([pred, a])
+    assert_allclose(grads[0], [Float32(1), 1, 1, 1])
+    assert_allclose(grads[1], [Float32(0), 0, 0, 0])
+
+
+def test_one_hot_mask_grads_the_float_branch_only() raises:
+    var device = Device()
+    var y = Tensor.randint(device, (4,), 0, 3)
+    var pred = Tensor.full(device, (4, 3), 2.0, requires_grad=True)
+    var loss = (pred * y.one_hot(3).cast(DType.float32)).sum()
+    var grads = loss.gradient([pred])
+    assert_almost_equal(grads[0].sum().item(), Float32(4))
+
+
+def test_argmax_grad_is_zero() raises:
+    var device = Device()
+    var x = Tensor(device, [Float32(1), 3, 2], (3,), requires_grad=True)
+    var pred = Tensor.full(device, (3,), 2.0, requires_grad=True)
+    var loss = (pred * x.argmax().expand(3)).sum()
+    var grads = loss.gradient([pred, x])
+    # argmax([1, 3, 2]) is index 1, broadcast as pred's gradient.
+    assert_allclose(grads[0], [Float32(1), 1, 1])
+    assert_allclose(grads[1], [Float32(0), 0, 0])
 
 
 def test_cast_grad_flows_through_f16_to_f32() raises:

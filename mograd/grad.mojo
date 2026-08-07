@@ -54,6 +54,9 @@ struct Grad:
                 Rule(Pat(OpType.CAST), cast_grad),
                 Rule(Pat(OpType.TRIU), triu_grad),
                 Rule(Pat(OpType.EXPAND), expand_grad),
+                Rule(Pat(OpType.EQ), non_differentiable),
+                Rule(Pat(OpType.ARGMAX), non_differentiable),
+                Rule(Pat(OpType.ONE_HOT), non_differentiable),
                 Rule(Pat(OpType.CONCAT), concat_grad),
                 Rule(Pat(OpType.GETTUPLE), gettuple_grad),
                 Rule(Pat(LAYER_NORM), layer_norm_grad),
@@ -79,6 +82,8 @@ struct Grad:
                     # that subgraph
                     if src_grads[j]:
                         grad.accum(node.srcs()[j], src_grads[j].value())
+            elif len(node.srcs()) > 0:
+                raise Error("no gradient rule for op: " + node.op_type()._name)
 
         var result = List[Optional[OpRef]]()
         for target in target_ops:
@@ -107,6 +112,10 @@ struct Grad:
 # ===-------------------------------------------------------------------===#
 # Grad functions
 # ===-------------------------------------------------------------------===#
+
+
+def non_differentiable(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
+    return [Optional[OpRef](None)] * len(node.srcs())
 
 
 def mul_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
