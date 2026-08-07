@@ -112,6 +112,12 @@ def test_cast_to_same_dtype_folds_at_construction() raises:
     assert_true(x.cast(DType.float32) == x)
 
 
+def test_reshape_to_same_layout_folds_at_construction() raises:
+    var x = leaf((2, 3), DType.float32)
+    assert_true(x.reshape((2, 3)) == x)
+    assert_true(x.reshape((3, 2)) != x)
+
+
 def test_mixed_dtype_op_still_grads_the_float_source() raises:
     # `add_grad` hands the upstream to every source without inspecting dtypes;
     # the float source gets its gradient and the integer subgraph is never

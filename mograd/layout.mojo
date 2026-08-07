@@ -192,6 +192,19 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Writable):
         return self._shape
 
     @always_inline
+    def __eq__(self, other: Self) -> Bool:
+        return (
+            self._rank == other._rank
+            and self.base_offset == other.base_offset
+            and self._shape == other._shape
+            and self._strides == other._strides
+        )
+
+    @always_inline
+    def __ne__(self, other: Self) -> Bool:
+        return not self == other
+
+    @always_inline
     def is_contiguous(self) -> Bool:
         """Returns true if layout is contiguous in memory."""
         return self.stride() == Self.row_major_strides(self.shape())

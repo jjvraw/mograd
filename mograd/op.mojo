@@ -322,6 +322,8 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def reshape(self, shape: Layout) raises -> Self:
+        if self.layout() == shape:
+            return self
         try:
             return Self(Op(OpType.RESHAPE, self.layout().view(shape.shape()), self.dtype(), [self]))
         except:

@@ -78,6 +78,19 @@ def test_fuse_matmul_bias() raises:
     )
 
 
+def test_fuse_matmul_bias_through_identity_reshape() raises:
+    # Linear stays rank-generic via a reshape that is a no-op for 2D inputs;
+    # it must fold away at construction or it breaks this pattern.
+    var a = leaf((2, 4))
+    var w = leaf((3, 4))
+    var bias = leaf((3,))
+    assert_rewrites_to(
+        GPU_REWRITES(),
+        a.matmul(w.transpose()).reshape((2, 3)) + bias.expand(2, 3),
+        Pat(MATMUL_BIAS_BT, [Pat(), Pat(), Pat()]),
+    )
+
+
 def test_fuse_matmul_bias_keeps_original_leaves() raises:
     var a = leaf((2, 4))
     var w = leaf((3, 4))
