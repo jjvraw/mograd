@@ -127,7 +127,7 @@ def add_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
 
 
 def relu_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
-    return [OpRef(Op(OpType.RELU_GRAD, node.layout().as_contiguous(), node.dtype(), [node.src(0), upstream]))]
+    return [OpRef(Op(OpType.RELU_GRAD, node.layout().as_contiguous(), node.dtype(), [node, upstream]))]
 
 
 def exp_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
