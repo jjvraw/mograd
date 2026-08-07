@@ -123,7 +123,7 @@ allows everything to remain in Mojo, from model definition, to kernels, model pr
 and graph rewrites. A larger initiative is for Mograd to support rule sets for common
 architectures. This approach is infamously known for its scaling issues, but it is
 motivated by evident tension between framework compilers and external operators in current
-inference and training engines, which to custom passes regardless. The spirit is close to
-[TVM Unity](https://tvm.apache.org/2021/12/15/tvm-unity). That being, remove boundaries 
-between the operator graph, transformations, and the kernels. Mograd chases that idea in
-pure Mojo.
+inference and training engines, which revert to custom passes regardless. The spirit is
+close to [TVM Unity](https://tvm.apache.org/2021/12/15/tvm-unity). That being, remove
+boundaries between the operator graph, transformations, and the kernels. Mograd chases
+that idea in pure Mojo.
