@@ -4,6 +4,8 @@ from std.gpu.host import DeviceBuffer, DeviceContext
 
 from layout.int_tuple import IntTuple, reverse, prefix_product, product, sorted, compact_order
 
+from mograd.memory import ScratchBuf, scratch_take
+
 # ===-------------------------------------------------------------------===#
 # Layout
 # ===-------------------------------------------------------------------===#
@@ -263,23 +265,23 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Writable):
             p[i] = self._strides.value(i)
         return p
 
-    def strides_buffer(self, ctx: DeviceContext) raises -> DeviceBuffer[DType.int64]:
-        """Uploads strides to a device buffer."""
+    def strides_buffer(self, ctx: DeviceContext) raises -> ScratchBuf[DType.int64]:
+        """Uploads strides to a pooled device buffer."""
         var host = List[Int64](capacity=self.rank())
         for i in range(self.rank()):
             host.append(Int64(self.stride(i)))
-        var buf = ctx.enqueue_create_buffer[DType.int64](self.rank())
-        buf.enqueue_copy_from(Span(host))
+        var buf = scratch_take[DType.int64](ctx, self.rank())
+        buf.view.enqueue_copy_from(Span(host))
         return buf^
 
-    def inner_sizes_buffer(self, ctx: DeviceContext) raises -> DeviceBuffer[DType.int64]:
-        """Uploads inner_sizes to a device buffer."""
+    def inner_sizes_buffer(self, ctx: DeviceContext) raises -> ScratchBuf[DType.int64]:
+        """Uploads inner_sizes to a pooled device buffer."""
         var inner = self.inner_sizes()
         var host = List[Int64](capacity=self.rank())
         for i in range(self.rank()):
             host.append(Int64(inner.value(i)))
-        var buf = ctx.enqueue_create_buffer[DType.int64](self.rank())
-        buf.enqueue_copy_from(Span(host))
+        var buf = scratch_take[DType.int64](ctx, self.rank())
+        buf.view.enqueue_copy_from(Span(host))
         return buf^
 
     def reduce_dims(self, axis: Int) raises -> Tuple[Int, Int, Int]:

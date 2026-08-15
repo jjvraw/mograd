@@ -56,12 +56,16 @@ test-data               = { cmd = "mojo -I . tests/test_data.mojo",             
 test-non-contiguous     = { cmd = "mojo -I . tests/test_non_contiguous.mojo",   depends-on = ["ensure-gpu"] }
 test-scheduler          = { cmd = "mojo -I . tests/test_scheduler.mojo" }
 test-debug              = { cmd = "mojo -D MOGRAD_DEBUG=3 -I . tests/test_debug.mojo", depends-on = ["ensure-gpu"] }
+test-memory             = { cmd = "mojo -I . tests/test_memory.mojo",           depends-on = ["ensure-gpu"] }
+test-memory-nopool      = { cmd = "mojo -I . tests/test_memory.mojo",           depends-on = ["ensure-gpu"], env = { MOGRAD_POOL = "0" } }
 test-gpu                = { depends-on = [  "test-grad",
                                             "test-nn",
                                             "test-ops",
                                             "test-data",
                                             "test-non-contiguous",
-                                            "test-scheduler"] }
+                                            "test-scheduler",
+                                            "test-memory",
+                                            "test-memory-nopool"] }
 
 # Test Mograd Graph
 test-gpu-rewrites       = { cmd = "mojo -I . tests/test_gpu_rewrites.mojo" }

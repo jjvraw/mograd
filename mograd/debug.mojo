@@ -2,13 +2,15 @@ from std.sys import get_defined_int
 from std.time import perf_counter_ns
 
 from mograd.device_ctx import Device
+from mograd.memory import PoolStats, memory_summary
 from mograd.op import OpRef, OpType
 from mograd.buffer import AnyBuffer
 
 # -D MOGRAD_DEBUG=N:
 #   1: Σ per-run line (kernel count, wall time)
-#   2: 1 + per-op trace (op, shape, kernel names)
-#   3: 2 + per-kernel timing & throughput over device-buffer sizes
+#   2: 1 + per-op trace (op, shape, kernel names) + per-run pool hit/miss
+#   3: 2 + per-kernel timing & throughput over device-buffer sizes,
+#      memory-pool summary after each run
 #      synchronizes around every kernel, (inter-kernel pipelining is lost)
 #   4: 3 + op graph printed before each run
 comptime DEBUG = get_defined_int["MOGRAD_DEBUG", 0]()
@@ -57,22 +59,29 @@ struct Tracer:
     var stats: DebugStats
     var run_t0: Int
     var node_t0: Int
+    var pool_t0: PoolStats
 
     def __init__(out self):
         self.stats = DebugStats()
         self.run_t0 = 0
         self.node_t0 = 0
+        self.pool_t0 = PoolStats()
 
     # ===-------------------------------------------------------------------===#
     # Hooks
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    def run_begin(mut self, root: OpRef):
+    def run_begin(mut self, root: OpRef, device: Device):
         comptime if DEBUG >= 4:
             print(root)
         comptime if DEBUG >= 3:
             print("    " + Self.rpad("kernel", Self.KERNEL_COL) + Self.lpad("time", 10) + Self.lpad("tput", 12))
+        comptime if DEBUG >= 2:
+            try:
+                self.pool_t0 = device.memory_stats()
+            except:
+                pass
         comptime if DEBUG >= 1:
             self.run_t0 = Int(perf_counter_ns())
 
@@ -122,7 +131,27 @@ struct Tracer:
                     + Self.time_str(self.stats.dispatch_ns)
                     + " dispatch"
                 )
+            comptime if DEBUG >= 2:
+                try:
+                    var pool = device.memory_stats()
+                    line += (
+                        "  pool: "
+                        + String(pool.hit_count - self.pool_t0.hit_count)
+                        + "h/"
+                        + String(pool.miss_count - self.pool_t0.miss_count)
+                        + "m"
+                    )
+                    var dreserved = pool.reserved_bytes - self.pool_t0.reserved_bytes
+                    if dreserved != 0:
+                        line += "  Δreserved: " + String(dreserved >> 10) + " KiB"
+                except:
+                    pass
             print(line)
+            comptime if DEBUG >= 3:
+                try:
+                    print(memory_summary(device.ctx))
+                except:
+                    pass
             device.stats[] += self.stats
 
     # ===-------------------------------------------------------------------===#

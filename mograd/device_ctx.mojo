@@ -4,6 +4,13 @@ from std.ffi import OwnedDLHandle
 from std.os.env import getenv
 
 from mograd.debug import DEBUG, DebugStats, Tracer
+from mograd.memory import (
+    DeviceMemGuard,
+    PoolStats,
+    empty_cache as _pool_empty_cache,
+    memory_stats as _pool_memory_stats,
+    memory_summary as _pool_memory_summary,
+)
 
 # ===-------------------------------------------------------------------===#
 # Device
@@ -21,6 +28,14 @@ struct Device(Copyable, ImplicitlyCopyable, Movable):
     var stats: ArcPointer[DebugStats]
     var rng: ArcPointer[UInt64]
 
+    var mem: ArcPointer[DeviceMemGuard]
+    """Memory-pool teardown guard, shared by all copies of this Device
+    and co-owned by every pooled Buffer.
+
+    The guard keeps its own DeviceContext copy, so it stays correct regardless 
+    of field destruction order here.
+    """
+
     # ===-------------------------------------------------------------------===#
     # Lifecycle
     # ===-------------------------------------------------------------------===#
@@ -35,18 +50,36 @@ struct Device(Copyable, ImplicitlyCopyable, Movable):
         self.handle = ArcPointer(OwnedDLHandle(p))
         self.stats = ArcPointer(DebugStats())
         self.rng = ArcPointer(UInt64(0))
+        self.mem = ArcPointer(DeviceMemGuard(self.ctx))
 
     def __init__(out self, *, copy: Self):
         self.ctx = copy.ctx.copy()
         self.handle = copy.handle.copy()
         self.stats = copy.stats.copy()
         self.rng = copy.rng.copy()
+        self.mem = copy.mem.copy()
 
     def __init__(out self, *, deinit take: Self):
         self.ctx = take.ctx^
         self.handle = take.handle^
         self.stats = take.stats^
         self.rng = take.rng^
+        self.mem = take.mem^
+
+    # ===-------------------------------------------------------------------===#
+    # Memory pool
+    # ===-------------------------------------------------------------------===#
+
+    def empty_cache(self) raises:
+        """Releases all cached device-memory blocks back to the runtime
+        allocator (PyTorch `torch.cuda.empty_cache` analog)."""
+        _pool_empty_cache(self.ctx)
+
+    def memory_stats(self) raises -> PoolStats:
+        return _pool_memory_stats(self.ctx)
+
+    def memory_summary(self) raises -> String:
+        return _pool_memory_summary(self.ctx)
 
     # ===-------------------------------------------------------------------===#
     # RNG stream

@@ -41,7 +41,7 @@ struct Scheduler:
         var bufs = Dict[OpRef, List[AnyBuffer]]()
         var topo = GraphUtils.toposort(root)
         var tracer = Tracer()
-        tracer.run_begin(root)
+        tracer.run_begin(root, device)
 
         for i in range(len(topo)):
             var node = topo[i]

@@ -1387,10 +1387,10 @@ def _flash_attn_bwd_launch_mma_half[
     ctx: DeviceContext,
 ) raises:
     # delta preprocess -> fused dK/dV/dQ (atomic dQ accum) -> dQ convert.
-    var delta_buf = ctx.enqueue_create_buffer[DType.float32](B * H * S)
+    var delta_buf = scratch_take[DType.float32](ctx, B * H * S)
     var delta_ptr = delta_buf.unsafe_ptr().as_unsafe_any_origin()
     var numel = B * S * H * D
-    var dq_accum_buf = ctx.enqueue_create_buffer[DType.float32](numel)
+    var dq_accum_buf = scratch_take[DType.float32](ctx, numel)
     dq_accum_buf.enqueue_fill(Float32(0))
     var dq_accum_ptr = dq_accum_buf.unsafe_ptr().as_unsafe_any_origin()
 
@@ -1477,7 +1477,7 @@ def _flash_attn_bwd_launch_mma[
     scale: Float32,
     ctx: DeviceContext,
 ) raises:
-    var delta_buf = ctx.enqueue_create_buffer[DType.float32](B * H * S)
+    var delta_buf = scratch_take[DType.float32](ctx, B * H * S)
     var delta_ptr = delta_buf.unsafe_ptr().as_unsafe_any_origin()
 
     # dQ smem: padded KV tile (reused K/V) + Q/dO staging scratch + lse/delta rows.

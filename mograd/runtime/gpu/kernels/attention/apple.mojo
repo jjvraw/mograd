@@ -375,7 +375,7 @@ def _flash_attn_bwd_launch_apple[
     ctx: DeviceContext,
 ) raises:
     # dq writes delta and dkdv reads it (same stream).
-    var delta_buf = ctx.enqueue_create_buffer[DType.float32](B * H * S)
+    var delta_buf = scratch_take[DType.float32](ctx, B * H * S)
     var delta_ptr = delta_buf.unsafe_ptr().as_unsafe_any_origin()
 
     var num_tiles = (S + APPLE_QROWS - 1) // APPLE_QROWS

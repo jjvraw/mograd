@@ -5,6 +5,7 @@ from std.sys import simd_width_of, size_of
 from std.utils import Variant
 
 from mograd.layout import Layout
+from mograd.memory import Storage, take_storage
 from mograd import Device
 
 
@@ -16,7 +17,7 @@ from mograd import Device
 trait BufferArm(Copyable, Movable):
     comptime node_dtype: DType
 
-    def raw_ptr(ref self, with_offset: Bool = True) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
+    def rawptr(ref self, with_offset: Bool = True) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
         ...
 
 
@@ -27,7 +28,12 @@ trait BufferArm(Copyable, Movable):
 
 struct Buffer[dtype: DType](BufferArm, Copyable):
     comptime node_dtype = Self.dtype
-    var _ptr: ArcPointer[DeviceBuffer[Self.dtype]]
+    var ptr: ArcPointer[DeviceBuffer[Self.dtype]]
+    # Pool ticket: while any copy of this Buffer (or a view of it) is alive
+    # the underlying allocation is held here; when the last one dies the
+    # allocation recycles into the memory pool instead of returning to the
+    # runtime allocator. None for buffers wrapping external DeviceBuffers.
+    var storage: Optional[ArcPointer[Storage]]
     var base_offset: Int
 
     def __init__(
@@ -35,7 +41,8 @@ struct Buffer[dtype: DType](BufferArm, Copyable):
         var buf: DeviceBuffer[Self.dtype],
         size: Int,
     ):
-        self._ptr = ArcPointer(buf^)
+        self.ptr = ArcPointer(buf^)
+        self.storage = None
         self.base_offset = 0
 
     def __init__(
@@ -43,18 +50,20 @@ struct Buffer[dtype: DType](BufferArm, Copyable):
         ptr: ArcPointer[DeviceBuffer[Self.dtype]],
         size: Int,
         base_offset: Int,
+        storage: Optional[ArcPointer[Storage]] = None,
     ):
-        self._ptr = ptr
+        self.ptr = ptr
+        self.storage = storage.copy()
         self.base_offset = base_offset
 
-    def buf(ref self) -> ref[self._ptr[]] DeviceBuffer[Self.dtype]:
-        return self._ptr[]
+    def buf(ref self) -> ref[self.ptr[]] DeviceBuffer[Self.dtype]:
+        return self.ptr[]
 
     def data_ptr(ref self, with_offset: Bool = True) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
         offset = self.base_offset if with_offset else 0
         return (self.buf().unsafe_ptr() + offset).as_unsafe_any_origin()
 
-    def raw_ptr(ref self, with_offset: Bool = True) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
+    def rawptr(ref self, with_offset: Bool = True) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
         return self.data_ptr(with_offset).bitcast[NoneType]()
 
     def item(self) raises -> Scalar[Self.dtype]:
@@ -78,29 +87,42 @@ struct Buffer[dtype: DType](BufferArm, Copyable):
 
     @staticmethod
     def empty(device: Device, numel: Int) raises -> Self:
-        var dev_buf = device.ctx.enqueue_create_buffer[Self.dtype](numel)
-        return Self(dev_buf^, numel)
+        if numel == 0:
+            var dev_buf = device.ctx.enqueue_create_buffer[Self.dtype](0)
+            return Self(dev_buf^, 0)
+        # Allocate raw bytes (pool first, runtime allocator on miss) and hand
+        # out a typed view over the allocation. Contents are undefined, same
+        # as a fresh enqueue_create_buffer.
+        var storage = take_storage(device.ctx, numel * size_of[Scalar[Self.dtype]](), guard=device.mem)
+        var view = storage.bytes.create_sub_buffer[Self.dtype](0, numel)
+        return Self(ArcPointer(view^), numel, 0, storage=ArcPointer(storage^))
 
     @staticmethod
     def full(device: Device, value: Scalar[Self.dtype], numel: Int) raises -> Self:
-        var dev_buf = device.ctx.enqueue_create_buffer[Self.dtype](numel)
-        dev_buf.enqueue_fill(value)
-        return Self(dev_buf^, numel)
+        var buf = Self.empty(device, numel)
+        buf.buf().enqueue_fill(value)
+        return buf^
 
     @staticmethod
     def from_data[S: DType = Self.dtype, /](device: Device, data: List[Scalar[S]]) raises -> Self:
         var size = len(data)
         var host_buf = device.ctx.enqueue_create_host_buffer[Self.dtype](size)
-        var host_ptr = host_buf.unsafe_ptr()
+        var hostptr = host_buf.unsafe_ptr()
         var src = data.unsafe_ptr()
 
-        def fill[width: Int](i: Int) {read src, read host_ptr}:
-            host_ptr.store(i, src.load[width=width](i).cast[Self.dtype]())
+        def fill[width: Int](i: Int) {read src, read hostptr}:
+            hostptr.store(i, src.load[width=width](i).cast[Self.dtype]())
 
         vectorize[simd_width_of[Self.dtype]()](size, fill)
-        var dev_buf = device.ctx.enqueue_create_buffer[Self.dtype](size)
-        device.ctx.enqueue_copy(dst_buf=dev_buf, src_buf=host_buf)
-        return Self(dev_buf^, size)
+        var buf = Self.empty(device, size)
+        device.ctx.enqueue_copy(dst_buf=buf.buf(), src_buf=host_buf)
+        # Drain the queue before host_buf dies and before this context can be
+        # torn down: destroying a DeviceContext with unsynchronized enqueued
+        # work poisons the per-device AsyncRT mutex on the 2026-07 runtime and
+        # stalls the next context's first allocation for ~600s (see
+        # BUG_REPORT_asyncrt_first_dispatch_stall.md).
+        device.ctx.synchronize()
+        return buf^
 
 
 # ===-------------------------------------------------------------------===#
@@ -161,7 +183,7 @@ struct AnyBuffer(Copyable, Movable):
             comptime T = Self.BufVariant.Ts[k]
             comptime assert conforms_to(T, BufferArm)
             if self._buf.isa[T]():
-                return trait_downcast[BufferArm](self._buf.unsafe_get[T]()).raw_ptr(with_offset)
+                return trait_downcast[BufferArm](self._buf.unsafe_get[T]()).rawptr(with_offset)
         raise Error("Unsupported dtype")
 
     def view(ref self, layout: Layout) raises -> AnyBuffer:
@@ -172,7 +194,7 @@ struct AnyBuffer(Copyable, Movable):
 
             if self._buf.isa[T]():
                 ref src = self.unsafe_get[d]()
-                return AnyBuffer(Buffer[d](src._ptr.copy(), layout.numel(), layout.base_offset))
+                return AnyBuffer(Buffer[d](src.ptr.copy(), layout.numel(), layout.base_offset, src.storage))
         raise Error("Unsupported dtype")
 
     @staticmethod
@@ -185,6 +207,5 @@ struct AnyBuffer(Copyable, Movable):
                 if fill:
                     return AnyBuffer(Buffer[d].full(device, Scalar[d](fill.value()), numel))
                 else:
-                    var dev_buf = device.ctx.enqueue_create_buffer[d](numel)
-                    return AnyBuffer(Buffer[d](dev_buf^, numel))
+                    return AnyBuffer(Buffer[d].empty(device, numel))
         raise Error("Unsupported dtype: " + String(dtype))

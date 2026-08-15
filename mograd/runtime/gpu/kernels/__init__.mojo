@@ -15,6 +15,7 @@ from nn.argmaxmin_gpu import argmax_gpu
 
 from mograd.buffer import AnyBuffer, BufferArm
 from mograd.layout import Layout
+from mograd.memory import scratch_take
 from mograd.runtime.gpu.kernels.factory import *
 from mograd.runtime.gpu.kernels.elementwise import *
 from mograd.runtime.gpu.kernels.reduce import *
@@ -1381,7 +1382,7 @@ def mograd_cross_entropy(
     def body[d: DType]() capturing raises:
         var N = la.numel() // la.shape(la.rank() - 1)
         var C = la.shape(la.rank() - 1)
-        var row_buf = ctx.enqueue_create_buffer[d](N)
+        var row_buf = scratch_take[d](ctx, N)
         comptime assert d.is_floating_point()
         ctx.enqueue_function[cross_entropy_kernel[d, CE_BLOCK]](
             logits.bitcast[Scalar[d]](),
@@ -1422,7 +1423,7 @@ def mograd_cross_entropy_strided(
         var la_sa_buf = la.strides_buffer(ctx)
         var lb_inner_buf = lb.inner_sizes_buffer(ctx)
         var lb_sa_buf = lb.strides_buffer(ctx)
-        var row_buf = ctx.enqueue_create_buffer[d](N)
+        var row_buf = scratch_take[d](ctx, N)
         comptime assert d.is_floating_point()
         ctx.enqueue_function[cross_entropy_kernel_strided[d, CE_BLOCK]](
             logits.bitcast[Scalar[d]](),

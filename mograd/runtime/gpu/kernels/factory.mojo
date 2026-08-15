@@ -20,7 +20,7 @@ def randn[
     seed: UInt64,
     ctx: DeviceContext,
 ) raises:
-    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](1)
+    var seed_buf = scratch_take[DType.uint64](ctx, 1)
     seed_buf.enqueue_fill(seed)
 
     def store[width: SIMDSize, rank: Int](idx: IndexList[rank], val: SIMD[dtype, width]) capturing:
@@ -52,7 +52,7 @@ def uniform[
 ) raises where dtype.is_floating_point():
     var low = Scalar[dtype](params[0])
     var high = Scalar[dtype](params[1])
-    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](1)
+    var seed_buf = scratch_take[DType.uint64](ctx, 1)
     seed_buf.enqueue_fill(seed)
 
     def store[width: SIMDSize, rank: Int](idx: IndexList[rank], val: SIMD[dtype, width]) capturing:

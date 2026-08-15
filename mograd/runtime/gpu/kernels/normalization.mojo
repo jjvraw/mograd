@@ -318,8 +318,8 @@ def layer_norm_bwd[
         WARP_SIZE * max_warps,
     )
 
-    var dg_tmp = ctx.enqueue_create_buffer[dtype](num_groups * cols)
-    var db_tmp = ctx.enqueue_create_buffer[dtype](num_groups * cols)
+    var dg_tmp = scratch_take[dtype](ctx, num_groups * cols)
+    var db_tmp = scratch_take[dtype](ctx, num_groups * cols)
 
     @parameter
     def launch_k1g[max_cols: Int]() raises:
