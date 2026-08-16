@@ -24,12 +24,13 @@
 # dO are BHSD, LSE is (B, H, S) float32 in natural log.
 
 from std.gpu import WARP_SIZE, MAX_THREADS_PER_BLOCK_METADATA, block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.primitives.warp import sum as warp_sum
 from std.math import exp2, log
 from std.memory import stack_allocation
 from std.utils import StaticTuple
 from mograd.runtime.gpu.kernels.attention.config import LOG2E, LN2
+from mograd.memory import scratch_take
 
 # Simdgroups per threadgroup. Wide geometry is the perf lever: 16 warps
 # of 32 lanes give 512 co-resident threads walking one KV range per block.
@@ -41,18 +42,22 @@ comptime APPLE_QROWS = 16
 def flash_attn_fwd_kernel_apple[
     dtype: DType, D_BUCKET: Int, CAUSAL: Bool, HAS_BIAS: Bool
 ](
-    q: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    k: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    v: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    mask: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    lse: UnsafePointer[Float32, MutAnyOrigin],
-    B: Int,
-    S: Int,
-    H: Int,
-    D: Int,
+    q: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    k: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    v: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    mask: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    dst: Pointer[Scalar[dtype], MutAnyOrigin],
+    lse: Pointer[Float32, MutAnyOrigin],
+    B_arg: Int64,
+    S_arg: Int64,
+    H_arg: Int64,
+    D_arg: Int64,
     scale: Float32,
 ):
+    var B = Int(B_arg)
+    var S = Int(S_arg)
+    var H = Int(H_arg)
+    var D = Int(D_arg)
     comptime assert D_BUCKET % WARP_SIZE == 0, "D_BUCKET must be divisible by WARP_SIZE"
     comptime D_PT = D_BUCKET // WARP_SIZE
 
@@ -81,8 +86,8 @@ def flash_attn_fwd_kernel_apple[
     var o_acc = stack_allocation[D_PT, Float32]()
     comptime for di in range(D_PT):
         var d = lane + di * WARP_SIZE
-        q_reg[di] = Float32(q[qkv_bh + i * HD + d]) if d < D else Float32(0)
-        o_acc[di] = Float32(0)
+        q_reg[unsafe_offset=di] = Float32(q[unsafe_offset=qkv_bh + i * HD + d]) if d < D else Float32(0)
+        o_acc[unsafe_offset=di] = Float32(0)
 
     var m = Float32(-1e38)  # running max in log2 space
     var l = Float32(0)
@@ -99,11 +104,11 @@ def flash_attn_fwd_kernel_apple[
         var partial = Float32(0)
         comptime for di in range(D_PT):
             var d = lane + di * WARP_SIZE
-            partial += q_reg[di] * (Float32(k[kv_base + d]) if d < D else Float32(0))
+            partial += q_reg[unsafe_offset=di] * (Float32(k[unsafe_offset=kv_base + d]) if d < D else Float32(0))
         var s_l2 = warp_sum(partial) * scale_log2e
         comptime if HAS_BIAS and not CAUSAL:
             # mask is additive bias in natural-log space, converted to log2
-            s_l2 += Float32(mask[b * H * S * S + h * S * S + i * S + j]) * LOG2E
+            s_l2 += Float32(mask[unsafe_offset=b * H * S * S + h * S * S + i * S + j]) * LOG2E
 
         # Online softmax in registers. s_l2 is lane-uniform after warp_sum,
         # so every lane tracks the same m and l without any exchange.
@@ -114,16 +119,18 @@ def flash_attn_fwd_kernel_apple[
         m = m_new
         comptime for di in range(D_PT):
             var d = lane + di * WARP_SIZE
-            o_acc[di] = o_acc[di] * corr + p * (Float32(v[kv_base + d]) if d < D else Float32(0))
+            o_acc[unsafe_offset=di] = o_acc[unsafe_offset=di] * corr + p * (
+                Float32(v[unsafe_offset=kv_base + d]) if d < D else Float32(0)
+            )
 
     # O is BHSD. LSE converts from log2 back to natural log.
     var o_base = b * H * S * D + h * S * D + i * D
     comptime for di in range(D_PT):
         var d = lane + di * WARP_SIZE
         if d < D:
-            dst[o_base + d] = Scalar[dtype](o_acc[di] / l)
+            dst[unsafe_offset=o_base + d] = Scalar[dtype](o_acc[unsafe_offset=di] / l)
     if lane == 0:
-        lse[b * H * S + h * S + i] = m * LN2 + log(l)
+        lse[unsafe_offset=b * H * S + h * S + i] = m * LN2 + log(l)
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(APPLE_QROWS * WARP_SIZE)))
@@ -131,21 +138,25 @@ def flash_attn_fwd_kernel_apple[
 def flash_attn_dq_kernel_apple[
     dtype: DType, D_BUCKET: Int, CAUSAL: Bool, HAS_BIAS: Bool
 ](
-    dy: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    o: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    q: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    k: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    v: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    mask: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    lse: UnsafePointer[Float32, ImmutAnyOrigin],
-    dq: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    delta: UnsafePointer[Float32, MutAnyOrigin],
-    B: Int,
-    S: Int,
-    H: Int,
-    D: Int,
+    dy: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    o: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    q: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    k: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    v: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    mask: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    lse: Pointer[Float32, ImmutAnyOrigin],
+    dq: Pointer[Scalar[dtype], MutAnyOrigin],
+    delta: Pointer[Float32, MutAnyOrigin],
+    B_arg: Int64,
+    S_arg: Int64,
+    H_arg: Int64,
+    D_arg: Int64,
     scale: Float32,
 ):
+    var B = Int(B_arg)
+    var S = Int(S_arg)
+    var H = Int(H_arg)
+    var D = Int(D_arg)
     comptime assert D_BUCKET % WARP_SIZE == 0, "D_BUCKET must be divisible by WARP_SIZE"
     comptime D_PT = D_BUCKET // WARP_SIZE
 
@@ -174,22 +185,22 @@ def flash_attn_dq_kernel_apple[
     var dq_reg = stack_allocation[D_PT, Float32]()
     var delta_partial = Float32(0)
     comptime for di in range(D_PT):
-        dq_reg[di] = Float32(0)
+        dq_reg[unsafe_offset=di] = Float32(0)
         var d = lane + di * WARP_SIZE
         if d < D:
             var o_idx = o_bh + i * D + d
-            q_reg[di] = Float32(q[qkv_bh + i * HD + d])
-            var do_val = Float32(dy[o_idx])
-            do_reg[di] = do_val
-            delta_partial += Float32(o[o_idx]) * do_val
+            q_reg[unsafe_offset=di] = Float32(q[unsafe_offset=qkv_bh + i * HD + d])
+            var do_val = Float32(dy[unsafe_offset=o_idx])
+            do_reg[unsafe_offset=di] = do_val
+            delta_partial += Float32(o[unsafe_offset=o_idx]) * do_val
         else:
-            q_reg[di] = Float32(0)
-            do_reg[di] = Float32(0)
+            q_reg[unsafe_offset=di] = Float32(0)
+            do_reg[unsafe_offset=di] = Float32(0)
     var delta_i = warp_sum(delta_partial)
     if lane == 0:
-        delta[b * H * S + h * S + i] = delta_i
+        delta[unsafe_offset=b * H * S + h * S + i] = delta_i
 
-    var lse_i_l2 = lse[b * H * S + h * S + i] * LOG2E
+    var lse_i_l2 = lse[unsafe_offset=b * H * S + h * S + i] * LOG2E
     var scale_log2e = scale * LOG2E
 
     var j_end: Int
@@ -205,23 +216,23 @@ def flash_attn_dq_kernel_apple[
         var pdp = Float32(0)
         comptime for di in range(D_PT):
             var d = lane + di * WARP_SIZE
-            k_frag[di] = Float32(k[kv_base + d]) if d < D else Float32(0)
-            pqk += q_reg[di] * k_frag[di]
-            pdp += do_reg[di] * (Float32(v[kv_base + d]) if d < D else Float32(0))
+            k_frag[unsafe_offset=di] = Float32(k[unsafe_offset=kv_base + d]) if d < D else Float32(0)
+            pqk += q_reg[unsafe_offset=di] * k_frag[unsafe_offset=di]
+            pdp += do_reg[unsafe_offset=di] * (Float32(v[unsafe_offset=kv_base + d]) if d < D else Float32(0))
         var s_l2 = warp_sum(pqk) * scale_log2e
         comptime if HAS_BIAS and not CAUSAL:
-            s_l2 += Float32(mask[b * H * S * S + h * S * S + i * S + j]) * LOG2E
+            s_l2 += Float32(mask[unsafe_offset=b * H * S * S + h * S * S + i * S + j]) * LOG2E
         var p_ij = exp2(s_l2 - lse_i_l2)
         var ds_ij = p_ij * (warp_sum(pdp) - delta_i)
         comptime for di in range(D_PT):
-            dq_reg[di] += ds_ij * k_frag[di]
+            dq_reg[unsafe_offset=di] += ds_ij * k_frag[unsafe_offset=di]
 
     # The scale factor is applied once at the epilogue.
     var out_base = qkv_bh + i * HD
     comptime for di in range(D_PT):
         var d = lane + di * WARP_SIZE
         if d < D:
-            dq[out_base + d] = Scalar[dtype](dq_reg[di] * scale)
+            dq[unsafe_offset=out_base + d] = Scalar[dtype](dq_reg[unsafe_offset=di] * scale)
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(APPLE_QROWS * WARP_SIZE)))
@@ -229,21 +240,25 @@ def flash_attn_dq_kernel_apple[
 def flash_attn_dkdv_kernel_apple[
     dtype: DType, D_BUCKET: Int, CAUSAL: Bool, HAS_BIAS: Bool
 ](
-    dy: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    q: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    k: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    v: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    mask: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    lse: UnsafePointer[Float32, ImmutAnyOrigin],
-    delta: UnsafePointer[Float32, ImmutAnyOrigin],
-    dk: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dv: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    B: Int,
-    S: Int,
-    H: Int,
-    D: Int,
+    dy: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    q: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    k: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    v: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    mask: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    lse: Pointer[Float32, ImmutAnyOrigin],
+    delta: Pointer[Float32, ImmutAnyOrigin],
+    dk: Pointer[Scalar[dtype], MutAnyOrigin],
+    dv: Pointer[Scalar[dtype], MutAnyOrigin],
+    B_arg: Int64,
+    S_arg: Int64,
+    H_arg: Int64,
+    D_arg: Int64,
     scale: Float32,
 ):
+    var B = Int(B_arg)
+    var S = Int(S_arg)
+    var H = Int(H_arg)
+    var D = Int(D_arg)
     comptime assert D_BUCKET % WARP_SIZE == 0, "D_BUCKET must be divisible by WARP_SIZE"
     comptime D_PT = D_BUCKET // WARP_SIZE
 
@@ -272,12 +287,12 @@ def flash_attn_dkdv_kernel_apple[
     var dk_reg = stack_allocation[D_PT, Float32]()
     var dv_reg = stack_allocation[D_PT, Float32]()
     comptime for di in range(D_PT):
-        dk_reg[di] = Float32(0)
-        dv_reg[di] = Float32(0)
+        dk_reg[unsafe_offset=di] = Float32(0)
+        dv_reg[unsafe_offset=di] = Float32(0)
         var d = lane + di * WARP_SIZE
         var kv_base = qkv_bh + j * HD
-        k_reg[di] = Float32(k[kv_base + d]) if d < D else Float32(0)
-        v_reg[di] = Float32(v[kv_base + d]) if d < D else Float32(0)
+        k_reg[unsafe_offset=di] = Float32(k[unsafe_offset=kv_base + d]) if d < D else Float32(0)
+        v_reg[unsafe_offset=di] = Float32(v[unsafe_offset=kv_base + d]) if d < D else Float32(0)
 
     var scale_log2e = scale * LOG2E
 
@@ -297,37 +312,37 @@ def flash_attn_dkdv_kernel_apple[
         var pdp = Float32(0)
         comptime for di in range(D_PT):
             var d = lane + di * WARP_SIZE
-            q_frag[di] = Float32(q[q_base + d]) if d < D else Float32(0)
-            do_frag[di] = Float32(dy[do_base + d]) if d < D else Float32(0)
-            pqk += q_frag[di] * k_reg[di]
-            pdp += do_frag[di] * v_reg[di]
+            q_frag[unsafe_offset=di] = Float32(q[unsafe_offset=q_base + d]) if d < D else Float32(0)
+            do_frag[unsafe_offset=di] = Float32(dy[unsafe_offset=do_base + d]) if d < D else Float32(0)
+            pqk += q_frag[unsafe_offset=di] * k_reg[unsafe_offset=di]
+            pdp += do_frag[unsafe_offset=di] * v_reg[unsafe_offset=di]
         var s_l2 = warp_sum(pqk) * scale_log2e
         comptime if HAS_BIAS and not CAUSAL:
-            s_l2 += Float32(mask[b * H * S * S + h * S * S + i * S + j]) * LOG2E
-        var p_ij = exp2(s_l2 - lse[b * H * S + h * S + i] * LOG2E)
-        var ds_ij = p_ij * (warp_sum(pdp) - delta[b * H * S + h * S + i])
+            s_l2 += Float32(mask[unsafe_offset=b * H * S * S + h * S * S + i * S + j]) * LOG2E
+        var p_ij = exp2(s_l2 - lse[unsafe_offset=b * H * S + h * S + i] * LOG2E)
+        var ds_ij = p_ij * (warp_sum(pdp) - delta[unsafe_offset=b * H * S + h * S + i])
         comptime for di in range(D_PT):
-            dv_reg[di] += p_ij * do_frag[di]
-            dk_reg[di] += ds_ij * q_frag[di]
+            dv_reg[unsafe_offset=di] += p_ij * do_frag[unsafe_offset=di]
+            dk_reg[unsafe_offset=di] += ds_ij * q_frag[unsafe_offset=di]
 
     # The scale factor is applied once at the epilogue.
     var out_base = qkv_bh + j * HD
     comptime for di in range(D_PT):
         var d = lane + di * WARP_SIZE
         if d < D:
-            dk[out_base + d] = Scalar[dtype](dk_reg[di] * scale)
-            dv[out_base + d] = Scalar[dtype](dv_reg[di])
+            dk[unsafe_offset=out_base + d] = Scalar[dtype](dk_reg[unsafe_offset=di] * scale)
+            dv[unsafe_offset=out_base + d] = Scalar[dtype](dv_reg[unsafe_offset=di])
 
 
 def _flash_attn_fwd_launch_apple[
     dtype: DType, D_BUCKET: Int, CAUSAL: Bool, HAS_BIAS: Bool
 ](
-    q: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    k: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    v: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    mask: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    lse: UnsafePointer[Float32, MutAnyOrigin],
+    q: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    k: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    v: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    mask: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    dst: Pointer[Scalar[dtype], MutAnyOrigin],
+    lse: Pointer[Float32, MutAnyOrigin],
     B: Int,
     S: Int,
     H: Int,
@@ -344,10 +359,10 @@ def _flash_attn_fwd_launch_apple[
         mask,
         dst,
         lse,
-        B,
-        S,
-        H,
-        D,
+        Int64(B),
+        Int64(S),
+        Int64(H),
+        Int64(D),
         scale,
         grid_dim=(B * H * num_tiles,),
         block_dim=(APPLE_QROWS * WARP_SIZE,),
@@ -357,16 +372,16 @@ def _flash_attn_fwd_launch_apple[
 def _flash_attn_bwd_launch_apple[
     dtype: DType, D_BUCKET: Int, CAUSAL: Bool, HAS_BIAS: Bool
 ](
-    dy: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    o: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    q: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    k: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    v: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    mask: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    lse: UnsafePointer[Float32, ImmutAnyOrigin],
-    dq: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dk: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dv: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dy: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    o: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    q: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    k: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    v: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    mask: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    lse: Pointer[Float32, ImmutAnyOrigin],
+    dq: Pointer[Scalar[dtype], MutAnyOrigin],
+    dk: Pointer[Scalar[dtype], MutAnyOrigin],
+    dv: Pointer[Scalar[dtype], MutAnyOrigin],
     B: Int,
     S: Int,
     H: Int,
@@ -390,10 +405,10 @@ def _flash_attn_bwd_launch_apple[
         lse,
         dq,
         delta_ptr,
-        B,
-        S,
-        H,
-        D,
+        Int64(B),
+        Int64(S),
+        Int64(H),
+        Int64(D),
         scale,
         grid_dim=(B * H * num_tiles,),
         block_dim=(APPLE_QROWS * WARP_SIZE,),
@@ -409,10 +424,10 @@ def _flash_attn_bwd_launch_apple[
         delta_ptr,
         dk,
         dv,
-        B,
-        S,
-        H,
-        D,
+        Int64(B),
+        Int64(S),
+        Int64(H),
+        Int64(D),
         scale,
         grid_dim=(B * H * num_tiles,),
         block_dim=(APPLE_QROWS * WARP_SIZE,),

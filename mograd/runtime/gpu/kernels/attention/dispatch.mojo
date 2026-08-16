@@ -1,5 +1,5 @@
 """Host-side dispatch: dtype / head-dim bucket / routing."""
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.sys.info import has_apple_gpu_accelerator, has_nvidia_gpu_accelerator
 from mograd.runtime.gpu.kernels.attention.generic import (
     _flash_attn_fwd_launch,
@@ -12,12 +12,12 @@ from mograd.runtime.gpu.kernels.attention.generic import (
 def flash_attn_fwd[
     d: DType, CAUSAL: Bool = False, HAS_BIAS: Bool = True
 ](
-    q: UnsafePointer[Scalar[d], ImmutAnyOrigin],
-    k: UnsafePointer[Scalar[d], ImmutAnyOrigin],
-    v: UnsafePointer[Scalar[d], ImmutAnyOrigin],
-    mask: UnsafePointer[Scalar[d], ImmutAnyOrigin],
-    dst: UnsafePointer[Scalar[d], MutAnyOrigin],
-    lse: UnsafePointer[Float32, MutAnyOrigin],
+    q: Pointer[Scalar[d], ImmutAnyOrigin],
+    k: Pointer[Scalar[d], ImmutAnyOrigin],
+    v: Pointer[Scalar[d], ImmutAnyOrigin],
+    mask: Pointer[Scalar[d], ImmutAnyOrigin],
+    dst: Pointer[Scalar[d], MutAnyOrigin],
+    lse: Pointer[Float32, MutAnyOrigin],
     B: Int,
     S: Int,
     H: Int,
@@ -37,7 +37,7 @@ def flash_attn_fwd[
             _flash_attn_fwd_launch_mma,
         )
 
-        @parameter
+        @__parameter
         @always_inline
         def mma[DB: Int]() raises:
             _flash_attn_fwd_launch_mma[d, DB, CAUSAL, HAS_BIAS](q, k, v, mask, dst, lse, B, S, H, D, scale, ctx)
@@ -59,7 +59,7 @@ def flash_attn_fwd[
         # head-dim tile limit either.
         from mograd.runtime.gpu.kernels.attention.apple import _flash_attn_fwd_launch_apple
 
-        @parameter
+        @__parameter
         @always_inline
         def apple[DB: Int]() raises:
             _flash_attn_fwd_launch_apple[d, DB, CAUSAL, HAS_BIAS](q, k, v, mask, dst, lse, B, S, H, D, scale, ctx)
@@ -78,7 +78,7 @@ def flash_attn_fwd[
             apple[512]()
     else:
         # Scalar fallback
-        @parameter
+        @__parameter
         @always_inline
         def simt[DB: Int]() raises:
             _flash_attn_fwd_launch[d, DB, CAUSAL, HAS_BIAS](q, k, v, mask, dst, lse, B, S, H, D, scale, ctx)
@@ -100,16 +100,16 @@ def flash_attn_fwd[
 def flash_attn_bwd[
     d: DType, CAUSAL: Bool = False, HAS_BIAS: Bool = not CAUSAL
 ](
-    dy: UnsafePointer[Scalar[d], ImmutAnyOrigin],
-    o: UnsafePointer[Scalar[d], ImmutAnyOrigin],
-    q: UnsafePointer[Scalar[d], ImmutAnyOrigin],
-    k: UnsafePointer[Scalar[d], ImmutAnyOrigin],
-    v: UnsafePointer[Scalar[d], ImmutAnyOrigin],
-    mask: UnsafePointer[Scalar[d], ImmutAnyOrigin],
-    lse: UnsafePointer[Float32, ImmutAnyOrigin],
-    dq: UnsafePointer[Scalar[d], MutAnyOrigin],
-    dk: UnsafePointer[Scalar[d], MutAnyOrigin],
-    dv: UnsafePointer[Scalar[d], MutAnyOrigin],
+    dy: Pointer[Scalar[d], ImmutAnyOrigin],
+    o: Pointer[Scalar[d], ImmutAnyOrigin],
+    q: Pointer[Scalar[d], ImmutAnyOrigin],
+    k: Pointer[Scalar[d], ImmutAnyOrigin],
+    v: Pointer[Scalar[d], ImmutAnyOrigin],
+    mask: Pointer[Scalar[d], ImmutAnyOrigin],
+    lse: Pointer[Float32, ImmutAnyOrigin],
+    dq: Pointer[Scalar[d], MutAnyOrigin],
+    dk: Pointer[Scalar[d], MutAnyOrigin],
+    dv: Pointer[Scalar[d], MutAnyOrigin],
     B: Int,
     S: Int,
     H: Int,
@@ -130,14 +130,14 @@ def flash_attn_bwd[
             _flash_attn_bwd_launch_mma_half,
         )
 
-        @parameter
+        @__parameter
         @always_inline
         def mma_half[DB: Int]() raises:
             _flash_attn_bwd_launch_mma_half[d, DB, CAUSAL, HAS_BIAS](
                 dy, o, q, k, v, mask, lse, dq, dk, dv, B, S, H, D, scale, ctx
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def mma[DB: Int]() raises:
             _flash_attn_bwd_launch_mma[d, DB, CAUSAL, HAS_BIAS](
@@ -206,7 +206,7 @@ def flash_attn_bwd[
         # head-dim tile limit.
         from mograd.runtime.gpu.kernels.attention.apple import _flash_attn_bwd_launch_apple
 
-        @parameter
+        @__parameter
         @always_inline
         def apple[DB: Int]() raises:
             _flash_attn_bwd_launch_apple[d, DB, CAUSAL, HAS_BIAS](
@@ -227,7 +227,7 @@ def flash_attn_bwd[
             apple[512]()
     else:
 
-        @parameter
+        @__parameter
         @always_inline
         def simt[DB: Int]() raises:
             _flash_attn_bwd_launch[d, DB, CAUSAL, HAS_BIAS](

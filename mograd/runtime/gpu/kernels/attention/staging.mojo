@@ -10,7 +10,8 @@
 # they inline (the forward absorbs them at zero cost, im not sure why).
 # Re-verify with the bench before introducing them there.
 
-from std.gpu.memory import CacheEviction, async_copy, AddressSpace
+from max.gpu.memory import CacheEviction, async_copy
+from std.memory import AddressSpace
 from std.sys import size_of
 
 comptime COPY_VEC = 8  # 16 bytes of half elements per staged chunk
@@ -28,8 +29,8 @@ def chunk_valid(row_ok: Bool, col: Int, bound: Int) -> Int:
 def stage_chunk_async[
     dtype: DType, //, eviction: CacheEviction = CacheEviction.EVICT_NORMAL
 ](
-    src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutUntrackedOrigin, address_space=AddressSpace.SHARED],
+    src: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    dst: Pointer[Scalar[dtype], MutUntrackedOrigin, address_space=AddressSpace.SHARED],
     valid_elems: Int,
 ):
     """One 16B cp.async chunk, global to shared.
@@ -40,7 +41,7 @@ def stage_chunk_async[
     instruction. The caller owns async_copy_commit_group / wait placement.
     """
     async_copy[16, fill=Scalar[dtype](0), eviction_policy=eviction](
-        src.address_space_cast[AddressSpace.GLOBAL](),
+        src.unsafe_address_space_cast[AddressSpace.GLOBAL](),
         dst,
         Int32(size_of[Scalar[dtype]]() * valid_elems),
     )
@@ -50,8 +51,8 @@ def stage_chunk_async[
 def stage_chunk_elems[
     dtype: DType, //
 ](
-    src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutUntrackedOrigin, address_space=AddressSpace.SHARED],
+    src: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    dst: Pointer[Scalar[dtype], MutUntrackedOrigin, address_space=AddressSpace.SHARED],
     row_ok: Bool,
     col: Int,
     bound: Int,
@@ -59,4 +60,4 @@ def stage_chunk_elems[
     """Register-path per-element fallback for rows that are not 16B aligned."""
     comptime for e in range(COPY_VEC):
         var ok = row_ok and col + e < bound
-        dst[e] = src[e] if ok else Scalar[dtype](0)
+        dst[unsafe_offset=e] = src[unsafe_offset=e] if ok else Scalar[dtype](0)

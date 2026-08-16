@@ -6,7 +6,7 @@ from mograd.op import OpRef, OpType
 
 
 @fieldwise_init
-struct Rule[F: TrivialRegisterPassable](Copyable, ImplicitlyDeletable, Movable):
+struct Rule[F: TrivialRegisterPassable](Copyable, Movable):
     var pat: Pat
     var func: Self.F
 
@@ -36,6 +36,10 @@ struct Pat(Copyable, ImplicitlyCopyable, Movable):
         self.op_type = copy.op_type
         self.srcs = copy.srcs.copy()
         self._any_op = copy._any_op
+
+    # Explicit: deletability synthesis cycles on the recursive srcs field.
+    def __deinit__(deinit self):
+        pass
 
     def matches(self, node: OpRef) -> Bool:
         if not self._any_op and node.op_type() != self.op_type:

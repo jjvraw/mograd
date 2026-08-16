@@ -1,6 +1,7 @@
-from std.gpu import global_idx, thread_idx, block_idx, barrier
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
+from std.gpu import global_idx, thread_idx, block_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import AddressSpace
 from std.math import ceildiv
 from std.memory import stack_allocation
 from std.sys.info import has_apple_gpu_accelerator
@@ -41,8 +42,8 @@ from mograd.runtime.gpu.kernels.strided import strided_copy_map
 
 @export
 def mograd_randn(
-    params: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    params: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
     n: Int,
     dtype: DType,
     seed: UInt64,
@@ -50,16 +51,16 @@ def mograd_randn(
 ) abi("Mojo") raises:
     @always_inline
     def body[d: DType]() capturing raises:
-        var p = params.bitcast[Float32]()
-        randn[d](dst.bitcast[Scalar[d]](), n, p[0], p[1], seed, ctx)
+        var p = params.unsafe_bitcast[Float32]()
+        randn[d](dst.unsafe_bitcast[Scalar[d]](), n, p[unsafe_offset=0], p[unsafe_offset=1], seed, ctx)
 
     dispatch_dtype[body](dtype)
 
 
 @export
 def mograd_uniform(
-    params: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    params: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
     n: Int,
     dtype: DType,
     seed: UInt64,
@@ -68,54 +69,54 @@ def mograd_uniform(
     @always_inline
     def body[d: DType]() capturing raises:
         comptime assert d.is_floating_point()
-        uniform[d](params.bitcast[Float32](), dst.bitcast[Scalar[d]](), n, seed, ctx)
+        uniform[d](params.unsafe_bitcast[Float32](), dst.unsafe_bitcast[Scalar[d]](), n, seed, ctx)
 
     dispatch_dtype[body, float_only=True](dtype)
 
 
 @export
 def mograd_full(
-    fill_val: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    fill_val: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
     @always_inline
     def body[d: DType]() capturing raises:
-        var val = Scalar[d](fill_val.bitcast[Float32]()[0])
-        full[d](val, dst.bitcast[Scalar[d]](), n, ctx)
+        var val = Scalar[d](fill_val.unsafe_bitcast[Float32]()[unsafe_offset=0])
+        full[d](val, dst.unsafe_bitcast[Scalar[d]](), n, ctx)
 
     dispatch_dtype[body](dtype)
 
 
 @export
 def mograd_one_hot(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
     in_dtype: DType,
     out_dtype: DType,
-    read ld: Layout,
-    read la: Layout,
+    imm ld: Layout,
+    imm la: Layout,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
     var inner_buf = ld.inner_sizes_buffer(ctx)
     var sd_buf = ld.strides_buffer(ctx)
     var sa_buf = la.strides_buffer(ctx)
-    comptime for ki in range(AnyBuffer.BufVariant.Ts.size):
+    comptime for ki in range(AnyBuffer.BufVariant.Ts.length):
         comptime Ti = AnyBuffer.BufVariant.Ts[ki]
         comptime assert conforms_to(Ti, BufferArm)
         comptime src_d = Ti.node_dtype
         if in_dtype == src_d:
-            comptime for ko in range(AnyBuffer.BufVariant.Ts.size):
+            comptime for ko in range(AnyBuffer.BufVariant.Ts.length):
                 comptime To = AnyBuffer.BufVariant.Ts[ko]
                 comptime assert conforms_to(To, BufferArm)
                 comptime dst_d = To.node_dtype
                 comptime if dst_d.is_integral():
                     if out_dtype == dst_d:
                         one_hot[src_d, dst_d](
-                            a.bitcast[Scalar[src_d]](),
-                            dst.bitcast[Scalar[dst_d]](),
+                            a.unsafe_bitcast[Scalar[src_d]](),
+                            dst.unsafe_bitcast[Scalar[dst_d]](),
                             ld.numel(),
                             ld.rank(),
                             inner_buf.unsafe_ptr(),
@@ -129,11 +130,11 @@ def mograd_one_hot(
 
 @export
 def mograd_gather(
-    src: UnsafePointer[NoneType, ImmutAnyOrigin],
-    indices: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    src: Pointer[NoneType, ImmutAnyOrigin],
+    indices: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm la: Layout,
+    imm lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -145,9 +146,9 @@ def mograd_gather(
         var idx_strides_buf = lb.strides_buffer(ctx)
 
         gather[d](
-            src.bitcast[Scalar[d]](),
-            indices.bitcast[Scalar[DType.int64]](),
-            dst.bitcast[Scalar[d]](),
+            src.unsafe_bitcast[Scalar[d]](),
+            indices.unsafe_bitcast[Scalar[DType.int64]](),
+            dst.unsafe_bitcast[Scalar[d]](),
             n,
             row_size,
             la.stride(0),
@@ -163,11 +164,11 @@ def mograd_gather(
 
 @export
 def mograd_scatter_add(
-    indices: UnsafePointer[NoneType, ImmutAnyOrigin],
-    values: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    indices: Pointer[NoneType, ImmutAnyOrigin],
+    values: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm la: Layout,
+    imm lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -182,9 +183,9 @@ def mograd_scatter_add(
 
         comptime assert d.is_floating_point()
         scatter_add[d](
-            indices.bitcast[Scalar[DType.int64]](),
-            values.bitcast[Scalar[d]](),
-            dst.bitcast[Scalar[d]](),
+            indices.unsafe_bitcast[Scalar[DType.int64]](),
+            values.unsafe_bitcast[Scalar[d]](),
+            dst.unsafe_bitcast[Scalar[d]](),
             n,
             row_size,
             la.rank(),
@@ -211,9 +212,9 @@ def mograd_scatter_add(
 
 @export
 def mograd_neg(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -226,9 +227,9 @@ def mograd_neg(
 
 @export
 def mograd_log(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -241,9 +242,9 @@ def mograd_log(
 
 @export
 def mograd_exp(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -256,9 +257,9 @@ def mograd_exp(
 
 @export
 def mograd_sqrt(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -271,9 +272,9 @@ def mograd_sqrt(
 
 @export
 def mograd_relu(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -286,9 +287,9 @@ def mograd_relu(
 
 @export
 def mograd_slice_grad(
-    upstream: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    upstream: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -301,28 +302,28 @@ def mograd_slice_grad(
 
 @export
 def mograd_cast(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm layout: Layout,
     in_dtype: DType,
     out_dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
     var inner_buf = layout.inner_sizes_buffer(ctx)
     var strides_buf = layout.strides_buffer(ctx)
-    comptime for ki in range(AnyBuffer.BufVariant.Ts.size):
+    comptime for ki in range(AnyBuffer.BufVariant.Ts.length):
         comptime Ti = AnyBuffer.BufVariant.Ts[ki]
         comptime assert conforms_to(Ti, BufferArm)
         comptime src_d = Ti.node_dtype
         if in_dtype == src_d:
-            comptime for ko in range(AnyBuffer.BufVariant.Ts.size):
+            comptime for ko in range(AnyBuffer.BufVariant.Ts.length):
                 comptime To = AnyBuffer.BufVariant.Ts[ko]
                 comptime assert conforms_to(To, BufferArm)
                 comptime dst_d = To.node_dtype
                 if out_dtype == dst_d:
                     cast[src_d, dst_d](
-                        a.bitcast[Scalar[src_d]](),
-                        dst.bitcast[Scalar[dst_d]](),
+                        a.unsafe_bitcast[Scalar[src_d]](),
+                        dst.unsafe_bitcast[Scalar[dst_d]](),
                         layout.rank(),
                         inner_buf.unsafe_ptr(),
                         strides_buf.unsafe_ptr(),
@@ -335,9 +336,9 @@ def mograd_cast(
 
 @export
 def mograd_contiguous(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -350,10 +351,10 @@ def mograd_contiguous(
 
 @export
 def mograd_strided_copy(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read ld: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm la: Layout,
+    imm ld: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -363,8 +364,8 @@ def mograd_strided_copy(
         var sa_buf = la.strides_buffer(ctx)
         var sd_buf = ld.strides_buffer(ctx)
         strided_copy_map[d](
-            a.bitcast[Scalar[d]](),
-            dst.bitcast[Scalar[d]](),
+            a.unsafe_bitcast[Scalar[d]](),
+            dst.unsafe_bitcast[Scalar[d]](),
             la.rank(),
             inner_buf.unsafe_ptr(),
             sa_buf.unsafe_ptr(),
@@ -390,9 +391,11 @@ def transpose_last2_kernel[
 ](
     input: TileTensor[dtype, InLayout, ImmutAnyOrigin],
     output: TileTensor[dtype, OutLayout, MutAnyOrigin],
-    M: Int,
-    N: Int,
+    M_arg: Int64,
+    N_arg: Int64,
 ):
+    var M = Int(M_arg)
+    var N = Int(N_arg)
     comptime assert input.flat_rank == 3 and output.flat_rank == 3
 
     var b = block_idx.z
@@ -419,9 +422,9 @@ def transpose_last2_kernel[
 
 @export
 def mograd_transpose_last2(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -434,15 +437,15 @@ def mograd_transpose_last2(
         var sn = layout.stride(rank - 1)
         var batch = layout.numel() // (M * N)
 
-        var input = TileTensor(a.bitcast[Scalar[d]](), MixedLayout(Coord(batch, M, N), Coord(M * N, sm, sn)))
-        var output = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, N)))
+        var input = TileTensor(a.unsafe_bitcast[Scalar[d]](), MixedLayout(Coord(batch, M, N), Coord(M * N, sm, sn)))
+        var output = TileTensor(dst.unsafe_bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, N)))
 
         comptime kernel = transpose_last2_kernel[d, type_of(input).LayoutType, type_of(output).LayoutType]
         ctx.enqueue_function[kernel](
             input,
             output,
-            M,
-            N,
+            Int64(M),
+            Int64(N),
             grid_dim=(ceildiv(M, TRANSPOSE_TILE), ceildiv(N, TRANSPOSE_TILE), batch),
             block_dim=(TRANSPOSE_TILE, TRANSPOSE_TILE),
         )
@@ -457,9 +460,9 @@ def mograd_transpose_last2(
 
 @export
 def mograd_add(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    b: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
@@ -469,11 +472,11 @@ def mograd_add(
 
 @export
 def mograd_add_strided(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    b: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm la: Layout,
+    imm lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -487,11 +490,11 @@ def mograd_add_strided(
 
 @export
 def mograd_mul(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    b: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm la: Layout,
+    imm lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -505,11 +508,11 @@ def mograd_mul(
 
 @export
 def mograd_div(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    b: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm la: Layout,
+    imm lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -523,11 +526,11 @@ def mograd_div(
 
 @export
 def mograd_eq(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    b: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm la: Layout,
+    imm lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -541,11 +544,11 @@ def mograd_eq(
 
 @export
 def mograd_relu_grad(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    b: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm la: Layout,
+    imm lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -559,10 +562,10 @@ def mograd_relu_grad(
 
 @export
 def mograd_scale(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    b: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -578,16 +581,16 @@ def mograd_scale(
 # ===-------------------------------------------------------------------===#
 # TODO: Support vendors https://github.com/modular/modular/issues/6672
 
-comptime MATMUL_KN_BUCKETS = (128, 256, 512, 1024, 2048, 4096)
+comptime MATMUL_KN_BUCKETS: List[Int] = [128, 256, 512, 1024, 2048, 4096]
 
 
 @always_inline
 def _try_static_square_batched_matmul[
     d: DType, transpose_b: Bool
 ](
-    a: UnsafePointer[Scalar[d], ImmutAnyOrigin],
-    b: UnsafePointer[Scalar[d], ImmutAnyOrigin],
-    dst: UnsafePointer[Scalar[d], MutAnyOrigin],
+    a: Pointer[Scalar[d], ImmutAnyOrigin],
+    b: Pointer[Scalar[d], ImmutAnyOrigin],
+    dst: Pointer[Scalar[d], MutAnyOrigin],
     batch: Int,
     M: Int,
     K: Int,
@@ -612,11 +615,11 @@ def _try_static_square_batched_matmul[
 
 @export
 def mograd_matmul(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    b: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm la: Layout,
+    imm lb: Layout,
     N: Int,
     dtype: DType,
     ctx: DeviceContext,
@@ -643,9 +646,9 @@ def mograd_matmul(
         if lda0 == K and lda1 == 1 and ldb0 == N and ldb1 == 1:
             comptime if d.is_floating_point():
                 if _try_static_square_batched_matmul[d, False](
-                    a.bitcast[Scalar[d]]().as_unsafe_any_origin(),
-                    b.bitcast[Scalar[d]]().as_unsafe_any_origin(),
-                    dst.bitcast[Scalar[d]]().as_unsafe_any_origin(),
+                    a.unsafe_bitcast[Scalar[d]]().as_unsafe_any_origin(),
+                    b.unsafe_bitcast[Scalar[d]]().as_unsafe_any_origin(),
+                    dst.unsafe_bitcast[Scalar[d]]().as_unsafe_any_origin(),
                     batch,
                     M,
                     K,
@@ -653,18 +656,18 @@ def mograd_matmul(
                     ctx,
                 ):
                     return
-            var ta = TileTensor(a.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, K)))
-            var tb = TileTensor(b.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, K, N)))
-            var tc = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, N)))
+            var ta = TileTensor(a.unsafe_bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, K)))
+            var tb = TileTensor(b.unsafe_bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, K, N)))
+            var tc = TileTensor(dst.unsafe_bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, N)))
             batched_matmul[target="gpu"](tc, ta, tb, context=ctx)
         else:
             var ta = TileTensor(
-                a.bitcast[Scalar[d]](), MixedLayout(Coord(batch, M, K), Coord(batch_stride_a, lda0, lda1))
+                a.unsafe_bitcast[Scalar[d]](), MixedLayout(Coord(batch, M, K), Coord(batch_stride_a, lda0, lda1))
             )
             var tb = TileTensor(
-                b.bitcast[Scalar[d]](), MixedLayout(Coord(batch, K, N), Coord(batch_stride_b, ldb0, ldb1))
+                b.unsafe_bitcast[Scalar[d]](), MixedLayout(Coord(batch, K, N), Coord(batch_stride_b, ldb0, ldb1))
             )
-            var tc = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, N)))
+            var tc = TileTensor(dst.unsafe_bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, N)))
             comptime BLOCK = 16
             comptime naive = naive_batched_matmul_kernel[
                 3, d, d, d, type_of(tc).LayoutType, type_of(ta).LayoutType, type_of(tb).LayoutType
@@ -683,11 +686,11 @@ def mograd_matmul(
 
 @export
 def mograd_matmul_bt(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    b: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm la: Layout,
+    imm lb: Layout,
     N: Int,
     dtype: DType,
     ctx: DeviceContext,
@@ -714,9 +717,9 @@ def mograd_matmul_bt(
         if lda0 == K and lda1 == 1 and ldb0 == K and ldb1 == 1:
             comptime if d.is_floating_point():
                 if _try_static_square_batched_matmul[d, True](
-                    a.bitcast[Scalar[d]]().as_unsafe_any_origin(),
-                    b.bitcast[Scalar[d]]().as_unsafe_any_origin(),
-                    dst.bitcast[Scalar[d]]().as_unsafe_any_origin(),
+                    a.unsafe_bitcast[Scalar[d]]().as_unsafe_any_origin(),
+                    b.unsafe_bitcast[Scalar[d]]().as_unsafe_any_origin(),
+                    dst.unsafe_bitcast[Scalar[d]]().as_unsafe_any_origin(),
                     batch,
                     M,
                     K,
@@ -724,18 +727,18 @@ def mograd_matmul_bt(
                     ctx,
                 ):
                     return
-            var ta = TileTensor(a.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, K)))
-            var tb = TileTensor(b.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, N, K)))
-            var tc = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, N)))
+            var ta = TileTensor(a.unsafe_bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, K)))
+            var tb = TileTensor(b.unsafe_bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, N, K)))
+            var tc = TileTensor(dst.unsafe_bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, N)))
             batched_matmul[target="gpu", transpose_b=True](tc, ta, tb, context=ctx)
         else:
             var ta = TileTensor(
-                a.bitcast[Scalar[d]](), MixedLayout(Coord(batch, M, K), Coord(batch_stride_a, lda0, lda1))
+                a.unsafe_bitcast[Scalar[d]](), MixedLayout(Coord(batch, M, K), Coord(batch_stride_a, lda0, lda1))
             )
             var tb = TileTensor(
-                b.bitcast[Scalar[d]](), MixedLayout(Coord(batch, N, K), Coord(batch_stride_b, ldb0, ldb1))
+                b.unsafe_bitcast[Scalar[d]](), MixedLayout(Coord(batch, N, K), Coord(batch_stride_b, ldb0, ldb1))
             )
-            var tc = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, N)))
+            var tc = TileTensor(dst.unsafe_bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, N)))
             comptime BLOCK = 16
             comptime naive = naive_batched_matmul_kernel[
                 3, d, d, d, type_of(tc).LayoutType, type_of(ta).LayoutType, type_of(tb).LayoutType, transpose_b=True
@@ -754,12 +757,12 @@ def mograd_matmul_bt(
 
 @export
 def mograd_matmul_bias_bt(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    bias: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    b: Pointer[NoneType, ImmutAnyOrigin],
+    bias: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm la: Layout,
+    imm lb: Layout,
     N: Int,
     dtype: DType,
     ctx: DeviceContext,
@@ -782,22 +785,22 @@ def mograd_matmul_bias_bt(
         var batch_stride_a = la.stride(rank - 3) if rank >= 3 else M * K
         var batch_stride_b = lb.stride(rank - 3) if rank >= 3 else N * K
 
-        var bias_d = bias.bitcast[Scalar[d]]().as_unsafe_any_origin()
-        var dst_d = dst.bitcast[Scalar[d]]().as_unsafe_any_origin()
+        var bias_d = bias.unsafe_bitcast[Scalar[d]]().as_unsafe_any_origin()
+        var dst_d = dst.unsafe_bitcast[Scalar[d]]().as_unsafe_any_origin()
 
         @always_inline
         @__copy_capture(bias_d, dst_d, M, N)
         def epilogue[
-            c_type: DType, width: SIMDSize, erank: Int, *, alignment: Int = 1
+            c_type: DType, width: SIMDLength, erank: Int, *, alignment: Int = 1
         ](coord: IndexList[erank], val: SIMD[c_type, width]) capturing -> None:
             var n = coord[erank - 1]
             var flat = coord[0] * M * N + coord[1] * N + n
-            var result = val._refine[d]() + bias_d.load[width=width, alignment=1](n)
-            dst_d.store[width=width, alignment=1](flat, result)
+            var result = val._refine[d]() + bias_d.unsafe_load[width=width, alignment=1](n)
+            dst_d.unsafe_store[width=width, alignment=1](flat, result)
 
         if lda0 == K and lda1 == 1 and ldb0 == K and ldb1 == 1:
-            var ta = TileTensor(a.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, K)))
-            var tb = TileTensor(b.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, N, K)))
+            var ta = TileTensor(a.unsafe_bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, M, K)))
+            var tb = TileTensor(b.unsafe_bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(batch, N, K)))
             var tc = TileTensor(dst_d, row_major(Coord(batch, M, N)))
             batched_matmul[
                 target="gpu",
@@ -807,10 +810,10 @@ def mograd_matmul_bias_bt(
         else:
             # Strided fallback
             var ta = TileTensor(
-                a.bitcast[Scalar[d]](), MixedLayout(Coord(batch, M, K), Coord(batch_stride_a, lda0, lda1))
+                a.unsafe_bitcast[Scalar[d]](), MixedLayout(Coord(batch, M, K), Coord(batch_stride_a, lda0, lda1))
             )
             var tb = TileTensor(
-                b.bitcast[Scalar[d]](), MixedLayout(Coord(batch, N, K), Coord(batch_stride_b, ldb0, ldb1))
+                b.unsafe_bitcast[Scalar[d]](), MixedLayout(Coord(batch, N, K), Coord(batch_stride_b, ldb0, ldb1))
             )
             var tc = TileTensor(dst_d, row_major(Coord(batch, M, N)))
             comptime BLOCK = 16
@@ -844,12 +847,12 @@ def mograd_matmul_bias_bt(
 
 @export
 def mograd_flash_attn_fwd(
-    q: UnsafePointer[NoneType, ImmutAnyOrigin],
-    k: UnsafePointer[NoneType, ImmutAnyOrigin],
-    v: UnsafePointer[NoneType, ImmutAnyOrigin],
-    mask: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    lse: UnsafePointer[NoneType, MutAnyOrigin],
+    q: Pointer[NoneType, ImmutAnyOrigin],
+    k: Pointer[NoneType, ImmutAnyOrigin],
+    v: Pointer[NoneType, ImmutAnyOrigin],
+    mask: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    lse: Pointer[NoneType, MutAnyOrigin],
     B: Int,
     S: Int,
     H: Int,
@@ -870,12 +873,12 @@ def mograd_flash_attn_fwd(
                 raise Error("flash_attn_fwd: causal attention with additive bias is not supported")
             else:
                 flash_attn_fwd[d, True, False](
-                    q.bitcast[Scalar[d]](),
-                    k.bitcast[Scalar[d]](),
-                    v.bitcast[Scalar[d]](),
-                    mask.bitcast[Scalar[d]](),
-                    dst.bitcast[Scalar[d]](),
-                    lse.bitcast[Float32](),
+                    q.unsafe_bitcast[Scalar[d]](),
+                    k.unsafe_bitcast[Scalar[d]](),
+                    v.unsafe_bitcast[Scalar[d]](),
+                    mask.unsafe_bitcast[Scalar[d]](),
+                    dst.unsafe_bitcast[Scalar[d]](),
+                    lse.unsafe_bitcast[Float32](),
                     B,
                     S,
                     H,
@@ -886,12 +889,12 @@ def mograd_flash_attn_fwd(
         else:
             if has_bias != 0:
                 flash_attn_fwd[d, False, True](
-                    q.bitcast[Scalar[d]](),
-                    k.bitcast[Scalar[d]](),
-                    v.bitcast[Scalar[d]](),
-                    mask.bitcast[Scalar[d]](),
-                    dst.bitcast[Scalar[d]](),
-                    lse.bitcast[Float32](),
+                    q.unsafe_bitcast[Scalar[d]](),
+                    k.unsafe_bitcast[Scalar[d]](),
+                    v.unsafe_bitcast[Scalar[d]](),
+                    mask.unsafe_bitcast[Scalar[d]](),
+                    dst.unsafe_bitcast[Scalar[d]](),
+                    lse.unsafe_bitcast[Float32](),
                     B,
                     S,
                     H,
@@ -901,12 +904,12 @@ def mograd_flash_attn_fwd(
                 )
             else:
                 flash_attn_fwd[d, False, False](
-                    q.bitcast[Scalar[d]](),
-                    k.bitcast[Scalar[d]](),
-                    v.bitcast[Scalar[d]](),
-                    mask.bitcast[Scalar[d]](),
-                    dst.bitcast[Scalar[d]](),
-                    lse.bitcast[Float32](),
+                    q.unsafe_bitcast[Scalar[d]](),
+                    k.unsafe_bitcast[Scalar[d]](),
+                    v.unsafe_bitcast[Scalar[d]](),
+                    mask.unsafe_bitcast[Scalar[d]](),
+                    dst.unsafe_bitcast[Scalar[d]](),
+                    lse.unsafe_bitcast[Float32](),
                     B,
                     S,
                     H,
@@ -920,16 +923,16 @@ def mograd_flash_attn_fwd(
 
 @export
 def mograd_flash_attn_bwd(
-    dy: UnsafePointer[NoneType, ImmutAnyOrigin],
-    o: UnsafePointer[NoneType, ImmutAnyOrigin],
-    q: UnsafePointer[NoneType, ImmutAnyOrigin],
-    k: UnsafePointer[NoneType, ImmutAnyOrigin],
-    v: UnsafePointer[NoneType, ImmutAnyOrigin],
-    mask: UnsafePointer[NoneType, ImmutAnyOrigin],
-    lse: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dq: UnsafePointer[NoneType, MutAnyOrigin],
-    dk: UnsafePointer[NoneType, MutAnyOrigin],
-    dv: UnsafePointer[NoneType, MutAnyOrigin],
+    dy: Pointer[NoneType, ImmutAnyOrigin],
+    o: Pointer[NoneType, ImmutAnyOrigin],
+    q: Pointer[NoneType, ImmutAnyOrigin],
+    k: Pointer[NoneType, ImmutAnyOrigin],
+    v: Pointer[NoneType, ImmutAnyOrigin],
+    mask: Pointer[NoneType, ImmutAnyOrigin],
+    lse: Pointer[NoneType, ImmutAnyOrigin],
+    dq: Pointer[NoneType, MutAnyOrigin],
+    dk: Pointer[NoneType, MutAnyOrigin],
+    dv: Pointer[NoneType, MutAnyOrigin],
     B: Int,
     S: Int,
     H: Int,
@@ -944,16 +947,16 @@ def mograd_flash_attn_bwd(
     def body[d: DType]() capturing raises:
         if causal != 0:
             flash_attn_bwd[d, True, False](
-                dy.bitcast[Scalar[d]](),
-                o.bitcast[Scalar[d]](),
-                q.bitcast[Scalar[d]](),
-                k.bitcast[Scalar[d]](),
-                v.bitcast[Scalar[d]](),
-                mask.bitcast[Scalar[d]](),
-                lse.bitcast[Float32](),
-                dq.bitcast[Scalar[d]](),
-                dk.bitcast[Scalar[d]](),
-                dv.bitcast[Scalar[d]](),
+                dy.unsafe_bitcast[Scalar[d]](),
+                o.unsafe_bitcast[Scalar[d]](),
+                q.unsafe_bitcast[Scalar[d]](),
+                k.unsafe_bitcast[Scalar[d]](),
+                v.unsafe_bitcast[Scalar[d]](),
+                mask.unsafe_bitcast[Scalar[d]](),
+                lse.unsafe_bitcast[Float32](),
+                dq.unsafe_bitcast[Scalar[d]](),
+                dk.unsafe_bitcast[Scalar[d]](),
+                dv.unsafe_bitcast[Scalar[d]](),
                 B,
                 S,
                 H,
@@ -963,16 +966,16 @@ def mograd_flash_attn_bwd(
             )
         elif has_bias != 0:
             flash_attn_bwd[d, False, True](
-                dy.bitcast[Scalar[d]](),
-                o.bitcast[Scalar[d]](),
-                q.bitcast[Scalar[d]](),
-                k.bitcast[Scalar[d]](),
-                v.bitcast[Scalar[d]](),
-                mask.bitcast[Scalar[d]](),
-                lse.bitcast[Float32](),
-                dq.bitcast[Scalar[d]](),
-                dk.bitcast[Scalar[d]](),
-                dv.bitcast[Scalar[d]](),
+                dy.unsafe_bitcast[Scalar[d]](),
+                o.unsafe_bitcast[Scalar[d]](),
+                q.unsafe_bitcast[Scalar[d]](),
+                k.unsafe_bitcast[Scalar[d]](),
+                v.unsafe_bitcast[Scalar[d]](),
+                mask.unsafe_bitcast[Scalar[d]](),
+                lse.unsafe_bitcast[Float32](),
+                dq.unsafe_bitcast[Scalar[d]](),
+                dk.unsafe_bitcast[Scalar[d]](),
+                dv.unsafe_bitcast[Scalar[d]](),
                 B,
                 S,
                 H,
@@ -982,16 +985,16 @@ def mograd_flash_attn_bwd(
             )
         else:
             flash_attn_bwd[d, False, False](
-                dy.bitcast[Scalar[d]](),
-                o.bitcast[Scalar[d]](),
-                q.bitcast[Scalar[d]](),
-                k.bitcast[Scalar[d]](),
-                v.bitcast[Scalar[d]](),
-                mask.bitcast[Scalar[d]](),
-                lse.bitcast[Float32](),
-                dq.bitcast[Scalar[d]](),
-                dk.bitcast[Scalar[d]](),
-                dv.bitcast[Scalar[d]](),
+                dy.unsafe_bitcast[Scalar[d]](),
+                o.unsafe_bitcast[Scalar[d]](),
+                q.unsafe_bitcast[Scalar[d]](),
+                k.unsafe_bitcast[Scalar[d]](),
+                v.unsafe_bitcast[Scalar[d]](),
+                mask.unsafe_bitcast[Scalar[d]](),
+                lse.unsafe_bitcast[Float32](),
+                dq.unsafe_bitcast[Scalar[d]](),
+                dk.unsafe_bitcast[Scalar[d]](),
+                dv.unsafe_bitcast[Scalar[d]](),
                 B,
                 S,
                 H,
@@ -1010,9 +1013,9 @@ def mograd_flash_attn_bwd(
 
 @export
 def mograd_softmax(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -1021,16 +1024,16 @@ def mograd_softmax(
         var rows = layout.numel() // layout.shape(layout.rank() - 1)
         var cols = layout.shape(layout.rank() - 1)
 
-        softmax[d](a.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), rows, cols, ctx)
+        softmax[d](a.unsafe_bitcast[Scalar[d]](), dst.unsafe_bitcast[Scalar[d]](), rows, cols, ctx)
 
     dispatch_dtype[body, float_only=True](dtype)
 
 
 @export
 def mograd_softmax_strided(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -1042,8 +1045,8 @@ def mograd_softmax_strided(
         var sa_buf = layout.strides_buffer(ctx)
 
         softmax_strided[d](
-            a.bitcast[Scalar[d]](),
-            dst.bitcast[Scalar[d]](),
+            a.unsafe_bitcast[Scalar[d]](),
+            dst.unsafe_bitcast[Scalar[d]](),
             rows,
             cols,
             layout.rank(),
@@ -1057,11 +1060,11 @@ def mograd_softmax_strided(
 
 @export
 def mograd_softmax_grad(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    b: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm la: Layout,
+    imm lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -1075,11 +1078,11 @@ def mograd_softmax_grad(
 
         comptime BLOCK_SIZE = 32
         ctx.enqueue_function[softmax_grad_kernel[d, BLOCK_SIZE]](
-            a.bitcast[Scalar[d]](),
-            b.bitcast[Scalar[d]](),
-            dst.bitcast[Scalar[d]](),
-            N,
-            size,
+            a.unsafe_bitcast[Scalar[d]](),
+            b.unsafe_bitcast[Scalar[d]](),
+            dst.unsafe_bitcast[Scalar[d]](),
+            Int64(N),
+            Int64(size),
             grid_dim=(N,),
             block_dim=(BLOCK_SIZE,),
         )
@@ -1094,42 +1097,44 @@ def mograd_softmax_grad(
 
 def transpose_kernel[
     dtype: DType, BLOCK_SIZE: Int
-](src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], dst: UnsafePointer[Scalar[dtype], MutAnyOrigin], M: Int, N: Int,):
+](src: Pointer[Scalar[dtype], ImmutAnyOrigin], dst: Pointer[Scalar[dtype], MutAnyOrigin], M_arg: Int64, N_arg: Int64,):
+    var M = Int(M_arg)
+    var N = Int(N_arg)
     var shmem = stack_allocation[BLOCK_SIZE * (BLOCK_SIZE + 1), dtype, address_space=AddressSpace.SHARED]()
-    x = block_idx.x * BLOCK_SIZE + thread_idx.x
-    y = block_idx.y * BLOCK_SIZE + thread_idx.y
+    var x = block_idx.x * BLOCK_SIZE + thread_idx.x
+    var y = block_idx.y * BLOCK_SIZE + thread_idx.y
     if x < N and y < M:
-        shmem[thread_idx.y * (BLOCK_SIZE + 1) + thread_idx.x] = src[y * N + x]
+        shmem[unsafe_offset=thread_idx.y * (BLOCK_SIZE + 1) + thread_idx.x] = src[unsafe_offset=y * N + x]
     barrier()
-    x_out = block_idx.y * BLOCK_SIZE + thread_idx.x
-    y_out = block_idx.x * BLOCK_SIZE + thread_idx.y
+    var x_out = block_idx.y * BLOCK_SIZE + thread_idx.x
+    var y_out = block_idx.x * BLOCK_SIZE + thread_idx.y
     if x_out < M and y_out < N:
-        dst[y_out * M + x_out] = shmem[thread_idx.x * (BLOCK_SIZE + 1) + thread_idx.y]
+        dst[unsafe_offset=y_out * M + x_out] = shmem[unsafe_offset=thread_idx.x * (BLOCK_SIZE + 1) + thread_idx.y]
 
 
 @export
 def mograd_transpose(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    shape_ptr: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    shape_ptr: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
     n: Int,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+    comptime for k in range(AnyBuffer.BufVariant.Ts.length):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
         comptime d = T.node_dtype
         if dtype == d:
-            var p = shape_ptr.bitcast[Float32]()
-            var M = Int(p[0])
-            var N = Int(p[1])
+            var p = shape_ptr.unsafe_bitcast[Float32]()
+            var M = Int(p[unsafe_offset=0])
+            var N = Int(p[unsafe_offset=1])
             comptime TILE = 32
             ctx.enqueue_function[transpose_kernel[d, TILE]](
-                a.bitcast[Scalar[d]](),
-                dst.bitcast[Scalar[d]](),
-                M,
-                N,
+                a.unsafe_bitcast[Scalar[d]](),
+                dst.unsafe_bitcast[Scalar[d]](),
+                Int64(M),
+                Int64(N),
                 grid_dim=(ceildiv(N, TILE), ceildiv(M, TILE)),
                 block_dim=(TILE, TILE),
             )
@@ -1144,9 +1149,9 @@ def mograd_transpose(
 
 @export
 def mograd_sum(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -1157,9 +1162,9 @@ def mograd_sum(
 
 @export
 def mograd_sum_axis(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm layout: Layout,
     axis: Int,
     dtype: DType,
     ctx: DeviceContext,
@@ -1170,8 +1175,8 @@ def mograd_sum_axis(
         var inner_buf = layout.inner_sizes_buffer(ctx)
         var sa_buf = layout.strides_buffer(ctx)
         sum_axis[d](
-            a.bitcast[Scalar[d]](),
-            dst.bitcast[Scalar[d]](),
+            a.unsafe_bitcast[Scalar[d]](),
+            dst.unsafe_bitcast[Scalar[d]](),
             outer,
             reduce_size,
             inner,
@@ -1186,9 +1191,9 @@ def mograd_sum_axis(
 
 @export
 def mograd_mean(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -1197,8 +1202,8 @@ def mograd_mean(
         var inner_buf = layout.inner_sizes_buffer(ctx)
         var sa_buf = layout.strides_buffer(ctx)
         mean[d](
-            a.bitcast[Scalar[d]](),
-            dst.bitcast[Scalar[d]](),
+            a.unsafe_bitcast[Scalar[d]](),
+            dst.unsafe_bitcast[Scalar[d]](),
             layout.rank(),
             inner_buf.unsafe_ptr(),
             sa_buf.unsafe_ptr(),
@@ -1212,9 +1217,9 @@ def mograd_mean(
 
 @export
 def mograd_mean_axis(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm layout: Layout,
     axis: Int,
     dtype: DType,
     ctx: DeviceContext,
@@ -1225,8 +1230,8 @@ def mograd_mean_axis(
         var inner_buf = layout.inner_sizes_buffer(ctx)
         var sa_buf = layout.strides_buffer(ctx)
         mean_axis[d](
-            a.bitcast[Scalar[d]](),
-            dst.bitcast[Scalar[d]](),
+            a.unsafe_bitcast[Scalar[d]](),
+            dst.unsafe_bitcast[Scalar[d]](),
             outer,
             reduce_size,
             inner,
@@ -1247,9 +1252,9 @@ def mograd_mean_axis(
 
 @export
 def mograd_argmax(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -1262,9 +1267,9 @@ def mograd_argmax(
 
 @export
 def mograd_argmax_axis(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm layout: Layout,
     axis: Int,
     dtype: DType,
     ctx: DeviceContext,
@@ -1274,16 +1279,16 @@ def mograd_argmax_axis(
         var outer, reduce_size, inner = layout.reduce_dims(axis)
         var rank = layout.rank()
         if layout.is_contiguous() and inner == 1 and rank == 2:
-            var inp = TileTensor(a.bitcast[Scalar[d]](), row_major(Coord(outer, reduce_size)))
-            var out = TileTensor(dst.bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(outer, 1)))
+            var inp = TileTensor(a.unsafe_bitcast[Scalar[d]](), row_major(Coord(outer, reduce_size)))
+            var out = TileTensor(dst.unsafe_bitcast[Scalar[d]]().as_unsafe_any_origin(), row_major(Coord(outer, 1)))
             argmax_gpu[d, d](ctx, inp, out)
         else:
             # TODO: use nn.argmaxmin when generalised to mid-axis (modular/.../nn/argmaxmin.mojo:59)
             var inner_buf = layout.inner_sizes_buffer(ctx)
             var sa_buf = layout.strides_buffer(ctx)
             argmax_axis[d](
-                a.bitcast[Scalar[d]](),
-                dst.bitcast[Scalar[d]](),
+                a.unsafe_bitcast[Scalar[d]](),
+                dst.unsafe_bitcast[Scalar[d]](),
                 outer,
                 reduce_size,
                 inner,
@@ -1303,10 +1308,10 @@ def mograd_argmax_axis(
 
 @export
 def mograd_layer_norm_fwd(
-    x: UnsafePointer[NoneType, ImmutAnyOrigin],
-    gamma: UnsafePointer[NoneType, ImmutAnyOrigin],
-    beta: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    x: Pointer[NoneType, ImmutAnyOrigin],
+    gamma: Pointer[NoneType, ImmutAnyOrigin],
+    beta: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
     rows: Int,
     cols: Int,
     eps: Float32,
@@ -1316,10 +1321,10 @@ def mograd_layer_norm_fwd(
     @always_inline
     def body[d: DType]() capturing raises:
         layer_norm_fwd[d](
-            x.bitcast[Scalar[d]](),
-            gamma.bitcast[Scalar[d]](),
-            beta.bitcast[Scalar[d]](),
-            dst.bitcast[Scalar[d]](),
+            x.unsafe_bitcast[Scalar[d]](),
+            gamma.unsafe_bitcast[Scalar[d]](),
+            beta.unsafe_bitcast[Scalar[d]](),
+            dst.unsafe_bitcast[Scalar[d]](),
             rows,
             cols,
             Scalar[d](eps),
@@ -1331,12 +1336,12 @@ def mograd_layer_norm_fwd(
 
 @export
 def mograd_layer_norm_bwd(
-    dy: UnsafePointer[NoneType, ImmutAnyOrigin],
-    x: UnsafePointer[NoneType, ImmutAnyOrigin],
-    gamma: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dx: UnsafePointer[NoneType, MutAnyOrigin],
-    dgamma: UnsafePointer[NoneType, MutAnyOrigin],
-    dbeta: UnsafePointer[NoneType, MutAnyOrigin],
+    dy: Pointer[NoneType, ImmutAnyOrigin],
+    x: Pointer[NoneType, ImmutAnyOrigin],
+    gamma: Pointer[NoneType, ImmutAnyOrigin],
+    dx: Pointer[NoneType, MutAnyOrigin],
+    dgamma: Pointer[NoneType, MutAnyOrigin],
+    dbeta: Pointer[NoneType, MutAnyOrigin],
     rows: Int,
     cols: Int,
     eps: Float32,
@@ -1346,12 +1351,12 @@ def mograd_layer_norm_bwd(
     @always_inline
     def body[d: DType]() capturing raises:
         layer_norm_bwd[d](
-            dy.bitcast[Scalar[d]](),
-            x.bitcast[Scalar[d]](),
-            gamma.bitcast[Scalar[d]](),
-            dx.bitcast[Scalar[d]](),
-            dgamma.bitcast[Scalar[d]](),
-            dbeta.bitcast[Scalar[d]](),
+            dy.unsafe_bitcast[Scalar[d]](),
+            x.unsafe_bitcast[Scalar[d]](),
+            gamma.unsafe_bitcast[Scalar[d]](),
+            dx.unsafe_bitcast[Scalar[d]](),
+            dgamma.unsafe_bitcast[Scalar[d]](),
+            dbeta.unsafe_bitcast[Scalar[d]](),
             rows,
             cols,
             Scalar[d](eps),
@@ -1361,8 +1366,6 @@ def mograd_layer_norm_bwd(
     dispatch_dtype[body, float_only=True](dtype)
 
 
-comptime CE_BLOCK = 256
-
 # ===-------------------------------------------------------------------===#
 # Cross Entropy
 # ===-------------------------------------------------------------------===#
@@ -1370,11 +1373,11 @@ comptime CE_BLOCK = 256
 
 @export
 def mograd_cross_entropy(
-    logits: UnsafePointer[NoneType, ImmutAnyOrigin],
-    labels: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    logits: Pointer[NoneType, ImmutAnyOrigin],
+    labels: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm la: Layout,
+    imm lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -1385,18 +1388,18 @@ def mograd_cross_entropy(
         var row_buf = scratch_take[d](ctx, N)
         comptime assert d.is_floating_point()
         ctx.enqueue_function[cross_entropy_kernel[d, CE_BLOCK]](
-            logits.bitcast[Scalar[d]](),
-            labels.bitcast[Scalar[d]](),
+            logits.unsafe_bitcast[Scalar[d]](),
+            labels.unsafe_bitcast[Scalar[d]](),
             row_buf.unsafe_ptr().as_unsafe_any_origin(),
-            N,
-            C,
+            Int64(N),
+            Int64(C),
             grid_dim=(N,),
             block_dim=(CE_BLOCK,),
         )
         ctx.enqueue_function[sum_rows_kernel[d, CE_BLOCK]](
             row_buf.unsafe_ptr().as_unsafe_any_origin(),
-            dst.bitcast[Scalar[d]](),
-            N,
+            dst.unsafe_bitcast[Scalar[d]](),
+            Int64(N),
             grid_dim=(1,),
             block_dim=(CE_BLOCK,),
         )
@@ -1407,11 +1410,11 @@ def mograd_cross_entropy(
 
 @export
 def mograd_cross_entropy_strided(
-    logits: UnsafePointer[NoneType, ImmutAnyOrigin],
-    labels: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    logits: Pointer[NoneType, ImmutAnyOrigin],
+    labels: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm la: Layout,
+    imm lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -1426,12 +1429,12 @@ def mograd_cross_entropy_strided(
         var row_buf = scratch_take[d](ctx, N)
         comptime assert d.is_floating_point()
         ctx.enqueue_function[cross_entropy_kernel_strided[d, CE_BLOCK]](
-            logits.bitcast[Scalar[d]](),
-            labels.bitcast[Scalar[d]](),
+            logits.unsafe_bitcast[Scalar[d]](),
+            labels.unsafe_bitcast[Scalar[d]](),
             row_buf.unsafe_ptr().as_unsafe_any_origin(),
-            N,
-            C,
-            la.rank(),
+            Int64(N),
+            Int64(C),
+            Int64(la.rank()),
             la_inner_buf.unsafe_ptr(),
             la_sa_buf.unsafe_ptr(),
             lb_inner_buf.unsafe_ptr(),
@@ -1441,8 +1444,8 @@ def mograd_cross_entropy_strided(
         )
         ctx.enqueue_function[sum_rows_kernel[d, CE_BLOCK]](
             row_buf.unsafe_ptr().as_unsafe_any_origin(),
-            dst.bitcast[Scalar[d]](),
-            N,
+            dst.unsafe_bitcast[Scalar[d]](),
+            Int64(N),
             grid_dim=(1,),
             block_dim=(CE_BLOCK,),
         )
@@ -1458,12 +1461,12 @@ def mograd_cross_entropy_strided(
 
 @export
 def mograd_cross_entropy_grad(
-    logits: UnsafePointer[NoneType, ImmutAnyOrigin],
-    labels: UnsafePointer[NoneType, ImmutAnyOrigin],
-    grad: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    logits: Pointer[NoneType, ImmutAnyOrigin],
+    labels: Pointer[NoneType, ImmutAnyOrigin],
+    grad: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm la: Layout,
+    imm lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -1473,12 +1476,12 @@ def mograd_cross_entropy_grad(
         var C = la.shape(la.rank() - 1)
         comptime assert d.is_floating_point()
         ctx.enqueue_function[cross_entropy_grad_kernel[d, CE_BLOCK]](
-            grad.bitcast[Scalar[d]](),
-            logits.bitcast[Scalar[d]](),
-            labels.bitcast[Scalar[d]](),
-            dst.bitcast[Scalar[d]](),
-            N,
-            C,
+            grad.unsafe_bitcast[Scalar[d]](),
+            logits.unsafe_bitcast[Scalar[d]](),
+            labels.unsafe_bitcast[Scalar[d]](),
+            dst.unsafe_bitcast[Scalar[d]](),
+            Int64(N),
+            Int64(C),
             grid_dim=(N,),
             block_dim=(CE_BLOCK,),
         )
@@ -1488,12 +1491,12 @@ def mograd_cross_entropy_grad(
 
 @export
 def mograd_cross_entropy_grad_strided(
-    logits: UnsafePointer[NoneType, ImmutAnyOrigin],
-    labels: UnsafePointer[NoneType, ImmutAnyOrigin],
-    grad: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    logits: Pointer[NoneType, ImmutAnyOrigin],
+    labels: Pointer[NoneType, ImmutAnyOrigin],
+    grad: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm la: Layout,
+    imm lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) abi("Mojo") raises:
@@ -1507,13 +1510,13 @@ def mograd_cross_entropy_grad_strided(
         var lb_sa_buf = lb.strides_buffer(ctx)
         comptime assert d.is_floating_point()
         ctx.enqueue_function[cross_entropy_grad_kernel_strided[d, CE_BLOCK]](
-            grad.bitcast[Scalar[d]](),
-            logits.bitcast[Scalar[d]](),
-            labels.bitcast[Scalar[d]](),
-            dst.bitcast[Scalar[d]](),
-            N,
-            C,
-            la.rank(),
+            grad.unsafe_bitcast[Scalar[d]](),
+            logits.unsafe_bitcast[Scalar[d]](),
+            labels.unsafe_bitcast[Scalar[d]](),
+            dst.unsafe_bitcast[Scalar[d]](),
+            Int64(N),
+            Int64(C),
+            Int64(la.rank()),
             la_inner_buf.unsafe_ptr(),
             la_sa_buf.unsafe_ptr(),
             lb_inner_buf.unsafe_ptr(),
@@ -1527,9 +1530,9 @@ def mograd_cross_entropy_grad_strided(
 
 @export
 def mograd_triu(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    imm layout: Layout,
     diagonal: Int,
     dtype: DType,
     ctx: DeviceContext,
@@ -1547,8 +1550,8 @@ def mograd_triu(
         var sa_buf = layout.strides_buffer(ctx)
 
         triu_impl[d](
-            a.bitcast[Scalar[d]](),
-            dst.bitcast[Scalar[d]](),
+            a.unsafe_bitcast[Scalar[d]](),
+            dst.unsafe_bitcast[Scalar[d]](),
             layout.numel(),
             rows,
             cols,

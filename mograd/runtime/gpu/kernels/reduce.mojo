@@ -1,11 +1,13 @@
 from std.utils import StaticTuple, IndexList
-from std.algorithm.backend.gpu.reduction import reduce_kernel
-from std.algorithm.functional import elementwise
-from std.gpu.host import DeviceContext
+from max.algorithm.backend.gpu.reduction import reduce_kernel
+from max.algorithm.functional import elementwise
+from max.gpu.host import DeviceContext
 
 from layout import Coord
 
 from mograd.runtime.gpu.kernels.strided import strided_offset
+
+comptime CE_BLOCK = 256
 
 # ===-------------------------------------------------------------------===#
 # Sum
@@ -15,24 +17,24 @@ from mograd.runtime.gpu.kernels.strided import strided_offset
 def sum[
     dtype: DType
 ](
-    a: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    dst: Pointer[Scalar[dtype], MutAnyOrigin],
     rank: Int,
-    inner: UnsafePointer[Int64, ImmutAnyOrigin],
-    sa: UnsafePointer[Int64, ImmutAnyOrigin],
+    inner: Pointer[Int64, ImmutAnyOrigin],
+    sa: Pointer[Int64, ImmutAnyOrigin],
     n: Int,
     ctx: DeviceContext,
 ) raises:
     @always_inline
     def input_fn[_d: DType, w: Int, r: Int](coords: IndexList[r]) capturing -> SIMD[_d, w]:
-        return a.load(strided_offset(coords[0], rank, inner, sa))._refine[_d]()
+        return a.unsafe_load(strided_offset(coords[0], rank, inner, sa))._refine[_d]()
 
     @always_inline
-    def output_fn[_d: DType, w: SIMDSize, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
-        dst.store[width=w](coords[0], val[0]._refine[dtype]())
+    def output_fn[_d: DType, w: SIMDLength, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
+        dst.unsafe_store[width=w](coords[0], val[0]._refine[dtype]())
 
     @always_inline
-    def reduce_fn[ty: DType, w: SIMDSize, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
+    def reduce_fn[ty: DType, w: SIMDLength, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
         return v1 + v2
 
     comptime kernel = reduce_kernel[1, 0, 1, CE_BLOCK, input_fn, output_fn, reduce_fn, dtype, 1]
@@ -53,25 +55,25 @@ def sum[
 def mean[
     dtype: DType
 ](
-    a: UnsafePointer[mut=False, Scalar[dtype], _],
-    dst: UnsafePointer[mut=True, Scalar[dtype], _],
+    a: Pointer[mut=False, Scalar[dtype], _],
+    dst: Pointer[mut=True, Scalar[dtype], _],
     rank: Int,
-    inner: UnsafePointer[mut=False, Int64, _],
-    sa: UnsafePointer[mut=False, Int64, _],
+    inner: Pointer[mut=False, Int64, _],
+    sa: Pointer[mut=False, Int64, _],
     n: Int,
     scale: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
     @always_inline
     def input_fn[_d: DType, w: Int, r: Int](coords: IndexList[r]) capturing -> SIMD[_d, w]:
-        return a.load(strided_offset(coords[0], rank, inner, sa))._refine[_d]()
+        return a.unsafe_load(strided_offset(coords[0], rank, inner, sa))._refine[_d]()
 
     @always_inline
-    def output_fn[_d: DType, w: SIMDSize, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
-        dst.store[width=w](coords[0], val[0]._refine[dtype]() * scale)
+    def output_fn[_d: DType, w: SIMDLength, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
+        dst.unsafe_store[width=w](coords[0], val[0]._refine[dtype]() * scale)
 
     @always_inline
-    def reduce_fn[ty: DType, w: SIMDSize, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
+    def reduce_fn[ty: DType, w: SIMDLength, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
         return v1 + v2
 
     comptime kernel = reduce_kernel[1, 0, 1, CE_BLOCK, input_fn, output_fn, reduce_fn, dtype, 1]
@@ -92,29 +94,29 @@ def mean[
 def mean_axis[
     dtype: DType
 ](
-    a: UnsafePointer[mut=False, Scalar[dtype], _],
-    dst: UnsafePointer[mut=True, Scalar[dtype], _],
+    a: Pointer[mut=False, Scalar[dtype], _],
+    dst: Pointer[mut=True, Scalar[dtype], _],
     outer: Int,
     reduce_size: Int,
     inner: Int,
     rank: Int,
-    inner_sizes: UnsafePointer[mut=False, Int64, _],
-    sa: UnsafePointer[mut=False, Int64, _],
+    inner_sizes: Pointer[mut=False, Int64, _],
+    sa: Pointer[mut=False, Int64, _],
     scale: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
     @always_inline
     def input_fn[_d: DType, w: Int, r: Int](coords: IndexList[r]) capturing -> SIMD[_d, w]:
         var flat = coords[0] * reduce_size * inner + coords[1] * inner + coords[2]
-        return a.load(strided_offset(flat, rank, inner_sizes, sa))._refine[_d]()
+        return a.unsafe_load(strided_offset(flat, rank, inner_sizes, sa))._refine[_d]()
 
     @always_inline
-    def output_fn[_d: DType, w: SIMDSize, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
+    def output_fn[_d: DType, w: SIMDLength, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
         var flat = coords[0] * inner + coords[2]
-        dst.store[width=w](flat, val[0]._refine[dtype]() * scale)
+        dst.unsafe_store[width=w](flat, val[0]._refine[dtype]() * scale)
 
     @always_inline
-    def reduce_fn[ty: DType, w: SIMDSize, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
+    def reduce_fn[ty: DType, w: SIMDLength, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
         return v1 + v2
 
     comptime kernel = reduce_kernel[3, 1, 1, CE_BLOCK, input_fn, output_fn, reduce_fn, dtype, 1]
@@ -135,30 +137,30 @@ def mean_axis[
 def sum_axis[
     dtype: DType
 ](
-    a: UnsafePointer[mut=False, Scalar[dtype], _],
-    dst: UnsafePointer[mut=True, Scalar[dtype], _],
+    a: Pointer[mut=False, Scalar[dtype], _],
+    dst: Pointer[mut=True, Scalar[dtype], _],
     outer: Int,
     reduce_size: Int,
     inner: Int,
     rank: Int,
-    inner_sizes: UnsafePointer[mut=False, Int64, _],
-    sa: UnsafePointer[mut=False, Int64, _],
+    inner_sizes: Pointer[mut=False, Int64, _],
+    sa: Pointer[mut=False, Int64, _],
     ctx: DeviceContext,
 ) raises:
     @always_inline
     def input_fn[_d: DType, w: Int, r: Int](coords: IndexList[r]) capturing -> SIMD[_d, w]:
         # coords: [outer_idx, reduce_idx, inner_idx]
         var flat = coords[0] * reduce_size * inner + coords[1] * inner + coords[2]
-        return a.load(strided_offset(flat, rank, inner_sizes, sa))._refine[_d]()
+        return a.unsafe_load(strided_offset(flat, rank, inner_sizes, sa))._refine[_d]()
 
     @always_inline
-    def output_fn[_d: DType, w: SIMDSize, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
+    def output_fn[_d: DType, w: SIMDLength, r: Int](coords: IndexList[r], val: StaticTuple[SIMD[_d, w], 1]) capturing:
         # coords: [outer_idx, 0, inner_idx]
         var flat = coords[0] * inner + coords[2]
-        dst.store[width=w](flat, val[0]._refine[dtype]())
+        dst.unsafe_store[width=w](flat, val[0]._refine[dtype]())
 
     @always_inline
-    def reduce_fn[ty: DType, w: SIMDSize, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
+    def reduce_fn[ty: DType, w: SIMDLength, ri: Int](v1: SIMD[ty, w], v2: SIMD[ty, w]) capturing -> SIMD[ty, w]:
         return v1 + v2
 
     comptime kernel = reduce_kernel[3, 1, 1, CE_BLOCK, input_fn, output_fn, reduce_fn, dtype, 1]
@@ -179,11 +181,11 @@ def sum_axis[
 def argmax[
     dtype: DType
 ](
-    a: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    dst: Pointer[Scalar[dtype], MutAnyOrigin],
     rank: Int,
-    inner: UnsafePointer[Int64, ImmutAnyOrigin],
-    sa: UnsafePointer[Int64, ImmutAnyOrigin],
+    inner: Pointer[Int64, ImmutAnyOrigin],
+    sa: Pointer[Int64, ImmutAnyOrigin],
     n: Int,
     ctx: DeviceContext,
 ) raises:
@@ -191,11 +193,11 @@ def argmax[
         var best_val = Scalar[dtype].MIN
         var best_idx = Scalar[dtype](0)
         for i in range(n):
-            var v = a.load(strided_offset(i, rank, inner, sa))
+            var v = a.unsafe_load(strided_offset(i, rank, inner, sa))
             if v > best_val:
                 best_val = v
                 best_idx = Scalar[dtype](i)
-        dst.store(0, best_idx)
+        dst.unsafe_store(0, best_idx)
 
     elementwise[simd_width=1, target="gpu"](kernel, Coord(1), ctx)
     ctx.synchronize()
@@ -209,14 +211,14 @@ def argmax[
 def argmax_axis[
     dtype: DType
 ](
-    a: UnsafePointer[mut=False, Scalar[dtype], _],
-    dst: UnsafePointer[mut=True, Scalar[dtype], _],
+    a: Pointer[mut=False, Scalar[dtype], _],
+    dst: Pointer[mut=True, Scalar[dtype], _],
     outer: Int,
     reduce_size: Int,
     inner: Int,
     rank: Int,
-    inner_sizes: UnsafePointer[mut=False, Int64, _],
-    sa: UnsafePointer[mut=False, Int64, _],
+    inner_sizes: Pointer[mut=False, Int64, _],
+    sa: Pointer[mut=False, Int64, _],
     ctx: DeviceContext,
 ) raises:
     def kernel[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
@@ -227,11 +229,11 @@ def argmax_axis[
         var best_idx = Scalar[dtype](0)
         for r in range(reduce_size):
             var flat = o * reduce_size * inner + r * inner + i
-            var v = a.load(strided_offset(flat, rank, inner_sizes, sa))
+            var v = a.unsafe_load(strided_offset(flat, rank, inner_sizes, sa))
             if v > best_val:
                 best_val = v
                 best_idx = Scalar[dtype](r)
-        dst.store(flat_out, best_idx)
+        dst.unsafe_store(flat_out, best_idx)
 
     elementwise[simd_width=1, target="gpu"](kernel, Coord(outer * inner), ctx)
     ctx.synchronize()

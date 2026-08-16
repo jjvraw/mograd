@@ -114,8 +114,9 @@ struct Grad:
 # ===-------------------------------------------------------------------===#
 
 
+# TODO: `[x] * n` once Array grows __mul__.
 def non_differentiable(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
-    return [Optional[OpRef](None)] * len(node.srcs())
+    return List[Optional[OpRef]](length=len(node.srcs()), fill=None)
 
 
 def mul_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
@@ -123,7 +124,7 @@ def mul_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
 
 
 def add_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:
-    return [Optional(upstream)] * len(node.srcs())
+    return List[Optional[OpRef]](length=len(node.srcs()), fill=Optional(upstream))
 
 
 def relu_grad(node: OpRef, upstream: OpRef) raises -> List[Optional[OpRef]]:

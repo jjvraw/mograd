@@ -1,17 +1,19 @@
 from std.gpu import WARP_SIZE, block_dim, block_idx, thread_idx
-from std.gpu.host import DeviceContext, get_gpu_target, DeviceAttribute
-from std.gpu.memory import AddressSpace
-from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from max.gpu.host import DeviceContext, DeviceAttribute
+from std.gpu.host import get_gpu_target
+from std.memory import AddressSpace
+from max.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.math import ceildiv, rsqrt
 from std.memory import stack_allocation
 from std.sys.info import simd_width_of
 from std.utils.index import IndexList
+from mograd.memory import scratch_take
 from std.utils.numerics import get_accum_type
 
 
 from layout import Coord, TileTensor, row_major
 
-from nn.normalization import block_reduce_dual_sum, layer_norm_gpu
+from nn.normalization import block_reduce_dual_sum, layer_norm
 
 # ===-------------------------------------------------------------------===#
 # LayerNorm forward
@@ -21,36 +23,40 @@ from nn.normalization import block_reduce_dual_sum, layer_norm_gpu
 def layer_norm_fwd[
     dtype: DType
 ](
-    x: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    gamma: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    beta: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    x: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    gamma: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    beta: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    dst: Pointer[Scalar[dtype], MutAnyOrigin],
     rows: Int,
     cols: Int,
     eps: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
+    var gamma_tile = TileTensor[mut=False, dtype](gamma.as_unsafe_any_origin(), row_major(Coord(cols)))
     var beta_tile = TileTensor[mut=False, dtype](beta.as_unsafe_any_origin(), row_major(Coord(cols)))
 
-    @__copy_capture(x, cols)
     @always_inline
-    @parameter
-    def input_fn[width: Int, rank: Int, alignment: Int](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        return x.load[width=width](Int(coords[0]) * cols + Int(coords[rank - 1]))
+    def input_fn[
+        width: Int, alignment: Int, _rank: Int
+    ](coords: IndexList[_rank]) {imm x, imm cols} -> SIMD[dtype, width]:
+        return x.unsafe_load[width=width](Int(coords[0]) * cols + Int(coords[_rank - 1]))
 
-    @__copy_capture(gamma)
     @always_inline
-    @parameter
-    def gamma_fn[width: Int, rank: Int, alignment: Int](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        return gamma.load[width=width](Int(coords[rank - 1]))
+    def output_fn[
+        width: SIMDLength, rank_: Int, alignment: Int
+    ](coords: IndexList[rank_], val: SIMD[dtype, width]) {imm dst, imm cols}:
+        dst.unsafe_store[width=width](Int(coords[0]) * cols + Int(coords[rank_ - 1]), val)
 
-    @__copy_capture(dst, cols)
-    @always_inline
-    @parameter
-    def output_fn[width: SIMDSize, rank: Int, alignment: Int](coords: IndexList[rank], val: SIMD[dtype, width]):
-        dst.store[width=width](Int(coords[0]) * cols + Int(coords[rank - 1]), val)
-
-    layer_norm_gpu[input_fn, gamma_fn, output_fn](IndexList[2](rows, cols), beta_tile, eps, ctx=ctx)
+    layer_norm[dtype, 2, target="gpu"](
+        input_fn,
+        output_fn,
+        Coord(rows, cols),
+        Scalar[DType.int](cols),
+        gamma_tile,
+        beta_tile,
+        eps,
+        ctx,
+    )
 
 
 # ===-------------------------------------------------------------------===#
@@ -82,17 +88,20 @@ def layer_norm_bwd_dx_grouped_kernel[
     max_warps_per_block: Int,
     max_cols: Int,
 ](
-    dy: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    x: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    gamma: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dx: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dg_tmp: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    db_tmp: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    rows: Int,
-    cols: Int,
-    group_size: Int,
+    dy: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    x: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    gamma: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    dx: Pointer[Scalar[dtype], MutAnyOrigin],
+    dg_tmp: Pointer[Scalar[dtype], MutAnyOrigin],
+    db_tmp: Pointer[Scalar[dtype], MutAnyOrigin],
+    rows_arg: Int64,
+    cols_arg: Int64,
+    group_size_arg: Int64,
     eps: Scalar[dtype],
 ):
+    var rows = Int(rows_arg)
+    var cols = Int(cols_arg)
+    var group_size = Int(group_size_arg)
     comptime accum = get_accum_type[dtype]()
     var g = Int(block_idx.x)
     var tid = Int(thread_idx.x)
@@ -106,8 +115,8 @@ def layer_norm_bwd_dx_grouped_kernel[
     var shmem_b = stack_allocation[max_cols, Scalar[dtype], address_space=AddressSpace.SHARED]()
     var col = tid * simd_width
     while col < cols:
-        shmem_g.store[width=simd_width](col, SIMD[dtype, simd_width](0))
-        shmem_b.store[width=simd_width](col, SIMD[dtype, simd_width](0))
+        shmem_g.unsafe_store[width=simd_width](col, SIMD[dtype, simd_width](0))
+        shmem_b.unsafe_store[width=simd_width](col, SIMD[dtype, simd_width](0))
         col += Int(block_dim.x) * simd_width
 
     with PDL():
@@ -119,7 +128,7 @@ def layer_norm_bwd_dx_grouped_kernel[
             var sx2 = Scalar[accum](0)
             col = tid * simd_width
             while col < cols:
-                var v = x.load[width=simd_width](base + col).cast[accum]()
+                var v = x.unsafe_load[width=simd_width](base + col).cast[accum]()
                 sx += v.reduce_add()
                 sx2 += (v * v).reduce_add()
                 col += Int(block_dim.x) * simd_width
@@ -132,9 +141,9 @@ def layer_norm_bwd_dx_grouped_kernel[
             var tc2 = Scalar[accum](0)
             col = tid * simd_width
             while col < cols:
-                var dy_v = dy.load[width=simd_width](base + col).cast[accum]()
-                var x_v = x.load[width=simd_width](base + col).cast[accum]()
-                var g_v = gamma.load[width=simd_width](col).cast[accum]()
+                var dy_v = dy.unsafe_load[width=simd_width](base + col).cast[accum]()
+                var x_v = x.unsafe_load[width=simd_width](base + col).cast[accum]()
+                var g_v = gamma.unsafe_load[width=simd_width](col).cast[accum]()
                 var xhat = (x_v - mu) * rstd
                 var dy_g = dy_v * g_v
                 tc1 += dy_g.reduce_add()
@@ -147,25 +156,25 @@ def layer_norm_bwd_dx_grouped_kernel[
             # Pass 3: dx + accumulate into shmem
             col = tid * simd_width
             while col < cols:
-                var dy_v = dy.load[width=simd_width](base + col)
-                var x_v = x.load[width=simd_width](base + col).cast[accum]()
-                var g_v = gamma.load[width=simd_width](col).cast[accum]()
+                var dy_v = dy.unsafe_load[width=simd_width](base + col)
+                var x_v = x.unsafe_load[width=simd_width](base + col).cast[accum]()
+                var g_v = gamma.unsafe_load[width=simd_width](col).cast[accum]()
                 var xhat = (x_v - mu) * rstd
-                dx.store[width=simd_width](
+                dx.unsafe_store[width=simd_width](
                     base + col, (rstd * (dy_v.cast[accum]() * g_v - c1 - xhat * c2)).cast[dtype]()
                 )
-                shmem_g.store[width=simd_width](
-                    col, shmem_g.load[width=simd_width](col) + (dy_v.cast[accum]() * xhat).cast[dtype]()
+                shmem_g.unsafe_store[width=simd_width](
+                    col, shmem_g.unsafe_load[width=simd_width](col) + (dy_v.cast[accum]() * xhat).cast[dtype]()
                 )
-                shmem_b.store[width=simd_width](col, shmem_b.load[width=simd_width](col) + dy_v)
+                shmem_b.unsafe_store[width=simd_width](col, shmem_b.unsafe_load[width=simd_width](col) + dy_v)
                 col += Int(block_dim.x) * simd_width
 
         # Flush shmem → exclusive group slot in tmp.
         var tmp_base = g * cols
         col = tid * simd_width
         while col < cols:
-            dg_tmp.store[width=simd_width](tmp_base + col, shmem_g.load[width=simd_width](col))
-            db_tmp.store[width=simd_width](tmp_base + col, shmem_b.load[width=simd_width](col))
+            dg_tmp.unsafe_store[width=simd_width](tmp_base + col, shmem_g.unsafe_load[width=simd_width](col))
+            db_tmp.unsafe_store[width=simd_width](tmp_base + col, shmem_b.unsafe_load[width=simd_width](col))
             col += Int(block_dim.x) * simd_width
 
 
@@ -175,17 +184,20 @@ def layer_norm_bwd_dx_reg_kernel[
     max_warps_per_block: Int,
     max_cols: Int,
 ](
-    dy: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    x: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    gamma: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dx: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dg_tmp: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    db_tmp: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    rows: Int,
-    cols: Int,
-    group_size: Int,
+    dy: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    x: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    gamma: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    dx: Pointer[Scalar[dtype], MutAnyOrigin],
+    dg_tmp: Pointer[Scalar[dtype], MutAnyOrigin],
+    db_tmp: Pointer[Scalar[dtype], MutAnyOrigin],
+    rows_arg: Int64,
+    cols_arg: Int64,
+    group_size_arg: Int64,
     eps: Scalar[dtype],
 ):
+    var rows = Int(rows_arg)
+    var cols = Int(cols_arg)
+    var group_size = Int(group_size_arg)
     comptime accum = get_accum_type[dtype]()
     comptime num_chunks = ceildiv(max_cols, max_warps_per_block * WARP_SIZE * simd_width)
     var g = Int(block_idx.x)
@@ -198,8 +210,8 @@ def layer_norm_bwd_dx_reg_kernel[
     var acc_g = stack_allocation[num_chunks * simd_width, Scalar[dtype]]()
     var acc_b = stack_allocation[num_chunks * simd_width, Scalar[dtype]]()
     for i in range(num_chunks):
-        acc_g.store[width=simd_width](i * simd_width, SIMD[dtype, simd_width](0))
-        acc_b.store[width=simd_width](i * simd_width, SIMD[dtype, simd_width](0))
+        acc_g.unsafe_store[width=simd_width](i * simd_width, SIMD[dtype, simd_width](0))
+        acc_b.unsafe_store[width=simd_width](i * simd_width, SIMD[dtype, simd_width](0))
 
     with PDL():
         for row in range(row_start, row_end):
@@ -210,7 +222,7 @@ def layer_norm_bwd_dx_reg_kernel[
             var sx2 = Scalar[accum](0)
             var col = tid * simd_width
             while col < cols:
-                var v = x.load[width=simd_width](base + col).cast[accum]()
+                var v = x.unsafe_load[width=simd_width](base + col).cast[accum]()
                 sx += v.reduce_add()
                 sx2 += (v * v).reduce_add()
                 col += Int(block_dim.x) * simd_width
@@ -223,9 +235,9 @@ def layer_norm_bwd_dx_reg_kernel[
             var tc2 = Scalar[accum](0)
             col = tid * simd_width
             while col < cols:
-                var dy_v = dy.load[width=simd_width](base + col).cast[accum]()
-                var x_v = x.load[width=simd_width](base + col).cast[accum]()
-                var g_v = gamma.load[width=simd_width](col).cast[accum]()
+                var dy_v = dy.unsafe_load[width=simd_width](base + col).cast[accum]()
+                var x_v = x.unsafe_load[width=simd_width](base + col).cast[accum]()
+                var g_v = gamma.unsafe_load[width=simd_width](col).cast[accum]()
                 var xhat = (x_v - mu) * rstd
                 var dy_g = dy_v * g_v
                 tc1 += dy_g.reduce_add()
@@ -240,18 +252,18 @@ def layer_norm_bwd_dx_reg_kernel[
             var chunk = 0
             col = tid * simd_width
             while col < cols:
-                var dy_v = dy.load[width=simd_width](base + col)
-                var x_v = x.load[width=simd_width](base + col).cast[accum]()
-                var g_v = gamma.load[width=simd_width](col).cast[accum]()
+                var dy_v = dy.unsafe_load[width=simd_width](base + col)
+                var x_v = x.unsafe_load[width=simd_width](base + col).cast[accum]()
+                var g_v = gamma.unsafe_load[width=simd_width](col).cast[accum]()
                 var xhat = (x_v - mu) * rstd
-                dx.store[width=simd_width](
+                dx.unsafe_store[width=simd_width](
                     base + col, (rstd * (dy_v.cast[accum]() * g_v - c1 - xhat * c2)).cast[dtype]()
                 )
                 var slot = chunk * simd_width
-                acc_g.store[width=simd_width](
-                    slot, acc_g.load[width=simd_width](slot) + (dy_v.cast[accum]() * xhat).cast[dtype]()
+                acc_g.unsafe_store[width=simd_width](
+                    slot, acc_g.unsafe_load[width=simd_width](slot) + (dy_v.cast[accum]() * xhat).cast[dtype]()
                 )
-                acc_b.store[width=simd_width](slot, acc_b.load[width=simd_width](slot) + dy_v)
+                acc_b.unsafe_store[width=simd_width](slot, acc_b.unsafe_load[width=simd_width](slot) + dy_v)
                 col += Int(block_dim.x) * simd_width
                 chunk += 1
 
@@ -260,8 +272,8 @@ def layer_norm_bwd_dx_reg_kernel[
         var col = tid * simd_width
         while col < cols:
             var slot = chunk * simd_width
-            dg_tmp.store[width=simd_width](g * cols + col, acc_g.load[width=simd_width](slot))
-            db_tmp.store[width=simd_width](g * cols + col, acc_b.load[width=simd_width](slot))
+            dg_tmp.unsafe_store[width=simd_width](g * cols + col, acc_g.unsafe_load[width=simd_width](slot))
+            db_tmp.unsafe_store[width=simd_width](g * cols + col, acc_b.unsafe_load[width=simd_width](slot))
             col += Int(block_dim.x) * simd_width
             chunk += 1
 
@@ -270,34 +282,36 @@ def layer_norm_reduce_params_kernel[
     dtype: DType,
     simd_width: Int,
 ](
-    dg_tmp: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    db_tmp: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dgamma: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dbeta: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    rows: Int,
-    cols: Int,
+    dg_tmp: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    db_tmp: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    dgamma: Pointer[Scalar[dtype], MutAnyOrigin],
+    dbeta: Pointer[Scalar[dtype], MutAnyOrigin],
+    rows_arg: Int64,
+    cols_arg: Int64,
 ):
+    var rows = Int(rows_arg)
+    var cols = Int(cols_arg)
     var col = (Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)) * simd_width
     if col >= cols:
         return
     var acc_g = SIMD[dtype, simd_width](0)
     var acc_b = SIMD[dtype, simd_width](0)
     for r in range(rows):
-        acc_g += dg_tmp.load[width=simd_width](r * cols + col)
-        acc_b += db_tmp.load[width=simd_width](r * cols + col)
-    dgamma.store[width=simd_width](col, acc_g)
-    dbeta.store[width=simd_width](col, acc_b)
+        acc_g += dg_tmp.unsafe_load[width=simd_width](r * cols + col)
+        acc_b += db_tmp.unsafe_load[width=simd_width](r * cols + col)
+    dgamma.unsafe_store[width=simd_width](col, acc_g)
+    dbeta.unsafe_store[width=simd_width](col, acc_b)
 
 
 def layer_norm_bwd[
     dtype: DType
 ](
-    dy: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    x: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    gamma: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dx: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dgamma: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dbeta: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dy: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    x: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    gamma: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    dx: Pointer[Scalar[dtype], MutAnyOrigin],
+    dgamma: Pointer[Scalar[dtype], MutAnyOrigin],
+    dbeta: Pointer[Scalar[dtype], MutAnyOrigin],
     rows: Int,
     cols: Int,
     eps: Scalar[dtype],
@@ -321,7 +335,7 @@ def layer_norm_bwd[
     var dg_tmp = scratch_take[dtype](ctx, num_groups * cols)
     var db_tmp = scratch_take[dtype](ctx, num_groups * cols)
 
-    @parameter
+    @__parameter
     def launch_k1g[max_cols: Int]() raises:
         comptime k1 = layer_norm_bwd_dx_grouped_kernel[dtype, simd_width, max_warps, max_cols]
         ctx.enqueue_function[k1](
@@ -331,16 +345,16 @@ def layer_norm_bwd[
             dx,
             dg_tmp.unsafe_ptr(),
             db_tmp.unsafe_ptr(),
-            rows,
-            cols,
-            group_size,
+            Int64(rows),
+            Int64(cols),
+            Int64(group_size),
             eps,
             grid_dim=num_groups,
             block_dim=k1_block,
             attributes=pdl_launch_attributes(),
         )
 
-    @parameter
+    @__parameter
     def launch_k1r[max_cols: Int]() raises:
         comptime k1 = layer_norm_bwd_dx_reg_kernel[dtype, simd_width, max_warps, max_cols]
         ctx.enqueue_function[k1](
@@ -350,9 +364,9 @@ def layer_norm_bwd[
             dx,
             dg_tmp.unsafe_ptr(),
             db_tmp.unsafe_ptr(),
-            rows,
-            cols,
-            group_size,
+            Int64(rows),
+            Int64(cols),
+            Int64(group_size),
             eps,
             grid_dim=num_groups,
             block_dim=k1_block,
@@ -374,12 +388,12 @@ def layer_norm_bwd[
     var k2_block = min(256, ceildiv(cols, simd_width))
     var k2_grid = ceildiv(ceildiv(cols, simd_width), k2_block)
     ctx.enqueue_function[k2](
-        dg_tmp.unsafe_ptr().as_immutable(),
-        db_tmp.unsafe_ptr().as_immutable(),
+        dg_tmp.unsafe_ptr().as_imm(),
+        db_tmp.unsafe_ptr().as_imm(),
         dgamma,
         dbeta,
-        num_groups,
-        cols,
+        Int64(num_groups),
+        Int64(cols),
         grid_dim=k2_grid,
         block_dim=k2_block,
         attributes=pdl_launch_attributes(),

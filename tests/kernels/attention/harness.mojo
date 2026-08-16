@@ -2,19 +2,19 @@
 #
 # Layouts: Q/K/V and dQ/dK/dV are BSHD, O and dO are BHSD, mask BHSS,
 # LSE (B, H, S) float32 in natural log.
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.math import exp, log, sqrt
 from std.testing import assert_true
 from std.utils.numerics import neg_inf
 from mograd import Device, Tensor
 
 comptime FwdLaunch[dtype: DType] = def(
-    UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    UnsafePointer[Float32, MutAnyOrigin],
+    Pointer[Scalar[dtype], ImmutAnyOrigin],
+    Pointer[Scalar[dtype], ImmutAnyOrigin],
+    Pointer[Scalar[dtype], ImmutAnyOrigin],
+    Pointer[Scalar[dtype], ImmutAnyOrigin],
+    Pointer[Scalar[dtype], MutAnyOrigin],
+    Pointer[Float32, MutAnyOrigin],
     Int,
     Int,
     Int,
@@ -24,16 +24,16 @@ comptime FwdLaunch[dtype: DType] = def(
 ) raises capturing
 
 comptime BwdLaunch[dtype: DType] = def(
-    UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    UnsafePointer[Float32, ImmutAnyOrigin],
-    UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    Pointer[Scalar[dtype], ImmutAnyOrigin],
+    Pointer[Scalar[dtype], ImmutAnyOrigin],
+    Pointer[Scalar[dtype], ImmutAnyOrigin],
+    Pointer[Scalar[dtype], ImmutAnyOrigin],
+    Pointer[Scalar[dtype], ImmutAnyOrigin],
+    Pointer[Scalar[dtype], ImmutAnyOrigin],
+    Pointer[Float32, ImmutAnyOrigin],
+    Pointer[Scalar[dtype], MutAnyOrigin],
+    Pointer[Scalar[dtype], MutAnyOrigin],
+    Pointer[Scalar[dtype], MutAnyOrigin],
     Int,
     Int,
     Int,
@@ -203,6 +203,7 @@ def _fill[dtype: DType](buf: DeviceBuffer[dtype], vals: List[Scalar[dtype]]) rai
     with buf.map_to_host() as host:
         for i in range(len(vals)):
             host[i] = vals[i]
+    buf.context().synchronize()
 
 
 def _read_back[dtype: DType](buf: DeviceBuffer[dtype], n: Int) raises -> List[Scalar[dtype]]:
@@ -210,6 +211,7 @@ def _read_back[dtype: DType](buf: DeviceBuffer[dtype], n: Int) raises -> List[Sc
     with buf.map_to_host() as host:
         for i in range(n):
             out.append(host[i])
+    buf.context().synchronize()
     return out^
 
 
@@ -244,10 +246,10 @@ def run_fwd[
         ctx.synchronize()
 
         launch(
-            q_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            k_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            v_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            m_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+            q_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            k_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            v_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            m_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
             o_buf.unsafe_ptr().as_unsafe_any_origin(),
             lse_buf.unsafe_ptr().as_unsafe_any_origin(),
             B,
@@ -302,10 +304,10 @@ def run_bwd[
         ctx.synchronize()
 
         fwd_launch(
-            q_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            k_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            v_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            m_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+            q_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            k_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            v_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            m_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
             o_buf.unsafe_ptr().as_unsafe_any_origin(),
             lse_buf.unsafe_ptr().as_unsafe_any_origin(),
             B,
@@ -317,13 +319,13 @@ def run_bwd[
         )
         ctx.synchronize()
         bwd_launch(
-            dy_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            o_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            q_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            k_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            v_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            m_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
-            lse_buf.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+            dy_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            o_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            q_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            k_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            v_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            m_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+            lse_buf.unsafe_ptr().as_imm().as_unsafe_any_origin(),
             dq_buf.unsafe_ptr().as_unsafe_any_origin(),
             dk_buf.unsafe_ptr().as_unsafe_any_origin(),
             dv_buf.unsafe_ptr().as_unsafe_any_origin(),

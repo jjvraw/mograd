@@ -14,12 +14,12 @@ from mograd.runtime.gpu.kernels.attention.apple import (
 
 
 @always_inline
-def _imm[dtype: DType](buf: CacheBustingBuffer[dtype], i: Int) -> UnsafePointer[Scalar[dtype], ImmutAnyOrigin]:
+def _imm[dtype: DType](buf: CacheBustingBuffer[dtype], i: Int) -> Pointer[Scalar[dtype], ImmutAnyOrigin]:
     return buf.offset_ptr(i).as_immutable().as_unsafe_any_origin()
 
 
 @always_inline
-def _mut[dtype: DType](buf: CacheBustingBuffer[dtype], i: Int) -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
+def _mut[dtype: DType](buf: CacheBustingBuffer[dtype], i: Int) -> Pointer[Scalar[dtype], MutAnyOrigin]:
     return buf.offset_ptr(i).as_unsafe_any_origin()
 
 

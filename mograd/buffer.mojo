@@ -1,6 +1,6 @@
 from std.algorithm import vectorize
 from std.memory import ArcPointer
-from std.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.host import DeviceContext, DeviceBuffer
 from std.sys import simd_width_of, size_of
 from std.utils import Variant
 
@@ -17,7 +17,7 @@ from mograd import Device
 trait BufferArm(Copyable, Movable):
     comptime node_dtype: DType
 
-    def rawptr(ref self, with_offset: Bool = True) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
+    def rawptr(ref self, with_offset: Bool = True) raises -> Pointer[NoneType, MutAnyOrigin]:
         ...
 
 
@@ -59,22 +59,27 @@ struct Buffer[dtype: DType](BufferArm, Copyable):
     def buf(ref self) -> ref[self.ptr[]] DeviceBuffer[Self.dtype]:
         return self.ptr[]
 
-    def data_ptr(ref self, with_offset: Bool = True) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
-        offset = self.base_offset if with_offset else 0
-        return (self.buf().unsafe_ptr() + offset).as_unsafe_any_origin()
+    def data_ptr(ref self, with_offset: Bool = True) -> Pointer[Scalar[Self.dtype], MutAnyOrigin]:
+        var offset = self.base_offset if with_offset else 0
+        return (self.buf().unsafe_ptr().unsafe_offset(offset)).as_unsafe_any_origin()
 
-    def rawptr(ref self, with_offset: Bool = True) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
-        return self.data_ptr(with_offset).bitcast[NoneType]()
+    def rawptr(ref self, with_offset: Bool = True) raises -> Pointer[NoneType, MutAnyOrigin]:
+        return self.data_ptr(with_offset).unsafe_bitcast[NoneType]()
 
     def item(self) raises -> Scalar[Self.dtype]:
+        var value: Scalar[Self.dtype]
         with self.buf().map_to_host() as host:
-            return (host.unsafe_ptr() + self.base_offset)[0]
+            value = (host.unsafe_ptr().unsafe_offset(self.base_offset))[unsafe_offset=0]
+        # map_to_host exit enqueues a write-back; a context destroyed with it
+        # in flight deadlocks the next context's first allocation.
+        self.buf().context().synchronize()
+        return value
 
     def to_list(self, layout: Layout) raises -> List[Scalar[Self.dtype]]:
         var result = List[Scalar[Self.dtype]]()
         var inner = layout.inner_sizes()
         with self.buf().map_to_host() as host:
-            var base = host.unsafe_ptr() + self.base_offset
+            var base = host.unsafe_ptr().unsafe_offset(self.base_offset)
             for i in range(layout.numel()):
                 var off = 0
                 var rem = i
@@ -82,7 +87,8 @@ struct Buffer[dtype: DType](BufferArm, Copyable):
                     var idx = rem // inner.value(d)
                     rem %= inner.value(d)
                     off += idx * layout._strides.value(d)
-                result.append(base[off])
+                result.append(base[unsafe_offset=off])
+        self.buf().context().synchronize()
         return result^
 
     @staticmethod
@@ -110,17 +116,13 @@ struct Buffer[dtype: DType](BufferArm, Copyable):
         var hostptr = host_buf.unsafe_ptr()
         var src = data.unsafe_ptr()
 
-        def fill[width: Int](i: Int) {read src, read hostptr}:
-            hostptr.store(i, src.load[width=width](i).cast[Self.dtype]())
+        def fill[width: Int](i: Int) {imm src, imm hostptr}:
+            hostptr.unsafe_store(i, src.unsafe_load[width=width](i).cast[Self.dtype]())
 
         vectorize[simd_width_of[Self.dtype]()](size, fill)
         var buf = Self.empty(device, size)
         device.ctx.enqueue_copy(dst_buf=buf.buf(), src_buf=host_buf)
-        # Drain the queue before host_buf dies and before this context can be
-        # torn down: destroying a DeviceContext with unsynchronized enqueued
-        # work poisons the per-device AsyncRT mutex on the 2026-07 runtime and
-        # stalls the next context's first allocation for ~600s (see
-        # BUG_REPORT_asyncrt_first_dispatch_stall.md).
+        # The enqueued copy reads host_buf, which dies at return.
         device.ctx.synchronize()
         return buf^
 
@@ -146,7 +148,7 @@ struct AnyBuffer(Copyable, Movable):
 
     @staticmethod
     def supports(d: DType) -> Bool:
-        comptime for k in range(Self.BufVariant.Ts.size):
+        comptime for k in range(Self.BufVariant.Ts.length):
             comptime T = Self.BufVariant.Ts[k]
             comptime assert conforms_to(T, BufferArm)
             if d == T.node_dtype:
@@ -154,7 +156,7 @@ struct AnyBuffer(Copyable, Movable):
         return False
 
     def dtype(self) raises -> DType:
-        comptime for k in range(Self.BufVariant.Ts.size):
+        comptime for k in range(Self.BufVariant.Ts.length):
             comptime T = Self.BufVariant.Ts[k]
             comptime assert conforms_to(T, BufferArm)
             comptime d = T.node_dtype
@@ -164,7 +166,7 @@ struct AnyBuffer(Copyable, Movable):
 
     def size_bytes(self) raises -> Int:
         """Physical size of the underlying device allocation."""
-        comptime for k in range(Self.BufVariant.Ts.size):
+        comptime for k in range(Self.BufVariant.Ts.length):
             comptime T = Self.BufVariant.Ts[k]
             comptime assert conforms_to(T, BufferArm)
             comptime d = T.node_dtype
@@ -178,16 +180,17 @@ struct AnyBuffer(Copyable, Movable):
     def to_list[dtype: DType](self, layout: Layout) raises -> List[Scalar[dtype]]:
         return self.unsafe_get[dtype]().to_list(layout)
 
-    def data_ptr(ref self, with_offset: Bool = True) raises -> UnsafePointer[NoneType, MutAnyOrigin]:
-        comptime for k in range(Self.BufVariant.Ts.size):
+    def data_ptr(ref self, with_offset: Bool = True) raises -> Pointer[NoneType, MutAnyOrigin]:
+        comptime for k in range(Self.BufVariant.Ts.length):
             comptime T = Self.BufVariant.Ts[k]
             comptime assert conforms_to(T, BufferArm)
+            comptime d = T.node_dtype
             if self._buf.isa[T]():
-                return trait_downcast[BufferArm](self._buf.unsafe_get[T]()).rawptr(with_offset)
+                return self.unsafe_get[d]().rawptr(with_offset)
         raise Error("Unsupported dtype")
 
     def view(ref self, layout: Layout) raises -> AnyBuffer:
-        comptime for k in range(Self.BufVariant.Ts.size):
+        comptime for k in range(Self.BufVariant.Ts.length):
             comptime T = Self.BufVariant.Ts[k]
             comptime assert conforms_to(T, BufferArm)
             comptime d = T.node_dtype
@@ -199,7 +202,7 @@ struct AnyBuffer(Copyable, Movable):
 
     @staticmethod
     def create(dtype: DType, device: Device, numel: Int, fill: Optional[Float64] = None) raises -> AnyBuffer:
-        comptime for k in range(Self.BufVariant.Ts.size):
+        comptime for k in range(Self.BufVariant.Ts.length):
             comptime T = Self.BufVariant.Ts[k]
             comptime assert conforms_to(T, BufferArm)
             comptime d = T.node_dtype

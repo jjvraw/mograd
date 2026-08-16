@@ -51,9 +51,8 @@ build:
 
 requirements:
   run:
-    - mojo >=1.0.0b2.dev2026050306,<2
-    - max >=26.4.0.dev2026052815,<27
-    - numpy
+    - mojo >=1.1.0.dev2026081605,<1.2
+    - max >=26.6.0.dev2026081605,<26.7
 
     # Needed because libmograd_gpu.so is built on the user's machine.
     - if: linux

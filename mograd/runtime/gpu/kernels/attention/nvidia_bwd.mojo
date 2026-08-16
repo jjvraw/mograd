@@ -4,10 +4,11 @@
 # ldmatrix on NVIDIA. It lowers to per-element distribute copies. Always use
 # the shared-memory overloads with make_ldmatrix_swizzle, as these kernels do.
 
-from std.gpu import WARP_SIZE, MAX_THREADS_PER_BLOCK_METADATA, block_idx, thread_idx, barrier, syncwarp
-from std.gpu.compute.mma import mma, ld_matrix
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import (
+from std.gpu import WARP_SIZE, MAX_THREADS_PER_BLOCK_METADATA, block_idx, thread_idx
+from max.gpu.sync import barrier, syncwarp
+from max.gpu.compute.mma import mma, ld_matrix
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.memory import (
     CacheEviction,
     async_copy,
     external_memory,
@@ -15,10 +16,12 @@ from std.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_all,
 )
-from std.gpu.memory import load as gpu_load
+from max.gpu.memory import load as gpu_load
 from std.gpu.primitives.warp import shuffle_idx as warp_shuffle_idx
 from std.gpu.primitives.warp import shuffle_xor as warp_shuffle_xor
 from std.gpu.primitives.warp import sum as warp_sum
+from std.memory import stack_allocation
+from mograd.memory import scratch_take
 from std.math import exp2, log, min
 from std.sys import size_of
 from std.utils import StaticTuple
@@ -51,7 +54,7 @@ from std.sys._assembly import inlined_assembly
 
 
 @always_inline
-def _red_add_f32(ptr: UnsafePointer[Float32, MutAnyOrigin], val: Float32):
+def _red_add_f32(ptr: Pointer[Float32, MutAnyOrigin], val: Float32):
     """
     One-way PTX red.
 
@@ -88,28 +91,32 @@ def _red_add_f32(ptr: UnsafePointer[Float32, MutAnyOrigin], val: Float32):
 def flash_attn_dq_kernel_mma[
     dtype: DType, D_BUCKET: Int, CAUSAL: Bool, HAS_BIAS: Bool
 ](
-    dy: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    o: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    q: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    k: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    v: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    mask: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    lse: UnsafePointer[Float32, ImmutAnyOrigin],
-    dq: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    delta: UnsafePointer[Float32, MutAnyOrigin],
-    B: Int,
-    S: Int,
-    H: Int,
-    D: Int,
+    dy: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    o: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    q: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    k: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    v: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    mask: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    lse: Pointer[Float32, ImmutAnyOrigin],
+    dq: Pointer[Scalar[dtype], MutAnyOrigin],
+    delta: Pointer[Float32, MutAnyOrigin],
+    B_arg: Int64,
+    S_arg: Int64,
+    H_arg: Int64,
+    D_arg: Int64,
     scale: Float32,
 ):
+    var B = Int(B_arg)
+    var S = Int(S_arg)
+    var H = Int(H_arg)
+    var D = Int(D_arg)
     comptime assert D_BUCKET % MMA_K == 0, "D_BUCKET must be divisible by MMA_K=8"
     comptime assert Bc_MMA % MMA_N == 0, "Bc_MMA must be divisible by MMA_N=8"
     comptime D_TILES = D_BUCKET // MMA_K
     comptime N_TILES = Bc_MMA // MMA_N
     comptime O_TILES = D_BUCKET // MMA_N
     comptime BC_TILES = Bc_MMA // MMA_K
-    comptime frag_size = QKMma.c_reg_type.size
+    comptime frag_size = QKMma.c_reg_type.length
 
     var tid = Int(thread_idx.x)
     var warp_id = tid // WARP_SIZE
@@ -133,14 +140,14 @@ def flash_attn_dq_kernel_mma[
     var lse_base = b * H * S + h * S
     var scale_log2e = scale * LOG2E
 
-    var smem = rebind[UnsafePointer[Float32, MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
+    var smem = rebind[Pointer[Float32, MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
         external_memory[Float32, address_space=AddressSpace.SHARED, alignment=16, name="attn_dq_mma_smem"]()
     )
     comptime KV_MMA_STRIDE = D_BUCKET + KV_MMA_PAD
     var kv_smem = smem  # Bc_MMA * D_BUCKET, reused for K/V across phases
-    var stage_smem = kv_smem + Bc_MMA * KV_MMA_STRIDE  # Br_MMA * MMA_K scratch for Q/dO staging
-    var lse_smem = stage_smem + Br_MMA * MMA_K  # Br_MMA, pre-scaled by LOG2E
-    var delta_smem = lse_smem + Br_MMA  # Br_MMA
+    var stage_smem = kv_smem.unsafe_offset(Bc_MMA * KV_MMA_STRIDE)  # Br_MMA * MMA_K scratch for Q/dO staging
+    var lse_smem = stage_smem.unsafe_offset(Br_MMA * MMA_K)  # Br_MMA, pre-scaled by LOG2E
+    var delta_smem = lse_smem.unsafe_offset(Br_MMA)  # Br_MMA
 
     # Per-thread C-fragment coordinates (m16n8k8 TF32).
     var lane = tid % WARP_SIZE
@@ -158,15 +165,15 @@ def flash_attn_dq_kernel_mma[
         if row < S:
             for d in range(lane, D, WARP_SIZE):
                 var idx = bh_base + row * D + d
-                acc += Float32(o[idx]) * Float32(dy[idx])
+                acc += Float32(o[unsafe_offset=idx]) * Float32(dy[unsafe_offset=idx])
         var delta_row = warp_sum(acc)
         if lane == 0:
-            delta_smem[row_local] = delta_row
+            delta_smem[unsafe_offset=row_local] = delta_row
             if row < S:
-                delta[lse_base + row] = delta_row
+                delta[unsafe_offset=lse_base + row] = delta_row
     if tid < Br_MMA:
         var row = q_row_block + tid
-        lse_smem[tid] = lse[lse_base + row] * LOG2E if row < S else Float32(0)
+        lse_smem[unsafe_offset=tid] = lse[unsafe_offset=lse_base + row] * LOG2E if row < S else Float32(0)
     barrier()
 
     var qk_op = QKMma()
@@ -174,7 +181,7 @@ def flash_attn_dq_kernel_mma[
 
     comptime kv_layout = Layout(IntTuple(Bc_MMA, D_BUCKET), IntTuple(KV_MMA_STRIDE, 1))
     comptime stage_layout = Layout.row_major(Br_MMA, MMA_K)
-    comptime a_reg_layout = Layout.row_major(1, PVMma.a_reg_type.size)
+    comptime a_reg_layout = Layout.row_major(1, PVMma.a_reg_type.length)
 
     # dQ accumulator: persists across all KV tiles.
     var dq_reg = (
@@ -200,8 +207,8 @@ def flash_attn_dq_kernel_mma[
             if slot < Bc_MMA * D_BUCKET:
                 var kv_row = jbase + slot // D_BUCKET
                 var kv_col = slot % D_BUCKET
-                kv_smem[(slot // D_BUCKET) * KV_MMA_STRIDE + kv_col] = Float32(
-                    k[qkv_bh + kv_row * HD + kv_col]
+                kv_smem[unsafe_offset=(slot // D_BUCKET) * KV_MMA_STRIDE + kv_col] = Float32(
+                    k[unsafe_offset=qkv_bh + kv_row * HD + kv_col]
                 ) if kv_row < S and kv_col < D else Float32(0)
         barrier()
 
@@ -219,9 +226,9 @@ def flash_attn_dq_kernel_mma[
                 if slot < Br_MMA * MMA_K:
                     var q_row = q_row_block + slot // MMA_K
                     var q_col = d_tile * MMA_K + slot % MMA_K
-                    stage_smem[slot] = Float32(q[qkv_bh + q_row * HD + q_col]) if q_row < S and q_col < D else Float32(
-                        0
-                    )
+                    stage_smem[unsafe_offset=slot] = Float32(
+                        q[unsafe_offset=qkv_bh + q_row * HD + q_col]
+                    ) if q_row < S and q_col < D else Float32(0)
             barrier()
             var q_tensor = LayoutTensor[DType.float32, stage_layout, address_space=AddressSpace.SHARED](stage_smem)
             var a_frag = qk_op.load_a(q_tensor.tile[MMA_M, MMA_K](warp_id, 0))
@@ -240,8 +247,8 @@ def flash_attn_dq_kernel_mma[
             var row1 = q_row_block + warp_id * MMA_M + frag_r1
             var col0 = jbase + n_tile * MMA_N + frag_c0
             var col1 = jbase + n_tile * MMA_N + frag_c1
-            var lse0_l2 = lse_smem[warp_id * MMA_M + frag_r0]
-            var lse1_l2 = lse_smem[warp_id * MMA_M + frag_r1]
+            var lse0_l2 = lse_smem[unsafe_offset=warp_id * MMA_M + frag_r0]
+            var lse1_l2 = lse_smem[unsafe_offset=warp_id * MMA_M + frag_r1]
             var score_vec = score_reg.tile[1, frag_size](n_tile, 0).vectorize[1, frag_size]()
             var p = rebind[SIMD[DType.float32, 4]](score_vec[0, 0])
             var ok00 = row0 < S and col0 < S
@@ -261,10 +268,10 @@ def flash_attn_dq_kernel_mma[
                 ok11 = ok11 and col1 <= row1
             elif HAS_BIAS:
                 var mask_bh = b * H * S * S + h * S * S
-                m00 = Float32(mask[mask_bh + row0 * S + col0]) * LOG2E if ok00 else Float32(0)
-                m01 = Float32(mask[mask_bh + row0 * S + col1]) * LOG2E if ok01 else Float32(0)
-                m10 = Float32(mask[mask_bh + row1 * S + col0]) * LOG2E if ok10 else Float32(0)
-                m11 = Float32(mask[mask_bh + row1 * S + col1]) * LOG2E if ok11 else Float32(0)
+                m00 = Float32(mask[unsafe_offset=mask_bh + row0 * S + col0]) * LOG2E if ok00 else Float32(0)
+                m01 = Float32(mask[unsafe_offset=mask_bh + row0 * S + col1]) * LOG2E if ok01 else Float32(0)
+                m10 = Float32(mask[unsafe_offset=mask_bh + row1 * S + col0]) * LOG2E if ok10 else Float32(0)
+                m11 = Float32(mask[unsafe_offset=mask_bh + row1 * S + col1]) * LOG2E if ok11 else Float32(0)
             p[0] = exp2(p[0] * scale_log2e + m00 - lse0_l2) if ok00 else Float32(0)
             p[1] = exp2(p[1] * scale_log2e + m01 - lse0_l2) if ok01 else Float32(0)
             p[2] = exp2(p[2] * scale_log2e + m10 - lse1_l2) if ok10 else Float32(0)
@@ -277,8 +284,8 @@ def flash_attn_dq_kernel_mma[
             if slot < Bc_MMA * D_BUCKET:
                 var kv_row = jbase + slot // D_BUCKET
                 var kv_col = slot % D_BUCKET
-                kv_smem[(slot // D_BUCKET) * KV_MMA_STRIDE + kv_col] = Float32(
-                    v[qkv_bh + kv_row * HD + kv_col]
+                kv_smem[unsafe_offset=(slot // D_BUCKET) * KV_MMA_STRIDE + kv_col] = Float32(
+                    v[unsafe_offset=qkv_bh + kv_row * HD + kv_col]
                 ) if kv_row < S and kv_col < D else Float32(0)
         barrier()
 
@@ -296,9 +303,9 @@ def flash_attn_dq_kernel_mma[
                 if slot < Br_MMA * MMA_K:
                     var q_row = q_row_block + slot // MMA_K
                     var q_col = d_tile * MMA_K + slot % MMA_K
-                    stage_smem[slot] = Float32(dy[bh_base + q_row * D + q_col]) if q_row < S and q_col < D else Float32(
-                        0
-                    )
+                    stage_smem[unsafe_offset=slot] = Float32(
+                        dy[unsafe_offset=bh_base + q_row * D + q_col]
+                    ) if q_row < S and q_col < D else Float32(0)
             barrier()
             var do_tensor = LayoutTensor[DType.float32, stage_layout, address_space=AddressSpace.SHARED](stage_smem)
             var a_frag = qk_op.load_a(do_tensor.tile[MMA_M, MMA_K](warp_id, 0))
@@ -311,8 +318,8 @@ def flash_attn_dq_kernel_mma[
 
         # dS = scale * P * (dp - delta_i), kept in registers
         comptime for n_tile in range(N_TILES):
-            var delta0 = delta_smem[warp_id * MMA_M + frag_r0]
-            var delta1 = delta_smem[warp_id * MMA_M + frag_r1]
+            var delta0 = delta_smem[unsafe_offset=warp_id * MMA_M + frag_r0]
+            var delta1 = delta_smem[unsafe_offset=warp_id * MMA_M + frag_r1]
             var score_vec = score_reg.tile[1, frag_size](n_tile, 0).vectorize[1, frag_size]()
             var dp_vec = dp_reg.tile[1, frag_size](n_tile, 0).vectorize[1, frag_size]()
             var p = rebind[SIMD[DType.float32, 4]](score_vec[0, 0])
@@ -329,8 +336,8 @@ def flash_attn_dq_kernel_mma[
             if slot < Bc_MMA * D_BUCKET:
                 var kv_row = jbase + slot // D_BUCKET
                 var kv_col = slot % D_BUCKET
-                kv_smem[(slot // D_BUCKET) * KV_MMA_STRIDE + kv_col] = Float32(
-                    k[qkv_bh + kv_row * HD + kv_col]
+                kv_smem[unsafe_offset=(slot // D_BUCKET) * KV_MMA_STRIDE + kv_col] = Float32(
+                    k[unsafe_offset=qkv_bh + kv_row * HD + kv_col]
                 ) if kv_row < S and kv_col < D else Float32(0)
         barrier()
 
@@ -357,7 +364,7 @@ def flash_attn_dq_kernel_mma[
             var a_p = LayoutTensor[
                 DType.float32, a_reg_layout, MutAnyOrigin, address_space=AddressSpace.LOCAL
             ].stack_allocation()
-            var a_vec = a_p.vectorize[1, PVMma.a_reg_type.size]()
+            var a_vec = a_p.vectorize[1, PVMma.a_reg_type.length]()
             a_vec[0, 0] = rebind[type_of(a_vec[0, 0])](
                 SIMD[DType.float32, 4](
                     low_r0_0 if col_pair == 0 else low_r0_1,
@@ -385,7 +392,7 @@ def flash_attn_dq_kernel_mma[
             var row = q_row_block + slot // D_BUCKET
             var col = slot % D_BUCKET
             if row < S and col < D:
-                dq[qkv_bh + row * HD + col] = Scalar[dtype](kv_smem[slot])
+                dq[unsafe_offset=qkv_bh + row * HD + col] = Scalar[dtype](kv_smem[unsafe_offset=slot])
 
 
 # ===-------------------------------------------------------------------===#
@@ -419,27 +426,31 @@ def flash_attn_dq_kernel_mma[
 def flash_attn_dkdv_kernel_mma[
     dtype: DType, D_BUCKET: Int, CAUSAL: Bool, HAS_BIAS: Bool
 ](
-    dy: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    q: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    k: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    v: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    mask: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    lse: UnsafePointer[Float32, ImmutAnyOrigin],
-    delta: UnsafePointer[Float32, ImmutAnyOrigin],
-    dk: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dv: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    B: Int,
-    S: Int,
-    H: Int,
-    D: Int,
+    dy: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    q: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    k: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    v: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    mask: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    lse: Pointer[Float32, ImmutAnyOrigin],
+    delta: Pointer[Float32, ImmutAnyOrigin],
+    dk: Pointer[Scalar[dtype], MutAnyOrigin],
+    dv: Pointer[Scalar[dtype], MutAnyOrigin],
+    B_arg: Int64,
+    S_arg: Int64,
+    H_arg: Int64,
+    D_arg: Int64,
     scale: Float32,
 ):
+    var B = Int(B_arg)
+    var S = Int(S_arg)
+    var H = Int(H_arg)
+    var D = Int(D_arg)
     comptime assert D_BUCKET % MMA_K == 0, "D_BUCKET must be divisible by MMA_K=8"
     comptime assert Br_MMA % MMA_N == 0, "Br_MMA must be divisible by MMA_N=8"
     comptime D_TILES = D_BUCKET // MMA_K
     comptime N_TILES = Br_MMA // MMA_N
     comptime O_TILES = D_BUCKET // MMA_N
-    comptime frag_size = QKMma.c_reg_type.size
+    comptime frag_size = QKMma.c_reg_type.length
 
     var tid = Int(thread_idx.x)
     var warp_id = tid // WARP_SIZE
@@ -463,14 +474,14 @@ def flash_attn_dkdv_kernel_mma[
     var lse_base = b * H * S + h * S
     var scale_log2e = scale * LOG2E
 
-    var smem = rebind[UnsafePointer[Float32, MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
+    var smem = rebind[Pointer[Float32, MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
         external_memory[Float32, address_space=AddressSpace.SHARED, alignment=16, name="attn_dkdv_mma_smem"]()
     )
     var lse_smem = smem  # Br_MMA
-    var delta_smem = lse_smem + Br_MMA  # Br_MMA
-    var stage_smem = delta_smem + Br_MMA  # Bc_MMA * MMA_K scratch for K/V staging
-    var qdo_stage_smem = stage_smem + Bc_MMA * MMA_K  # Br_MMA * MMA_K scratch for Q/dO staging
-    var out_smem = qdo_stage_smem + Br_MMA * MMA_K  # Bc_MMA * MMA_N unpack tile
+    var delta_smem = lse_smem.unsafe_offset(Br_MMA)  # Br_MMA
+    var stage_smem = delta_smem.unsafe_offset(Br_MMA)  # Bc_MMA * MMA_K scratch for K/V staging
+    var qdo_stage_smem = stage_smem.unsafe_offset(Bc_MMA * MMA_K)  # Br_MMA * MMA_K scratch for Q/dO staging
+    var out_smem = qdo_stage_smem.unsafe_offset(Br_MMA * MMA_K)  # Bc_MMA * MMA_N unpack tile
 
     var qk_op = QKMma()
     var pv_op = PVMma()
@@ -507,8 +518,8 @@ def flash_attn_dkdv_kernel_mma[
         # Load LSE and delta for this Q tile
         if tid < Br_MMA:
             var q_row = ibase + tid
-            lse_smem[tid] = lse[lse_base + q_row] * LOG2E if q_row < S else Float32(0)
-            delta_smem[tid] = delta[lse_base + q_row] if q_row < S else Float32(0)
+            lse_smem[unsafe_offset=tid] = lse[unsafe_offset=lse_base + q_row] * LOG2E if q_row < S else Float32(0)
+            delta_smem[unsafe_offset=tid] = delta[unsafe_offset=lse_base + q_row] if q_row < S else Float32(0)
         barrier()
 
         # The logical score tile is [kv row, q row], so LSE/delta are indexed
@@ -533,16 +544,16 @@ def flash_attn_dkdv_kernel_mma[
                 if slot < Bc_MMA * MMA_K:
                     var kv_row = kv_row_block + slot // MMA_K
                     var kv_col = d_tile * MMA_K + slot % MMA_K
-                    stage_smem[slot] = Float32(
-                        k[qkv_bh + kv_row * HD + kv_col]
+                    stage_smem[unsafe_offset=slot] = Float32(
+                        k[unsafe_offset=qkv_bh + kv_row * HD + kv_col]
                     ) if kv_row < S and kv_col < D else Float32(0)
             comptime for idx in range((Br_MMA * MMA_K + BLOCK_SIZE_MMA - 1) // BLOCK_SIZE_MMA):
                 var slot = tid + idx * BLOCK_SIZE_MMA
                 if slot < Br_MMA * MMA_K:
                     var q_row = ibase + slot // MMA_K
                     var q_col = d_tile * MMA_K + slot % MMA_K
-                    qdo_stage_smem[slot] = Float32(
-                        q[qkv_bh + q_row * HD + q_col]
+                    qdo_stage_smem[unsafe_offset=slot] = Float32(
+                        q[unsafe_offset=qkv_bh + q_row * HD + q_col]
                     ) if q_row < S and q_col < D else Float32(0)
             barrier()
             var k_tensor = LayoutTensor[DType.float32, stage_layout, address_space=AddressSpace.SHARED](stage_smem)
@@ -564,8 +575,8 @@ def flash_attn_dkdv_kernel_mma[
             var q1_local = n_tile * MMA_N + frag_c1
             var q0 = ibase + q0_local
             var q1 = ibase + q1_local
-            var lse0_l2 = lse_smem[q0_local] if q0_local < Br_MMA else Float32(0)
-            var lse1_l2 = lse_smem[q1_local] if q1_local < Br_MMA else Float32(0)
+            var lse0_l2 = lse_smem[unsafe_offset=q0_local] if q0_local < Br_MMA else Float32(0)
+            var lse1_l2 = lse_smem[unsafe_offset=q1_local] if q1_local < Br_MMA else Float32(0)
             var score_vec = score_reg.tile[1, frag_size](n_tile, 0).vectorize[1, frag_size]()
             var p = rebind[SIMD[DType.float32, 4]](score_vec[0, 0])
             var ok00 = kv0 < S and q0 < S
@@ -583,10 +594,10 @@ def flash_attn_dkdv_kernel_mma[
                 ok11 = ok11 and kv1 <= q1
             elif HAS_BIAS:
                 var mask_bh = b * H * S * S + h * S * S
-                m00 = Float32(mask[mask_bh + q0 * S + kv0]) * LOG2E if ok00 else Float32(0)
-                m01 = Float32(mask[mask_bh + q1 * S + kv0]) * LOG2E if ok01 else Float32(0)
-                m10 = Float32(mask[mask_bh + q0 * S + kv1]) * LOG2E if ok10 else Float32(0)
-                m11 = Float32(mask[mask_bh + q1 * S + kv1]) * LOG2E if ok11 else Float32(0)
+                m00 = Float32(mask[unsafe_offset=mask_bh + q0 * S + kv0]) * LOG2E if ok00 else Float32(0)
+                m01 = Float32(mask[unsafe_offset=mask_bh + q1 * S + kv0]) * LOG2E if ok01 else Float32(0)
+                m10 = Float32(mask[unsafe_offset=mask_bh + q0 * S + kv1]) * LOG2E if ok10 else Float32(0)
+                m11 = Float32(mask[unsafe_offset=mask_bh + q1 * S + kv1]) * LOG2E if ok11 else Float32(0)
             p[0] = exp2(p[0] * scale_log2e + m00 - lse0_l2) if ok00 else Float32(0)
             p[1] = exp2(p[1] * scale_log2e + m01 - lse1_l2) if ok01 else Float32(0)
             p[2] = exp2(p[2] * scale_log2e + m10 - lse0_l2) if ok10 else Float32(0)
@@ -607,16 +618,16 @@ def flash_attn_dkdv_kernel_mma[
                 if slot < Bc_MMA * MMA_K:
                     var kv_row = kv_row_block + slot // MMA_K
                     var kv_col = d_tile * MMA_K + slot % MMA_K
-                    stage_smem[slot] = Float32(
-                        v[qkv_bh + kv_row * HD + kv_col]
+                    stage_smem[unsafe_offset=slot] = Float32(
+                        v[unsafe_offset=qkv_bh + kv_row * HD + kv_col]
                     ) if kv_row < S and kv_col < D else Float32(0)
             comptime for idx in range((Br_MMA * MMA_K + BLOCK_SIZE_MMA - 1) // BLOCK_SIZE_MMA):
                 var slot = tid + idx * BLOCK_SIZE_MMA
                 if slot < Br_MMA * MMA_K:
                     var q_row = ibase + slot // MMA_K
                     var q_col = d_tile * MMA_K + slot % MMA_K
-                    qdo_stage_smem[slot] = Float32(
-                        dy[bh_base + q_row * D + q_col]
+                    qdo_stage_smem[unsafe_offset=slot] = Float32(
+                        dy[unsafe_offset=bh_base + q_row * D + q_col]
                     ) if q_row < S and q_col < D else Float32(0)
             barrier()
             var v_tensor = LayoutTensor[DType.float32, stage_layout, address_space=AddressSpace.SHARED](stage_smem)
@@ -637,8 +648,8 @@ def flash_attn_dkdv_kernel_mma[
         comptime for n_tile in range(N_TILES):
             var q0_local = n_tile * MMA_N + frag_c0
             var q1_local = n_tile * MMA_N + frag_c1
-            var delta0 = delta_smem[q0_local] if q0_local < Br_MMA else Float32(0)
-            var delta1 = delta_smem[q1_local] if q1_local < Br_MMA else Float32(0)
+            var delta0 = delta_smem[unsafe_offset=q0_local] if q0_local < Br_MMA else Float32(0)
+            var delta1 = delta_smem[unsafe_offset=q1_local] if q1_local < Br_MMA else Float32(0)
             var score_vec = score_reg.tile[1, frag_size](n_tile, 0).vectorize[1, frag_size]()
             var dp_vec = dp_reg.tile[1, frag_size](n_tile, 0).vectorize[1, frag_size]()
             var p = rebind[SIMD[DType.float32, 4]](score_vec[0, 0])
@@ -693,12 +704,12 @@ def flash_attn_dkdv_kernel_mma[
                 if slot < Br_MMA * MMA_N:
                     var q_row = ibase + slot // MMA_N
                     var q_col = d_tile * MMA_N + slot % MMA_N
-                    qdo_stage_smem[slot] = Float32(
-                        dy[bh_base + q_row * D + q_col]
+                    qdo_stage_smem[unsafe_offset=slot] = Float32(
+                        dy[unsafe_offset=bh_base + q_row * D + q_col]
                     ) if q_row < S and q_col < D else Float32(0)
-                    stage_smem[slot] = Float32(q[qkv_bh + q_row * HD + q_col]) if q_row < S and q_col < D else Float32(
-                        0
-                    )
+                    stage_smem[unsafe_offset=slot] = Float32(
+                        q[unsafe_offset=qkv_bh + q_row * HD + q_col]
+                    ) if q_row < S and q_col < D else Float32(0)
             barrier()
             var do_tensor = LayoutTensor[DType.float32, qdo_stage_layout, address_space=AddressSpace.SHARED](
                 qdo_stage_smem
@@ -724,7 +735,7 @@ def flash_attn_dkdv_kernel_mma[
                 var row = kv_row_block + slot // MMA_N
                 var col = d_tile * MMA_N + slot % MMA_N
                 if row < S and col < D:
-                    dv[qkv_bh + row * HD + col] = Scalar[dtype](out_smem[slot])
+                    dv[unsafe_offset=qkv_bh + row * HD + col] = Scalar[dtype](out_smem[unsafe_offset=slot])
         barrier()
         pv_op.store_d(out_tensor.tile[MMA_M, MMA_N](warp_id, 0), dk_reg.tile[1, frag_size](d_tile, 0))
         barrier()
@@ -734,7 +745,7 @@ def flash_attn_dkdv_kernel_mma[
                 var row = kv_row_block + slot // MMA_N
                 var col = d_tile * MMA_N + slot % MMA_N
                 if row < S and col < D:
-                    dk[qkv_bh + row * HD + col] = Scalar[dtype](out_smem[slot])
+                    dk[unsafe_offset=qkv_bh + row * HD + col] = Scalar[dtype](out_smem[unsafe_offset=slot])
         barrier()
 
 
@@ -775,14 +786,18 @@ def flash_attn_dkdv_kernel_mma[
 def flash_attn_bwd_delta_kernel[
     dtype: DType
 ](
-    dy: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    o: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    delta: UnsafePointer[Float32, MutAnyOrigin],
-    B: Int,
-    S: Int,
-    H: Int,
-    D: Int,
+    dy: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    o: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    delta: Pointer[Float32, MutAnyOrigin],
+    B_arg: Int64,
+    S_arg: Int64,
+    H_arg: Int64,
+    D_arg: Int64,
 ):
+    var B = Int(B_arg)
+    var S = Int(S_arg)
+    var H = Int(H_arg)
+    var D = Int(D_arg)
     var tid = Int(thread_idx.x)
     var warp_id = tid // WARP_SIZE
     var lane = tid % WARP_SIZE
@@ -809,26 +824,27 @@ def flash_attn_bwd_delta_kernel[
             if D % 8 == 0:
                 for dv8 in range(lane, D // 8, WARP_SIZE):
                     var idx = bh_base + row * D + dv8 * 8
-                    var vo = o.load[width=8](idx).cast[DType.float32]()
-                    var vdy = dy.load[width=8](idx).cast[DType.float32]()
+                    var vo = o.unsafe_load[width=8](idx).cast[DType.float32]()
+                    var vdy = dy.unsafe_load[width=8](idx).cast[DType.float32]()
                     acc += (vo * vdy).reduce_add()
             else:
                 for d in range(lane, D, WARP_SIZE):
                     var idx = bh_base + row * D + d
-                    acc += Float32(o[idx]) * Float32(dy[idx])
+                    acc += Float32(o[unsafe_offset=idx]) * Float32(dy[unsafe_offset=idx])
         var delta_row = warp_sum(acc)
         if lane == 0 and row < S:
-            delta[delta_base + row] = delta_row
+            delta[unsafe_offset=delta_base + row] = delta_row
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(DQ_CONVERT_BLOCK)))
 @__name(t"flash_attn_dq_convert_{dtype}")
 def flash_attn_dq_convert_kernel[
     dtype: DType
-](dq_accum: UnsafePointer[Float32, ImmutAnyOrigin], dq: UnsafePointer[Scalar[dtype], MutAnyOrigin], numel: Int,):
+](dq_accum: Pointer[Float32, ImmutAnyOrigin], dq: Pointer[Scalar[dtype], MutAnyOrigin], numel_arg: Int64,):
+    var numel = Int(numel_arg)
     var idx = Int(block_idx.x) * DQ_CONVERT_BLOCK + Int(thread_idx.x)
     if idx < numel:
-        dq[idx] = Scalar[dtype](dq_accum[idx])
+        dq[unsafe_offset=idx] = Scalar[dtype](dq_accum[unsafe_offset=idx])
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE_BWD_HALF)))
@@ -836,22 +852,26 @@ def flash_attn_dq_convert_kernel[
 def flash_attn_bwd_kernel_mma_half[
     dtype: DType, D_BUCKET: Int, CAUSAL: Bool, HAS_BIAS: Bool
 ](
-    dy: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    q: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    k: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    v: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    mask: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    lse: UnsafePointer[Float32, ImmutAnyOrigin],
-    delta: UnsafePointer[Float32, ImmutAnyOrigin],
-    dk: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dv: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dq_accum: UnsafePointer[Float32, MutAnyOrigin],
-    B: Int,
-    S: Int,
-    H: Int,
-    D: Int,
+    dy: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    q: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    k: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    v: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    mask: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    lse: Pointer[Float32, ImmutAnyOrigin],
+    delta: Pointer[Float32, ImmutAnyOrigin],
+    dk: Pointer[Scalar[dtype], MutAnyOrigin],
+    dv: Pointer[Scalar[dtype], MutAnyOrigin],
+    dq_accum: Pointer[Float32, MutAnyOrigin],
+    B_arg: Int64,
+    S_arg: Int64,
+    H_arg: Int64,
+    D_arg: Int64,
     scale: Float32,
 ):
+    var B = Int(B_arg)
+    var S = Int(S_arg)
+    var H = Int(H_arg)
+    var D = Int(D_arg)
     comptime assert dtype.is_half_float(), "half MMA backward requires float16 or bfloat16 inputs"
     comptime HMMA_K = 16
     comptime assert D_BUCKET % HMMA_K == 0, "D_BUCKET must be divisible by HMMA_K=16"
@@ -862,7 +882,7 @@ def flash_attn_bwd_kernel_mma_half[
     comptime DW_TILES = D_BUCKET // 2 // MMA_N  # d-column tiles per warp
     comptime QKHalf = TensorCore[DType.float32, dtype, shape_16x8x16, True]
     comptime PVHalf = TensorCore[DType.float32, dtype, shape_16x8x16, False]
-    comptime frag_size = QKHalf.c_reg_type.size
+    comptime frag_size = QKHalf.c_reg_type.length
 
     var tid = Int(thread_idx.x)
     var warp_id = tid // WARP_SIZE
@@ -902,24 +922,24 @@ def flash_attn_bwd_kernel_mma_half[
     comptime p_swizzle = make_ldmatrix_swizzle[dtype, Br_MMA]()
     comptime kv_swz: Optional[Swizzle] = kv_swizzle
     comptime p_swz: Optional[Swizzle] = p_swizzle
-    comptime a_frag_size = QKHalf.a_reg_type.size
-    comptime b_frag_size = QKHalf.b_reg_type.size
-    var smem = rebind[UnsafePointer[Scalar[dtype], MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
+    comptime a_frag_size = QKHalf.a_reg_type.length
+    comptime b_frag_size = QKHalf.b_reg_type.length
+    var smem = rebind[Pointer[Scalar[dtype], MutUntrackedOrigin, address_space=AddressSpace.SHARED]](
         external_memory[Scalar[dtype], address_space=AddressSpace.SHARED, alignment=16, name="attn_bwd_half_smem"]()
     )
-    var lse_smem = smem.bitcast[Float32]()  # Br_MMA float32
-    var delta_smem = lse_smem + Br_MMA  # Br_MMA float32
-    var k_smem = smem + 4 * Br_MMA  # skip the f32 head (2*Br_MMA floats = 4*Br_MMA halves)
-    var v_smem = k_smem + Bc_MMA * D_BUCKET
-    var q_smem = v_smem + Bc_MMA * D_BUCKET
-    var do_smem = q_smem + Br_MMA * D_BUCKET
-    var p_smem = do_smem + Br_MMA * D_BUCKET  # P  [kv, q]
-    var ds_smem = p_smem + Bc_MMA * Br_MMA  # dS [kv, q]
-    var dst_smem = ds_smem + Bc_MMA * Br_MMA  # dS^T [q, kv]
+    var lse_smem = smem.unsafe_bitcast[Float32]()  # Br_MMA float32
+    var delta_smem = lse_smem.unsafe_offset(Br_MMA)  # Br_MMA float32
+    var k_smem = smem.unsafe_offset(4 * Br_MMA)  # skip the f32 head (2*Br_MMA floats = 4*Br_MMA halves)
+    var v_smem = k_smem.unsafe_offset(Bc_MMA * D_BUCKET)
+    var q_smem = v_smem.unsafe_offset(Bc_MMA * D_BUCKET)
+    var do_smem = q_smem.unsafe_offset(Br_MMA * D_BUCKET)
+    var p_smem = do_smem.unsafe_offset(Br_MMA * D_BUCKET)  # P  [kv, q]
+    var ds_smem = p_smem.unsafe_offset(Bc_MMA * Br_MMA)  # dS [kv, q]
+    var dst_smem = ds_smem.unsafe_offset(Bc_MMA * Br_MMA)  # dS^T [q, kv]
     # Mask (additive bias) tile [q, kv], plain layout, only used non-causal.
     # It is staged per pair because the bias tensor is B*H*S*S and exceeds
     # L2 at large shapes, where scalar per-fragment reads stall the block.
-    var mask_smem = dst_smem + Bc_MMA * Br_MMA
+    var mask_smem = dst_smem.unsafe_offset(Bc_MMA * Br_MMA)
 
     var qk_op = QKHalf()
     var pv_op = PVHalf()
@@ -962,13 +982,17 @@ def flash_attn_bwd_kernel_mma_half[
             var kv_col = (vslot % KV_CHUNKS) * COPY_VEC
             var res_idx = kv_swizzle(vslot) * COPY_VEC
             if kv_row < S and kv_col + COPY_VEC <= D:
-                k_smem.store(res_idx, k.load[width=COPY_VEC, alignment=16](qkv_bh + kv_row * HD + kv_col))
-                v_smem.store(res_idx, v.load[width=COPY_VEC, alignment=16](qkv_bh + kv_row * HD + kv_col))
+                k_smem.unsafe_store(res_idx, k.unsafe_load[width=COPY_VEC, alignment=16](qkv_bh + kv_row * HD + kv_col))
+                v_smem.unsafe_store(res_idx, v.unsafe_load[width=COPY_VEC, alignment=16](qkv_bh + kv_row * HD + kv_col))
             else:
                 comptime for e in range(COPY_VEC):
                     var kv_ok = kv_row < S and kv_col + e < D
-                    k_smem[res_idx + e] = k[qkv_bh + kv_row * HD + kv_col + e] if kv_ok else Scalar[dtype](0)
-                    v_smem[res_idx + e] = v[qkv_bh + kv_row * HD + kv_col + e] if kv_ok else Scalar[dtype](0)
+                    k_smem[unsafe_offset=res_idx + e] = k[
+                        unsafe_offset=qkv_bh + kv_row * HD + kv_col + e
+                    ] if kv_ok else Scalar[dtype](0)
+                    v_smem[unsafe_offset=res_idx + e] = v[
+                        unsafe_offset=qkv_bh + kv_row * HD + kv_col + e
+                    ] if kv_ok else Scalar[dtype](0)
     barrier()
 
     var k_tensor = LayoutTensor[dtype, kv_layout, address_space=AddressSpace.SHARED](k_smem)
@@ -990,8 +1014,8 @@ def flash_attn_bwd_kernel_mma_half[
         # Load LSE/delta and this Q tile's Q and dO (half)
         if tid < Br_MMA:
             var q_row = ibase + tid
-            lse_smem[tid] = lse[lse_base + q_row] * LOG2E if q_row < S else Float32(0)
-            delta_smem[tid] = delta[lse_base + q_row] if q_row < S else Float32(0)
+            lse_smem[unsafe_offset=tid] = lse[unsafe_offset=lse_base + q_row] * LOG2E if q_row < S else Float32(0)
+            delta_smem[unsafe_offset=tid] = delta[unsafe_offset=lse_base + q_row] if q_row < S else Float32(0)
 
         # Hot per-tile Q/dO staging via cp.async
         comptime Q_VECS = Br_MMA * KV_CHUNKS
@@ -1005,13 +1029,15 @@ def flash_attn_bwd_kernel_mma_half[
                     var res_idx = kv_swizzle(vslot) * COPY_VEC
                     var src_bytes = Int32(2 * COPY_VEC) if q_row < S else Int32(0)
                     async_copy[16, fill=Scalar[dtype](0)](
-                        (q + qkv_bh + q_row * HD + q_col).address_space_cast[AddressSpace.GLOBAL](),
-                        q_smem + res_idx,
+                        (q.unsafe_offset(qkv_bh + q_row * HD + q_col)).unsafe_address_space_cast[AddressSpace.GLOBAL](),
+                        q_smem.unsafe_offset(res_idx),
                         src_bytes,
                     )
                     async_copy[16, fill=Scalar[dtype](0)](
-                        (dy + bh_base + q_row * D + q_col).address_space_cast[AddressSpace.GLOBAL](),
-                        do_smem + res_idx,
+                        (dy.unsafe_offset(bh_base + q_row * D + q_col)).unsafe_address_space_cast[
+                            AddressSpace.GLOBAL
+                        ](),
+                        do_smem.unsafe_offset(res_idx),
                         src_bytes,
                     )
             async_copy_commit_group()
@@ -1026,8 +1052,12 @@ def flash_attn_bwd_kernel_mma_half[
                     var res_idx = kv_swizzle(vslot) * COPY_VEC
                     comptime for e in range(COPY_VEC):
                         var q_ok = q_row < S and q_col + e < D
-                        q_smem[res_idx + e] = q[qkv_bh + q_row * HD + q_col + e] if q_ok else Scalar[dtype](0)
-                        do_smem[res_idx + e] = dy[bh_base + q_row * D + q_col + e] if q_ok else Scalar[dtype](0)
+                        q_smem[unsafe_offset=res_idx + e] = q[
+                            unsafe_offset=qkv_bh + q_row * HD + q_col + e
+                        ] if q_ok else Scalar[dtype](0)
+                        do_smem[unsafe_offset=res_idx + e] = dy[
+                            unsafe_offset=bh_base + q_row * D + q_col + e
+                        ] if q_ok else Scalar[dtype](0)
         comptime if HAS_BIAS:
             # Bias tile via cp.async. Evict-first when the bias exceeds L2
             # (an oversize mask must not evict the reused K/Q/dO tiles).
@@ -1049,14 +1079,18 @@ def flash_attn_bwd_kernel_mma_half[
                         var src_bytes = Int32(2 * valid) if g_q < S else Int32(0)
                         if mask_oversize:
                             async_copy[16, fill=Scalar[dtype](0), eviction_policy=CacheEviction.EVICT_FIRST](
-                                (mask + mask_bh_s + g_q * S + g_k).address_space_cast[AddressSpace.GLOBAL](),
-                                mask_smem + res_idx,
+                                (mask.unsafe_offset(mask_bh_s + g_q * S + g_k)).unsafe_address_space_cast[
+                                    AddressSpace.GLOBAL
+                                ](),
+                                mask_smem.unsafe_offset(res_idx),
                                 src_bytes,
                             )
                         else:
                             async_copy[16, fill=Scalar[dtype](0)](
-                                (mask + mask_bh_s + g_q * S + g_k).address_space_cast[AddressSpace.GLOBAL](),
-                                mask_smem + res_idx,
+                                (mask.unsafe_offset(mask_bh_s + g_q * S + g_k)).unsafe_address_space_cast[
+                                    AddressSpace.GLOBAL
+                                ](),
+                                mask_smem.unsafe_offset(res_idx),
                                 src_bytes,
                             )
                 async_copy_commit_group()
@@ -1072,7 +1106,9 @@ def flash_attn_bwd_kernel_mma_half[
                         var res_idx = mq * Bc_MMA + mk
                         comptime for e in range(COPY_VEC):
                             var m_ok = g_q < S and g_k + e < S
-                            mask_smem[res_idx + e] = mask[mask_bh_s + g_q * S + g_k + e] if m_ok else Scalar[dtype](0)
+                            mask_smem[unsafe_offset=res_idx + e] = mask[
+                                unsafe_offset=mask_bh_s + g_q * S + g_k + e
+                            ] if m_ok else Scalar[dtype](0)
         barrier()
 
         # score = K @ Q^T and dp = V @ dO^T, one fused K-depth pass
@@ -1134,10 +1170,10 @@ def flash_attn_bwd_kernel_mma_half[
             var q1_local = q0_local + 1
             var q0 = ibase + q0_local
             var q1 = ibase + q1_local
-            var lse0_l2 = lse_smem[q0_local]
-            var lse1_l2 = lse_smem[q1_local]
-            var delta0 = delta_smem[q0_local]
-            var delta1 = delta_smem[q1_local]
+            var lse0_l2 = lse_smem[unsafe_offset=q0_local]
+            var lse1_l2 = lse_smem[unsafe_offset=q1_local]
+            var delta0 = delta_smem[unsafe_offset=q0_local]
+            var delta1 = delta_smem[unsafe_offset=q1_local]
             var score_vec = score_reg.tile[1, frag_size](n_t, 0).vectorize[1, frag_size]()
             var dp_vec = dp_reg.tile[1, frag_size](n_t, 0).vectorize[1, frag_size]()
             var p = rebind[SIMD[DType.float32, 4]](score_vec[0, 0])
@@ -1156,10 +1192,10 @@ def flash_attn_bwd_kernel_mma_half[
                 ok10 = ok10 and kv1 <= q0
                 ok11 = ok11 and kv1 <= q1
             elif HAS_BIAS:
-                m00 = Float32(mask_smem[q0_local * Bc_MMA + kvr0]) * LOG2E if ok00 else Float32(0)
-                m01 = Float32(mask_smem[q1_local * Bc_MMA + kvr0]) * LOG2E if ok01 else Float32(0)
-                m10 = Float32(mask_smem[q0_local * Bc_MMA + kvr1]) * LOG2E if ok10 else Float32(0)
-                m11 = Float32(mask_smem[q1_local * Bc_MMA + kvr1]) * LOG2E if ok11 else Float32(0)
+                m00 = Float32(mask_smem[unsafe_offset=q0_local * Bc_MMA + kvr0]) * LOG2E if ok00 else Float32(0)
+                m01 = Float32(mask_smem[unsafe_offset=q1_local * Bc_MMA + kvr0]) * LOG2E if ok01 else Float32(0)
+                m10 = Float32(mask_smem[unsafe_offset=q0_local * Bc_MMA + kvr1]) * LOG2E if ok10 else Float32(0)
+                m11 = Float32(mask_smem[unsafe_offset=q1_local * Bc_MMA + kvr1]) * LOG2E if ok11 else Float32(0)
             p[0] = exp2(p[0] * scale_log2e + m00 - lse0_l2) if ok00 else Float32(0)
             p[1] = exp2(p[1] * scale_log2e + m01 - lse1_l2) if ok01 else Float32(0)
             p[2] = exp2(p[2] * scale_log2e + m10 - lse0_l2) if ok10 else Float32(0)
@@ -1176,10 +1212,10 @@ def flash_attn_bwd_kernel_mma_half[
             var p_base0 = p_swizzle(kvr0 * P_CHUNKS + q0_local // COPY_VEC) * COPY_VEC
             var p_base1 = p_swizzle(kvr1 * P_CHUNKS + q0_local // COPY_VEC) * COPY_VEC
             var qe0 = q0_local % COPY_VEC
-            p_smem.store(p_base0 + qe0, SIMD[dtype, 2](Scalar[dtype](p[0]), Scalar[dtype](p[1])))
-            p_smem.store(p_base1 + qe0, SIMD[dtype, 2](Scalar[dtype](p[2]), Scalar[dtype](p[3])))
-            ds_smem.store(p_base0 + qe0, SIMD[dtype, 2](Scalar[dtype](ds[0]), Scalar[dtype](ds[1])))
-            ds_smem.store(p_base1 + qe0, SIMD[dtype, 2](Scalar[dtype](ds[2]), Scalar[dtype](ds[3])))
+            p_smem.unsafe_store(p_base0 + qe0, SIMD[dtype, 2](Scalar[dtype](p[0]), Scalar[dtype](p[1])))
+            p_smem.unsafe_store(p_base1 + qe0, SIMD[dtype, 2](Scalar[dtype](p[2]), Scalar[dtype](p[3])))
+            ds_smem.unsafe_store(p_base0 + qe0, SIMD[dtype, 2](Scalar[dtype](ds[0]), Scalar[dtype](ds[1])))
+            ds_smem.unsafe_store(p_base1 + qe0, SIMD[dtype, 2](Scalar[dtype](ds[2]), Scalar[dtype](ds[3])))
             # dS^T is not materialized. The dQ A-operand reads ds_smem
             # (dS[kv,q]) transposed via ldmatrix.trans below, mimicking
             # FA2's sdSt view.
@@ -1224,7 +1260,7 @@ def flash_attn_bwd_kernel_mma_half[
             var t_q_col = warp_r * MMA_M + (m_idx % 2) * 8
             var t_addr = p_swizzle(t_kv_row * P_CHUNKS + t_q_col // COPY_VEC) * COPY_VEC
             a_dst[0, 0] = rebind[type_of(a_dst[0, 0])](
-                ld_matrix[a_frag_size, transpose=True](ds_smem.as_immutable() + t_addr)
+                ld_matrix[a_frag_size, transpose=True](ds_smem.as_imm().unsafe_offset(t_addr))
             )
             comptime if DW_TILES >= 8:
                 # Split the B-fragment batches in half to bound register
@@ -1326,7 +1362,7 @@ def flash_attn_bwd_kernel_mma_half[
                 var g_row = ibase + warp_r * MMA_M + R
                 var g_col = dn_g * MMA_N + C
                 if g_row < S and g_col < D:
-                    _red_add_f32(dq_accum + qkv_bh + g_row * HD + g_col, val)
+                    _red_add_f32(dq_accum.unsafe_offset(qkv_bh + g_row * HD + g_col), val)
         barrier()
 
     # Write dV and dK (per-lane guarded stores from C fragments)
@@ -1344,41 +1380,41 @@ def flash_attn_bwd_kernel_mma_half[
         # back to a single scalar store.
         if row0 < S:
             if col1 < D:
-                dv.store[width=2, alignment=4](
+                dv.unsafe_store[width=2, alignment=4](
                     qkv_bh + row0 * HD + col0, SIMD[dtype, 2](Scalar[dtype](dv_vals[0]), Scalar[dtype](dv_vals[1]))
                 )
-                dk.store[width=2, alignment=4](
+                dk.unsafe_store[width=2, alignment=4](
                     qkv_bh + row0 * HD + col0, SIMD[dtype, 2](Scalar[dtype](dk_vals[0]), Scalar[dtype](dk_vals[1]))
                 )
             elif col0 < D:
-                dv[qkv_bh + row0 * HD + col0] = Scalar[dtype](dv_vals[0])
-                dk[qkv_bh + row0 * HD + col0] = Scalar[dtype](dk_vals[0])
+                dv[unsafe_offset=qkv_bh + row0 * HD + col0] = Scalar[dtype](dv_vals[0])
+                dk[unsafe_offset=qkv_bh + row0 * HD + col0] = Scalar[dtype](dk_vals[0])
         if row1 < S:
             if col1 < D:
-                dv.store[width=2, alignment=4](
+                dv.unsafe_store[width=2, alignment=4](
                     qkv_bh + row1 * HD + col0, SIMD[dtype, 2](Scalar[dtype](dv_vals[2]), Scalar[dtype](dv_vals[3]))
                 )
-                dk.store[width=2, alignment=4](
+                dk.unsafe_store[width=2, alignment=4](
                     qkv_bh + row1 * HD + col0, SIMD[dtype, 2](Scalar[dtype](dk_vals[2]), Scalar[dtype](dk_vals[3]))
                 )
             elif col0 < D:
-                dv[qkv_bh + row1 * HD + col0] = Scalar[dtype](dv_vals[2])
-                dk[qkv_bh + row1 * HD + col0] = Scalar[dtype](dk_vals[2])
+                dv[unsafe_offset=qkv_bh + row1 * HD + col0] = Scalar[dtype](dv_vals[2])
+                dk[unsafe_offset=qkv_bh + row1 * HD + col0] = Scalar[dtype](dk_vals[2])
 
 
 def _flash_attn_bwd_launch_mma_half[
     dtype: DType, D_BUCKET: Int, CAUSAL: Bool, HAS_BIAS: Bool
 ](
-    dy: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    o: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    q: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    k: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    v: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    mask: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    lse: UnsafePointer[Float32, ImmutAnyOrigin],
-    dq: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dk: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dv: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dy: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    o: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    q: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    k: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    v: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    mask: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    lse: Pointer[Float32, ImmutAnyOrigin],
+    dq: Pointer[Scalar[dtype], MutAnyOrigin],
+    dk: Pointer[Scalar[dtype], MutAnyOrigin],
+    dv: Pointer[Scalar[dtype], MutAnyOrigin],
     B: Int,
     S: Int,
     H: Int,
@@ -1413,10 +1449,10 @@ def _flash_attn_bwd_launch_mma_half[
         dy,
         o,
         delta_ptr,
-        B,
-        S,
-        H,
-        D,
+        Int64(B),
+        Int64(S),
+        Int64(H),
+        Int64(D),
         grid_dim=(B * H * num_tiles_q,),
         block_dim=(BLOCK_SIZE_MMA,),
     )
@@ -1433,10 +1469,10 @@ def _flash_attn_bwd_launch_mma_half[
         dk,
         dv,
         dq_accum_ptr,
-        B,
-        S,
-        H,
-        D,
+        Int64(B),
+        Int64(S),
+        Int64(H),
+        Int64(D),
         scale,
         grid_dim=(B * H * num_tiles_kv,),
         block_dim=(BLOCK_SIZE_BWD_HALF,),
@@ -1448,7 +1484,7 @@ def _flash_attn_bwd_launch_mma_half[
     ctx.enqueue_function[convert_fn](
         dq_accum_ptr,
         dq,
-        numel,
+        Int64(numel),
         grid_dim=((numel + DQ_CONVERT_BLOCK - 1) // DQ_CONVERT_BLOCK,),
         block_dim=(DQ_CONVERT_BLOCK,),
     )
@@ -1460,16 +1496,16 @@ def _flash_attn_bwd_launch_mma_half[
 def _flash_attn_bwd_launch_mma[
     dtype: DType, D_BUCKET: Int, CAUSAL: Bool, HAS_BIAS: Bool
 ](
-    dy: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    o: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    q: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    k: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    v: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    mask: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    lse: UnsafePointer[Float32, ImmutAnyOrigin],
-    dq: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dk: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dv: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dy: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    o: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    q: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    k: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    v: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    mask: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    lse: Pointer[Float32, ImmutAnyOrigin],
+    dq: Pointer[Scalar[dtype], MutAnyOrigin],
+    dk: Pointer[Scalar[dtype], MutAnyOrigin],
+    dv: Pointer[Scalar[dtype], MutAnyOrigin],
     B: Int,
     S: Int,
     H: Int,
@@ -1499,10 +1535,10 @@ def _flash_attn_bwd_launch_mma[
         lse,
         dq,
         delta_ptr,
-        B,
-        S,
-        H,
-        D,
+        Int64(B),
+        Int64(S),
+        Int64(H),
+        Int64(D),
         scale,
         grid_dim=(B * H * num_tiles_q,),
         block_dim=(BLOCK_SIZE_MMA,),
@@ -1521,10 +1557,10 @@ def _flash_attn_bwd_launch_mma[
         delta_ptr,
         dk,
         dv,
-        B,
-        S,
-        H,
-        D,
+        Int64(B),
+        Int64(S),
+        Int64(H),
+        Int64(D),
         scale,
         grid_dim=(B * H * num_tiles_kv,),
         block_dim=(BLOCK_SIZE_MMA,),
