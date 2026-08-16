@@ -1,4 +1,10 @@
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
+from max.gpu.host import DeviceContext
+from std.gpu.host import get_gpu_target
+from std.sys.info import simd_width_of
+from std.utils.index import IndexList
+from layout import Coord
+from mograd.memory import scratch_take
 
 from nn.rand_normal import random_normal
 from nn.rand_uniform import random_uniform
@@ -13,7 +19,7 @@ from mograd.runtime.gpu.kernels.strided import strided_offset
 def randn[
     dtype: DType
 ](
-    dst: UnsafePointer[mut=True, Scalar[dtype], _],
+    dst: Pointer[mut=True, Scalar[dtype], _],
     n: Int,
     mean: Float32,
     std: Float32,
@@ -23,15 +29,17 @@ def randn[
     var seed_buf = scratch_take[DType.uint64](ctx, 1)
     seed_buf.enqueue_fill(seed)
 
-    def store[width: SIMDSize, rank: Int](idx: IndexList[rank], val: SIMD[dtype, width]) capturing:
-        dst.store(idx[0], val)
+    @always_inline
+    def store[width: SIMDLength, rank: Int](idx: IndexList[rank], val: SIMD[dtype, width]) {imm dst}:
+        dst.unsafe_store(idx[0], val)
 
-    random_normal[output_fn=store, target="gpu"](
+    random_normal[target="gpu"](
         IndexList[1](n),
         mean,
         std,
         seed_buf.unsafe_ptr().as_unsafe_any_origin(),
         ctx,
+        store,
     )
     ctx.synchronize()
 
@@ -44,23 +52,22 @@ def randn[
 def uniform[
     dtype: DType
 ](
-    params: UnsafePointer[mut=False, Float32, _],
-    dst: UnsafePointer[mut=True, Scalar[dtype], _],
+    params: Pointer[mut=False, Float32, _],
+    dst: Pointer[mut=True, Scalar[dtype], _],
     n: Int,
     seed: UInt64,
     ctx: DeviceContext,
 ) raises where dtype.is_floating_point():
-    var low = Scalar[dtype](params[0])
-    var high = Scalar[dtype](params[1])
+    var low = Scalar[dtype](params[unsafe_offset=0])
+    var high = Scalar[dtype](params[unsafe_offset=1])
     var seed_buf = scratch_take[DType.uint64](ctx, 1)
     seed_buf.enqueue_fill(seed)
 
-    def store[width: SIMDSize, rank: Int](idx: IndexList[rank], val: SIMD[dtype, width]) capturing:
-        dst.store(idx[0], val)
+    @always_inline
+    def store[width: SIMDLength, rank: Int](idx: IndexList[rank], val: SIMD[dtype, width]) {imm dst}:
+        dst.unsafe_store(idx[0], val)
 
-    random_uniform[output_fn=store, target="gpu"](
-        IndexList[1](n), low, high, seed_buf.unsafe_ptr().as_unsafe_any_origin(), ctx
-    )
+    random_uniform[target="gpu"](IndexList[1](n), low, high, seed_buf.unsafe_ptr().as_unsafe_any_origin(), ctx, store)
     ctx.synchronize()
 
 
@@ -69,11 +76,9 @@ def uniform[
 # ===-------------------------------------------------------------------===#
 
 
-def full[
-    dtype: DType
-](val: Scalar[dtype], dst: UnsafePointer[mut=True, Scalar[dtype], _], n: Int, ctx: DeviceContext) raises:
+def full[dtype: DType](val: Scalar[dtype], dst: Pointer[mut=True, Scalar[dtype], _], n: Int, ctx: DeviceContext) raises:
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-        dst.store[simd_width](Int(coord[0].value()), val)
+        dst.unsafe_store[simd_width](Int(coord[0].value()), val)
 
     comptime width = simd_width_of[dtype, target=get_gpu_target()]()
     elementwise[simd_width=width, target="gpu"](apply, Coord(n), ctx)
@@ -87,27 +92,27 @@ def full[
 def one_hot[
     in_dtype: DType, out_dtype: DType
 ](
-    a: UnsafePointer[mut=False, Scalar[in_dtype], _],
-    dst: UnsafePointer[mut=True, Scalar[out_dtype], _],
+    a: Pointer[mut=False, Scalar[in_dtype], _],
+    dst: Pointer[mut=True, Scalar[out_dtype], _],
     n: Int,
     rank: Int,
-    inner: UnsafePointer[mut=False, Int64, _],
-    sd: UnsafePointer[mut=False, Int64, _],
-    sa: UnsafePointer[mut=False, Int64, _],
+    inner: Pointer[mut=False, Int64, _],
+    sd: Pointer[mut=False, Int64, _],
+    sa: Pointer[mut=False, Int64, _],
     ctx: DeviceContext,
 ) raises where out_dtype.is_integral():
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var flat = Int(coord[0].value())
-        var C = Int(inner[0])
+        var C = Int(inner[unsafe_offset=0])
         var rem = flat
         var dst_off = 0
         for i in range(rank):
-            var idx = rem // Int(inner[i])
-            rem %= Int(inner[i])
-            dst_off += idx * Int(sd[i])
+            var idx = rem // Int(inner[unsafe_offset=i])
+            rem %= Int(inner[unsafe_offset=i])
+            dst_off += idx * Int(sd[unsafe_offset=i])
         var row = flat // C
         var col = flat % C
-        var class_idx = Int(a.load(row * Int(sa[0])))
-        dst.store(dst_off, Scalar[out_dtype](1) if class_idx == col else Scalar[out_dtype](0))
+        var class_idx = Int(a.unsafe_load(row * Int(sa[unsafe_offset=0])))
+        dst.unsafe_store(dst_off, Scalar[out_dtype](1) if class_idx == col else Scalar[out_dtype](0))
 
     elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)

@@ -42,7 +42,7 @@ pooled buffer is gone, a Tensor outliving its Device stays safe.
 
 from std.bit import prev_power_of_two
 from std.ffi import _Global
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.memory import ArcPointer
 from std.os.env import getenv
 from std.sys import size_of
@@ -182,7 +182,7 @@ struct DeviceMemGuard(Movable):
     def __init__(out self, ctx: DeviceContext):
         self.ctx = ctx.copy()
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         try:
             purge(self.ctx)
             self.ctx.synchronize()
@@ -225,14 +225,19 @@ struct Storage(Movable):
         self.pooled = pooled
         self.guard = guard.copy()
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         var class_bytes = self.class_bytes
         var key = self.key
         var pooled = self.pooled
+        # Hold the guard through the release: fields unreferenced in a
+        # deinit body die immediately, which would run the guard's purge
+        # before this block re-enters the pool.
+        var guard = self.guard^
         try:
             _release(self.bytes^, class_bytes, key, pooled)
         except:
             pass
+        _ = guard^
 
 
 def take_storage(
@@ -323,7 +328,7 @@ struct ScratchBuf[dtype: DType](Movable):
         self.view = view^
         self._storage = storage^
 
-    def unsafe_ptr(ref self) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+    def unsafe_ptr(mut self) -> Pointer[Scalar[Self.dtype], MutAnyOrigin]:
         return self.view.unsafe_ptr().as_unsafe_any_origin()
 
     def enqueue_fill(self, value: Scalar[Self.dtype]) raises:

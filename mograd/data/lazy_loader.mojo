@@ -57,7 +57,9 @@ struct LazyLoader:
             out.append(Float32(Int(raw[i])) * scale)
 
         with open(out_path, "w") as f:
-            var bytes = Span[Byte, origin_of(out)](ptr=out.unsafe_ptr().bitcast[Byte](), length=len(out) * 4)
+            var bytes = Span[Byte, origin_of(out)](
+                unsafe_ptr=out.unsafe_ptr().unsafe_bitcast[Byte](), length=len(out) * 4
+            )
             f.write_all(bytes)
 
     def ensure_cached_text_encoded(
@@ -108,7 +110,9 @@ struct LazyLoader:
             ids.append(stoi[Int(cp)])
 
         with open(out_path, "w") as outf:
-            var bytes = Span[Byte, origin_of(ids)](ptr=ids.unsafe_ptr().bitcast[Byte](), length=len(ids) * 8)
+            var bytes = Span[Byte, origin_of(ids)](
+                unsafe_ptr=ids.unsafe_ptr().unsafe_bitcast[Byte](), length=len(ids) * 8
+            )
             outf.write_all(bytes)
 
     def file_len(self, path: String) raises -> Int:

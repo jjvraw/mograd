@@ -12,7 +12,7 @@ from mograd.runtime.gpu.kernels.utils import FlashAttnFwdKernel, FlashAttnBwdKer
 
 
 @always_inline
-def _arg[dtype: DType](buf: CacheBustingBuffer[dtype], i: Int) -> UnsafePointer[NoneType, MutAnyOrigin]:
+def _arg[dtype: DType](buf: CacheBustingBuffer[dtype], i: Int) -> Pointer[NoneType, MutAnyOrigin]:
     return buf.offset_ptr(i).bitcast[NoneType]().as_unsafe_any_origin()
 
 

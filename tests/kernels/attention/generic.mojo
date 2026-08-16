@@ -1,4 +1,4 @@
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import sqrt
 from std.sys import has_accelerator
 from std.sys.info import has_apple_gpu_accelerator
@@ -13,12 +13,12 @@ comptime IS_GENERIC_TARGET = has_accelerator() and not has_apple_gpu_accelerator
 def _fwd[
     dtype: DType, D_BUCKET: Int, CAUSAL: Bool, HAS_BIAS: Bool
 ](
-    q: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    k: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    v: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    mask: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    lse: UnsafePointer[Float32, MutAnyOrigin],
+    q: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    k: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    v: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    mask: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    dst: Pointer[Scalar[dtype], MutAnyOrigin],
+    lse: Pointer[Float32, MutAnyOrigin],
     B: Int,
     S: Int,
     H: Int,
@@ -35,16 +35,16 @@ def _fwd[
 def _bwd[
     dtype: DType, D_BUCKET: Int, CAUSAL: Bool, HAS_BIAS: Bool
 ](
-    dy: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    o: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    q: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    k: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    v: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    mask: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    lse: UnsafePointer[Float32, ImmutAnyOrigin],
-    dq: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dk: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dv: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dy: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    o: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    q: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    k: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    v: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    mask: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    lse: Pointer[Float32, ImmutAnyOrigin],
+    dq: Pointer[Scalar[dtype], MutAnyOrigin],
+    dk: Pointer[Scalar[dtype], MutAnyOrigin],
+    dv: Pointer[Scalar[dtype], MutAnyOrigin],
     B: Int,
     S: Int,
     H: Int,
@@ -66,15 +66,15 @@ def _bwd[
 
 
 def test_fwd_f16_full() raises:
-    @parameter
+    @__parameter
     @always_inline
     def launch(
-        q: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        dst: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-        lse: UnsafePointer[Float32, MutAnyOrigin],
+        q: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        dst: Pointer[Scalar[DType.float16], MutAnyOrigin],
+        lse: Pointer[Float32, MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -89,15 +89,15 @@ def test_fwd_f16_full() raises:
 
 
 def test_fwd_f16_causal() raises:
-    @parameter
+    @__parameter
     @always_inline
     def launch(
-        q: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        dst: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-        lse: UnsafePointer[Float32, MutAnyOrigin],
+        q: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        dst: Pointer[Scalar[DType.float16], MutAnyOrigin],
+        lse: Pointer[Float32, MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -112,15 +112,15 @@ def test_fwd_f16_causal() raises:
 
 
 def test_fwd_f16_bias() raises:
-    @parameter
+    @__parameter
     @always_inline
     def launch(
-        q: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        dst: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-        lse: UnsafePointer[Float32, MutAnyOrigin],
+        q: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        dst: Pointer[Scalar[DType.float16], MutAnyOrigin],
+        lse: Pointer[Float32, MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -135,15 +135,15 @@ def test_fwd_f16_bias() raises:
 
 
 def test_fwd_f16_causal_d128() raises:
-    @parameter
+    @__parameter
     @always_inline
     def launch(
-        q: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        dst: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-        lse: UnsafePointer[Float32, MutAnyOrigin],
+        q: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        dst: Pointer[Scalar[DType.float16], MutAnyOrigin],
+        lse: Pointer[Float32, MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -159,15 +159,15 @@ def test_fwd_f16_causal_d128() raises:
 
 def test_fwd_f16_large_s() raises:
     # S=768 forces the large-grid launch geometry
-    @parameter
+    @__parameter
     @always_inline
     def full(
-        q: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        dst: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-        lse: UnsafePointer[Float32, MutAnyOrigin],
+        q: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        dst: Pointer[Scalar[DType.float16], MutAnyOrigin],
+        lse: Pointer[Float32, MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -180,15 +180,15 @@ def test_fwd_f16_large_s() raises:
     var e = fwd_case[DType.float16, False, False, full, WITH_NAIVE=True](1, 4, 768, 64, 300)
     assert_gate(e.o, e.naive, 2.0, 1e-4, "f16 large-S full generic")
 
-    @parameter
+    @__parameter
     @always_inline
     def causal(
-        q: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        dst: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-        lse: UnsafePointer[Float32, MutAnyOrigin],
+        q: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        dst: Pointer[Scalar[DType.float16], MutAnyOrigin],
+        lse: Pointer[Float32, MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -203,15 +203,15 @@ def test_fwd_f16_large_s() raises:
 
 
 def test_fwd_f32_full() raises:
-    @parameter
+    @__parameter
     @always_inline
     def launch(
-        q: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        dst: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-        lse: UnsafePointer[Float32, MutAnyOrigin],
+        q: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        dst: Pointer[Scalar[DType.float32], MutAnyOrigin],
+        lse: Pointer[Float32, MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -226,15 +226,15 @@ def test_fwd_f32_full() raises:
 
 
 def test_fwd_f32_causal() raises:
-    @parameter
+    @__parameter
     @always_inline
     def launch(
-        q: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        dst: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-        lse: UnsafePointer[Float32, MutAnyOrigin],
+        q: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        dst: Pointer[Scalar[DType.float32], MutAnyOrigin],
+        lse: Pointer[Float32, MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -249,15 +249,15 @@ def test_fwd_f32_causal() raises:
 
 
 def test_fwd_f32_bias() raises:
-    @parameter
+    @__parameter
     @always_inline
     def launch(
-        q: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        dst: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-        lse: UnsafePointer[Float32, MutAnyOrigin],
+        q: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        dst: Pointer[Scalar[DType.float32], MutAnyOrigin],
+        lse: Pointer[Float32, MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -272,15 +272,15 @@ def test_fwd_f32_bias() raises:
 
 
 def test_fwd_f32_d256() raises:
-    @parameter
+    @__parameter
     @always_inline
     def launch(
-        q: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        dst: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-        lse: UnsafePointer[Float32, MutAnyOrigin],
+        q: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        dst: Pointer[Scalar[DType.float32], MutAnyOrigin],
+        lse: Pointer[Float32, MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -297,15 +297,15 @@ def test_fwd_f32_d256() raises:
 def test_fwd_large_logits_stable() raises:
     # std=20 pushes logits to ~|400|. True f32 FMA, so error tracks
     # 400 * 2^-24 amplified (measured 6.9e-5) rather than TF32 physics.
-    @parameter
+    @__parameter
     @always_inline
     def launch(
-        q: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        dst: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-        lse: UnsafePointer[Float32, MutAnyOrigin],
+        q: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        dst: Pointer[Scalar[DType.float32], MutAnyOrigin],
+        lse: Pointer[Float32, MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -335,15 +335,15 @@ def test_fwd_bias_shift_invariance() raises:
         ml_shift.append(m + 8.0)
     var scale = Float32(1.0) / sqrt(Float32(64))
 
-    @parameter
+    @__parameter
     @always_inline
     def launch(
-        q: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        dst: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-        lse: UnsafePointer[Float32, MutAnyOrigin],
+        q: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        dst: Pointer[Scalar[DType.float32], MutAnyOrigin],
+        lse: Pointer[Float32, MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -368,15 +368,15 @@ def test_fwd_bias_shift_invariance() raises:
 
 def test_fwd_d512() raises:
     # D > 256 has no MMA kernel, dispatch routes it here
-    @parameter
+    @__parameter
     @always_inline
     def launch(
-        q: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        dst: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-        lse: UnsafePointer[Float32, MutAnyOrigin],
+        q: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        dst: Pointer[Scalar[DType.float32], MutAnyOrigin],
+        lse: Pointer[Float32, MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -396,15 +396,15 @@ def test_fwd_d512() raises:
 
 
 def test_bwd_f16_causal_d64() raises:
-    @parameter
+    @__parameter
     @always_inline
     def fwd(
-        q: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        dst: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-        lse: UnsafePointer[Float32, MutAnyOrigin],
+        q: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        dst: Pointer[Scalar[DType.float16], MutAnyOrigin],
+        lse: Pointer[Float32, MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -414,19 +414,19 @@ def test_bwd_f16_causal_d64() raises:
     ) raises:
         _fwd[DType.float16, 64, True, False](q, k, v, mask, dst, lse, B, S, H, D, scale, ctx)
 
-    @parameter
+    @__parameter
     @always_inline
     def bwd(
-        dy: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        o: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        q: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        lse: UnsafePointer[Float32, ImmutAnyOrigin],
-        dq: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-        dk: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-        dv: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
+        dy: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        o: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        q: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        lse: Pointer[Float32, ImmutAnyOrigin],
+        dq: Pointer[Scalar[DType.float16], MutAnyOrigin],
+        dk: Pointer[Scalar[DType.float16], MutAnyOrigin],
+        dv: Pointer[Scalar[DType.float16], MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -441,15 +441,15 @@ def test_bwd_f16_causal_d64() raises:
 
 
 def test_bwd_f16_causal_d128() raises:
-    @parameter
+    @__parameter
     @always_inline
     def fwd(
-        q: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        dst: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-        lse: UnsafePointer[Float32, MutAnyOrigin],
+        q: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        dst: Pointer[Scalar[DType.float16], MutAnyOrigin],
+        lse: Pointer[Float32, MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -459,19 +459,19 @@ def test_bwd_f16_causal_d128() raises:
     ) raises:
         _fwd[DType.float16, 128, True, False](q, k, v, mask, dst, lse, B, S, H, D, scale, ctx)
 
-    @parameter
+    @__parameter
     @always_inline
     def bwd(
-        dy: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        o: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        q: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        lse: UnsafePointer[Float32, ImmutAnyOrigin],
-        dq: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-        dk: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-        dv: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
+        dy: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        o: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        q: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        lse: Pointer[Float32, ImmutAnyOrigin],
+        dq: Pointer[Scalar[DType.float16], MutAnyOrigin],
+        dk: Pointer[Scalar[DType.float16], MutAnyOrigin],
+        dv: Pointer[Scalar[DType.float16], MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -486,15 +486,15 @@ def test_bwd_f16_causal_d128() raises:
 
 
 def test_bwd_f16_bias_d64() raises:
-    @parameter
+    @__parameter
     @always_inline
     def fwd(
-        q: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        dst: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-        lse: UnsafePointer[Float32, MutAnyOrigin],
+        q: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        dst: Pointer[Scalar[DType.float16], MutAnyOrigin],
+        lse: Pointer[Float32, MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -504,19 +504,19 @@ def test_bwd_f16_bias_d64() raises:
     ) raises:
         _fwd[DType.float16, 64, False, True](q, k, v, mask, dst, lse, B, S, H, D, scale, ctx)
 
-    @parameter
+    @__parameter
     @always_inline
     def bwd(
-        dy: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        o: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        q: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float16], ImmutAnyOrigin],
-        lse: UnsafePointer[Float32, ImmutAnyOrigin],
-        dq: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-        dk: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-        dv: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
+        dy: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        o: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        q: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float16], ImmutAnyOrigin],
+        lse: Pointer[Float32, ImmutAnyOrigin],
+        dq: Pointer[Scalar[DType.float16], MutAnyOrigin],
+        dk: Pointer[Scalar[DType.float16], MutAnyOrigin],
+        dv: Pointer[Scalar[DType.float16], MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -531,15 +531,15 @@ def test_bwd_f16_bias_d64() raises:
 
 
 def test_bwd_f32_full_d64() raises:
-    @parameter
+    @__parameter
     @always_inline
     def fwd(
-        q: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        dst: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-        lse: UnsafePointer[Float32, MutAnyOrigin],
+        q: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        dst: Pointer[Scalar[DType.float32], MutAnyOrigin],
+        lse: Pointer[Float32, MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -549,19 +549,19 @@ def test_bwd_f32_full_d64() raises:
     ) raises:
         _fwd[DType.float32, 64, False, False](q, k, v, mask, dst, lse, B, S, H, D, scale, ctx)
 
-    @parameter
+    @__parameter
     @always_inline
     def bwd(
-        dy: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        o: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        q: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        lse: UnsafePointer[Float32, ImmutAnyOrigin],
-        dq: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-        dk: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-        dv: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+        dy: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        o: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        q: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        lse: Pointer[Float32, ImmutAnyOrigin],
+        dq: Pointer[Scalar[DType.float32], MutAnyOrigin],
+        dk: Pointer[Scalar[DType.float32], MutAnyOrigin],
+        dv: Pointer[Scalar[DType.float32], MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -576,15 +576,15 @@ def test_bwd_f32_full_d64() raises:
 
 
 def test_bwd_f32_full_d256() raises:
-    @parameter
+    @__parameter
     @always_inline
     def fwd(
-        q: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        dst: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-        lse: UnsafePointer[Float32, MutAnyOrigin],
+        q: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        dst: Pointer[Scalar[DType.float32], MutAnyOrigin],
+        lse: Pointer[Float32, MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -594,19 +594,19 @@ def test_bwd_f32_full_d256() raises:
     ) raises:
         _fwd[DType.float32, 256, False, False](q, k, v, mask, dst, lse, B, S, H, D, scale, ctx)
 
-    @parameter
+    @__parameter
     @always_inline
     def bwd(
-        dy: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        o: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        q: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        lse: UnsafePointer[Float32, ImmutAnyOrigin],
-        dq: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-        dk: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-        dv: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+        dy: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        o: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        q: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        lse: Pointer[Float32, ImmutAnyOrigin],
+        dq: Pointer[Scalar[DType.float32], MutAnyOrigin],
+        dk: Pointer[Scalar[DType.float32], MutAnyOrigin],
+        dv: Pointer[Scalar[DType.float32], MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -621,15 +621,15 @@ def test_bwd_f32_full_d256() raises:
 
 
 def test_bwd_d512() raises:
-    @parameter
+    @__parameter
     @always_inline
     def fwd(
-        q: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        dst: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-        lse: UnsafePointer[Float32, MutAnyOrigin],
+        q: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        dst: Pointer[Scalar[DType.float32], MutAnyOrigin],
+        lse: Pointer[Float32, MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,
@@ -639,19 +639,19 @@ def test_bwd_d512() raises:
     ) raises:
         _fwd[DType.float32, 512, False, False](q, k, v, mask, dst, lse, B, S, H, D, scale, ctx)
 
-    @parameter
+    @__parameter
     @always_inline
     def bwd(
-        dy: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        o: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        q: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        k: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        v: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        mask: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        lse: UnsafePointer[Float32, ImmutAnyOrigin],
-        dq: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-        dk: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-        dv: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+        dy: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        o: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        q: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        k: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        v: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        mask: Pointer[Scalar[DType.float32], ImmutAnyOrigin],
+        lse: Pointer[Float32, ImmutAnyOrigin],
+        dq: Pointer[Scalar[DType.float32], MutAnyOrigin],
+        dk: Pointer[Scalar[DType.float32], MutAnyOrigin],
+        dv: Pointer[Scalar[DType.float32], MutAnyOrigin],
         B: Int,
         S: Int,
         H: Int,

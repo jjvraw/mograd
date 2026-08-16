@@ -1,6 +1,6 @@
 from std.format.tstring import TString
 from std.builtin.builtin_slice import StridedSlice
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 
 from layout.int_tuple import IntTuple, reverse, prefix_product, product, sorted, compact_order
 
@@ -251,14 +251,14 @@ struct Layout(Copyable, ImplicitlyCopyable, Movable, Writable):
             acc *= self.shape(i)
         return reverse(result)
 
-    def shape_ptr(self) -> UnsafePointer[Int, MutAnyOrigin]:
+    def shape_ptr(self) -> Pointer[Int, MutAnyOrigin]:
         """Returns a heap-allocated array of `rank` ints containing the shape dimensions."""
         var p = alloc[Int](self.rank())
         for i in range(self.rank()):
             p[i] = self.shape(i)
         return p
 
-    def stride_ptr(self) -> UnsafePointer[Int, MutAnyOrigin]:
+    def stride_ptr(self) -> Pointer[Int, MutAnyOrigin]:
         """Returns a heap-allocated array of `rank` ints containing the strides."""
         var p = alloc[Int](self.rank())
         for i in range(self.rank()):

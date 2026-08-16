@@ -1,5 +1,5 @@
 from std.memory import ArcPointer
-from std.gpu.host import DeviceContext, DeviceBuffer, HostBuffer
+from max.gpu.host import DeviceContext, DeviceBuffer, HostBuffer
 from std.ffi import OwnedDLHandle
 from std.os.env import getenv
 
@@ -10,6 +10,7 @@ from mograd.memory import (
     empty_cache as _pool_empty_cache,
     memory_stats as _pool_memory_stats,
     memory_summary as _pool_memory_summary,
+    pool_enabled as _pool_enabled,
 )
 
 # ===-------------------------------------------------------------------===#
@@ -59,12 +60,12 @@ struct Device(Copyable, ImplicitlyCopyable, Movable):
         self.rng = copy.rng.copy()
         self.mem = copy.mem.copy()
 
-    def __init__(out self, *, deinit take: Self):
-        self.ctx = take.ctx^
-        self.handle = take.handle^
-        self.stats = take.stats^
-        self.rng = take.rng^
-        self.mem = take.mem^
+    def __init__(out self, *, deinit move: Self):
+        self.ctx = move.ctx^
+        self.handle = move.handle^
+        self.stats = move.stats^
+        self.rng = move.rng^
+        self.mem = move.mem^
 
     # ===-------------------------------------------------------------------===#
     # Memory pool
@@ -80,6 +81,9 @@ struct Device(Copyable, ImplicitlyCopyable, Movable):
 
     def memory_summary(self) raises -> String:
         return _pool_memory_summary(self.ctx)
+
+    def pool_enabled(self) raises -> Bool:
+        return _pool_enabled()
 
     # ===-------------------------------------------------------------------===#
     # RNG stream
@@ -100,10 +104,10 @@ struct Device(Copyable, ImplicitlyCopyable, Movable):
         x = (x ^ (x >> 27)) * 0x94D049BB133111EB
         return Int((x ^ (x >> 31)) & 0x7FFFFFFFFFFFFFFF)
 
-    def get_function[T: TrivialRegisterPassable](self, var name: String) -> T:
+    def get_function[T: TrivialRegisterPassable](self, var name: String) raises -> T:
         """Looks up an exported kernel in the mograd GPU library."""
         comptime if DEBUG >= 3:
             print("  ↳ " + Tracer.rpad(name, Tracer.KERNEL_COL), end="")
         elif DEBUG >= 2:
             print("  ↳", name)
-        return self.handle[].get_function[T](name^)
+        return self.handle[]._get_function[T](cstr_name=name.as_c_string_slice())

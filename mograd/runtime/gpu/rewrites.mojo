@@ -1,6 +1,7 @@
 from std.math import abs, sqrt
 
 from mograd.layout import Layout
+from mograd.pattern_matcher import Pat, Rule
 from mograd.simplify import RewriteFn
 from mograd.op import AttrVal, Op, OpRef, OpType
 
@@ -55,7 +56,8 @@ def fuse_flash_attention(node: OpRef) raises -> Optional[OpRef]:
     def peel(n: OpRef) -> OpRef:
         var m = n
         if m.op_type() == OpType.CONTIGUOUS:
-            m = m.src(0)
+            var inner = m.src(0)
+            m = inner^
         if m.op_type() == OpType.TRANSPOSE or m.op_type() == OpType.RESHAPE or m.op_type() == OpType.VIEW:
             return m.src(0)
         return m
@@ -75,7 +77,8 @@ def fuse_flash_attention(node: OpRef) raises -> Optional[OpRef]:
     # V must go through a movement op so we can recover BSHD.
     var V_inner = V
     if V_inner.op_type() == OpType.CONTIGUOUS:
-        V_inner = V_inner.src(0)
+        var inner = V_inner.src(0)
+        V_inner = inner^
     if (
         V_inner.op_type() != OpType.TRANSPOSE
         and V_inner.op_type() != OpType.RESHAPE
@@ -119,7 +122,8 @@ def fuse_flash_attention(node: OpRef) raises -> Optional[OpRef]:
     elif qk_node.op_type() == OpType.MATMUL:
         var rhs = qk_node.src(1)
         if rhs.op_type() == OpType.CONTIGUOUS:
-            rhs = rhs.src(0)  # strip CONTIGUOUS → TRANSPOSE(K_bhsd, -2, -1)
+            var inner = rhs.src(0)  # strip CONTIGUOUS → TRANSPOSE(K_bhsd, -2, -1)
+            rhs = inner^
         if rhs.op_type() != OpType.TRANSPOSE:
             return None
         # rhs.src(0) is K_bhsd (e.g. TRANSPOSE(RESHAPE(x), 1, 2)).

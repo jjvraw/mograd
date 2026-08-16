@@ -1,4 +1,4 @@
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.ffi import OwnedDLHandle
 from std.pathlib.path import Path
 from std.os.env import getenv
@@ -24,6 +24,8 @@ from mograd.runtime.gpu.rewrites import (
     GPU_REWRITES,
 )
 from mograd.runtime.gpu.kernels.dispatch import KernelRegistry as K
+from std.memory.alloc import unsafe_alloc
+
 from mograd.runtime.gpu.kernels.dispatch import (
     unary_strided,
     binary_strided,
@@ -174,36 +176,36 @@ struct NativeRuntime(Runtime):
 
 
 def randn(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    var params = alloc[Float32](2)
-    params[0] = node.attr("mean")
-    params[1] = node.attr("std")
+    var params = unsafe_alloc[Float32](2)
+    params[unsafe_offset=0] = node.attr("mean")
+    params[unsafe_offset=1] = node.attr("std")
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
     K.randn.load(device)(
-        params.bitcast[NoneType]().as_unsafe_any_origin(),
+        params.unsafe_bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
         node.numel(),
         node.dtype(),
         UInt64(node.attr_int("seed")),
         device.ctx,
     )
-    params.free()
+    params.unsafe_free()
     return [out^]
 
 
 def uniform(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    var params = alloc[Float32](2)
-    params[0] = node.attr("low")
-    params[1] = node.attr("high")
+    var params = unsafe_alloc[Float32](2)
+    params[unsafe_offset=0] = node.attr("low")
+    params[unsafe_offset=1] = node.attr("high")
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
     K.uniform.load(device)(
-        params.bitcast[NoneType]().as_unsafe_any_origin(),
+        params.unsafe_bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
         node.numel(),
         node.dtype(),
         UInt64(node.attr_int("seed")),
         device.ctx,
     )
-    params.free()
+    params.unsafe_free()
     return [out^]
 
 
@@ -220,17 +222,17 @@ def randint(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List
 
 
 def full(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
-    var v = alloc[Float32](1)
-    v[0] = node.attr("value")
+    var v = unsafe_alloc[Float32](1)
+    v[unsafe_offset=0] = node.attr("value")
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
     K.full.load(device)(
-        v.bitcast[NoneType]().as_unsafe_any_origin(),
+        v.unsafe_bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
         node.numel(),
         node.dtype(),
         device.ctx,
     )
-    v.free()
+    v.unsafe_free()
     return [out^]
 
 
@@ -319,7 +321,7 @@ def add(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[Any
     var lb = node.src(1).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
     if la.is_contiguous() and lb.is_contiguous():
-        null = alloc[Int64](1)
+        var null = unsafe_alloc[Int64](1)
         K.add.load(device)(
             inputs[0].data_ptr(),
             inputs[1].data_ptr(),
@@ -328,7 +330,7 @@ def add(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[Any
             node.dtype(),
             device.ctx,
         )
-        null.free()
+        null.unsafe_free()
         return [out^]
 
     return [binary_strided(K.add_strided, node, inputs, device)]
@@ -352,12 +354,12 @@ def relu_grad(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> Li
 
 def scale(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var la = node.src(0).layout()
-    var s = alloc[Float32](1)
-    s[0] = node.attrs()["scalar"][Float32]
+    var s = unsafe_alloc[Float32](1)
+    s[unsafe_offset=0] = node.attrs()["scalar"][Float32]
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
     K.scale.load(device)(
         inputs[0].data_ptr(),
-        s.bitcast[NoneType]().as_unsafe_any_origin(),
+        s.unsafe_bitcast[NoneType]().as_unsafe_any_origin(),
         out.data_ptr(),
         la,
         node.dtype(),
@@ -535,16 +537,16 @@ def cross_entropy(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -
 def disk(node: OpRef, inputs: List[AnyBuffer], device: Device) raises -> List[AnyBuffer]:
     var size = node.numel()
     var bytes = Path(node.attrs()["path"][String]).read_bytes()
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+    comptime for k in range(AnyBuffer.BufVariant.Ts.length):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
         comptime d = T.node_dtype
         if node.dtype() == d:
-            var ptr = bytes.unsafe_ptr().bitcast[Scalar[d]]()
+            var ptr = bytes.unsafe_ptr().unsafe_bitcast[Scalar[d]]()
             var data = List[Scalar[d]]()
             data.reserve(size)
             for i in range(size):
-                data.append(ptr[i])
+                data.append(ptr[unsafe_offset=i])
             return [AnyBuffer(Buffer[d].from_data(device, data))]
     raise Error("unsupported dtype")
 

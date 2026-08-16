@@ -173,6 +173,17 @@ struct Op(Copyable, Movable, Writable):
         self.buf = List[AnyBuffer]()
         self.attrs = attrs^
 
+    def __init__(out self, *, copy: Self):
+        self.op_type = copy.op_type
+        self.layout = copy.layout
+        self.dtype = copy.dtype
+        self.srcs = copy.srcs.copy()
+        self.buf = copy.buf.copy()
+        self.attrs = copy.attrs.copy()
+
+    def __deinit__(deinit self):
+        pass
+
     def __str__(self) -> String:
         return self.op_type._name
 
@@ -306,7 +317,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
             return Self(Op(OpType.SUM, (1,), self.dtype(), [self]))
         var ax = axis.value()
         var out_layout = self.layout().reduce_output_shape(ax, keepdim).as_contiguous()
-        attrs: Attrs = {"axis": ax}
+        var attrs: Attrs = {"axis": ax}
         return Self(Op(OpType.SUM, out_layout, self.dtype(), [self], attrs=attrs^))
 
     def argmax(self, axis: Optional[Int] = None, keepdim: Bool = False) raises -> Self:
@@ -314,7 +325,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
             return Self(Op(OpType.ARGMAX, (1,), self.dtype(), [self]))
         var ax = axis.value()
         var out_layout = self.layout().reduce_output_shape(ax, keepdim)
-        attrs: Attrs = {"axis": ax}
+        var attrs: Attrs = {"axis": ax}
         return Self(Op(OpType.ARGMAX, out_layout, self.dtype(), [self], attrs=attrs^))
 
     # ===-------------------------------------------------------------------===#
@@ -344,7 +355,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
             return Self(Op(OpType.RESHAPE, flattened_layout, self.dtype(), [src]))
 
     def one_hot(self, var num_classes: Int, out_dtype: DType) -> OpRef:
-        n = Float32(num_classes)
+        var n = Float32(num_classes)
         return OpRef(Op(OpType.ONE_HOT, (self.shape(0), num_classes), out_dtype, [self], attrs={"num_classes": n}))
 
     def cast(self, out_dtype: DType) -> OpRef:
@@ -373,7 +384,7 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         var rank = self.layout().rank()
         var d0 = dim0 if dim0 >= 0 else rank + dim0
         var d1 = dim1 if dim1 >= 0 else rank + dim1
-        attrs: Attrs = {"dim0": d0, "dim1": d1}
+        var attrs: Attrs = {"dim0": d0, "dim1": d1}
         return Self(Op(OpType.TRANSPOSE, self.layout().transpose(dim0, dim1), self.dtype(), [self], attrs^))
 
     def zeros_like(self) -> Self:
@@ -400,20 +411,20 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
         if dim:
             var d = self.layout().normalise_dim(dim.value())
             var new_layout = self.layout().squeeze(d)
-            attrs: Attrs = {"dim": d}
+            var attrs: Attrs = {"dim": d}
             return Self(Op(OpType.SQUEEZE, new_layout, self.dtype(), [self], attrs=attrs^))
         else:
             return Self(Op(OpType.SQUEEZE, self.layout().squeeze_all(), self.dtype(), [self]))
 
     def unsqueeze(self, dim: Int) raises -> Self:
         var new_layout = self.layout().unsqueeze(dim)
-        attrs: Attrs = {"dim": dim}
+        var attrs: Attrs = {"dim": dim}
         return Self(Op(OpType.UNSQUEEZE, new_layout, self.dtype(), [self], attrs=attrs^))
 
     def triu(self, diagonal: Int = 0) raises -> Self:
         if self.layout().rank() < 2:
             raise Error("triu requires a tensor of rank >= 2")
-        attrs: Attrs = {"diagonal": diagonal}
+        var attrs: Attrs = {"diagonal": diagonal}
         return Self(Op(OpType.TRIU, self.layout().as_contiguous(), self.dtype(), [self], attrs=attrs^))
 
     # ===-------------------------------------------------------------------===#
@@ -582,7 +593,7 @@ def concat(var tensors: List[OpRef], axis: Int) raises -> OpRef:
     var out_layout = Layout.concat(layouts, axis)
     var ax = tensors[0].layout().normalise_dim(axis)
     var dtype = tensors[0].dtype()
-    attrs: Attrs = {"axis": ax}
+    var attrs: Attrs = {"axis": ax}
     return OpRef(Op(OpType.CONCAT, out_layout, dtype, tensors^, attrs^))
 
 

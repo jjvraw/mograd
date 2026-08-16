@@ -4,7 +4,7 @@ from mograd import Device
 from mograd.op import AttrVal, Op, OpRef, OpType
 from mograd.op import concat as op_concat
 from mograd.layout import Layout
-from mograd.buffer import AnyBuffer
+from mograd.buffer import AnyBuffer, Buffer
 from mograd.runtime import NativeRuntime
 from mograd.scheduler import SchedulerRules
 from mograd.grad import Grad
@@ -82,7 +82,7 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         requires_grad: Bool = False,
     ) -> Self:
         var s = seed.value() if seed else device.next_seed()
-        attrs: Dict[String, AttrVal] = {"low": low, "high": high, "seed": s}
+        var attrs: Dict[String, AttrVal] = {"low": low, "high": high, "seed": s}
         return Tensor(device, OpRef(Op(OpType.UNIFORM, shape, dtype, [], attrs=attrs^)), requires_grad)
 
     @staticmethod
@@ -96,7 +96,7 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         requires_grad: Bool = False,
     ) -> Self:
         var s = seed.value() if seed else device.next_seed()
-        attrs: Dict[String, AttrVal] = {"mean": mean, "std": std, "seed": s}
+        var attrs: Dict[String, AttrVal] = {"mean": mean, "std": std, "seed": s}
         return Tensor(device, OpRef(Op(OpType.RANDN, shape, dtype, [], attrs^)), requires_grad)
 
     @staticmethod
@@ -109,7 +109,7 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
     ) -> Self:
         """Returns random integers uniformly drawn from `[low, high)`."""
         var s = seed.value() if seed else device.next_seed()
-        attrs: Dict[String, AttrVal] = {"low": low, "high": high, "seed": s}
+        var attrs: Dict[String, AttrVal] = {"low": low, "high": high, "seed": s}
         return Tensor(device, OpRef(Op(OpType.RANDINT, shape, DType.int64, [], attrs^)), requires_grad=False)
 
     @staticmethod
@@ -552,7 +552,7 @@ struct Tensor(Copyable, ImplicitlyCopyable, Movable, Writable):
         Raises:
             If attn_mask is combined with is_causal=True.
         """
-        attn_mask_op: Optional[OpRef] = attn_mask.value().op if attn_mask else None
+        var attn_mask_op: Optional[OpRef] = attn_mask.value().op if attn_mask else None
         return Self(
             self.device,
             self.op.scaled_dot_product_attention(key.op, value.op, attn_mask_op, is_causal, scale),

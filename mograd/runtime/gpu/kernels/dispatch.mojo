@@ -1,7 +1,9 @@
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from mograd.buffer import AnyBuffer, BufferArm
+from mograd.device_ctx import Device
 from mograd.layout import Layout
+from mograd.op import OpRef
 from mograd.runtime.gpu.kernels.strided import (
     binary_strided_map,
     binary_strided_scalar_map,
@@ -67,7 +69,7 @@ struct KernelSym[T: TrivialRegisterPassable](ImplicitlyCopyable, Movable):
 
     var name: StaticString
 
-    def load(self, device: Device) -> Self.T:
+    def load(self, device: Device) raises -> Self.T:
         return device.get_function[Self.T](String(self.name))
 
 
@@ -79,8 +81,8 @@ struct KernelSym[T: TrivialRegisterPassable](ImplicitlyCopyable, Movable):
 
 
 comptime FactoryKernel = def(
-    params: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    params: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
     numel: Int,
     dtype: DType,
     ctx: DeviceContext,
@@ -88,8 +90,8 @@ comptime FactoryKernel = def(
 
 
 comptime RandomFactoryKernel = def(
-    params: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    params: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
     numel: Int,
     dtype: DType,
     seed: UInt64,
@@ -98,9 +100,9 @@ comptime RandomFactoryKernel = def(
 
 
 comptime UnaryStrided = def(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
@@ -108,7 +110,7 @@ comptime UnaryStrided = def(
 
 @always_inline
 def unary_strided(
-    sym: KernelSym[UnaryStrided], read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+    sym: KernelSym[UnaryStrided], imm node: OpRef, imm inputs: List[AnyBuffer], imm device: Device
 ) raises -> AnyBuffer:
     var layout = node.src(0).layout()
     var out = AnyBuffer.create(node.dtype(), device, node.numel())
@@ -123,11 +125,11 @@ def unary_strided(
 
 
 comptime BinaryStrided = def(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    b: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    la: Layout,
+    lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
@@ -135,7 +137,7 @@ comptime BinaryStrided = def(
 
 @always_inline
 def binary_strided(
-    sym: KernelSym[BinaryStrided], read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+    sym: KernelSym[BinaryStrided], imm node: OpRef, imm inputs: List[AnyBuffer], imm device: Device
 ) raises -> AnyBuffer:
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
@@ -153,10 +155,10 @@ def binary_strided(
 
 
 comptime StridedCopy = def(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read ld: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    la: Layout,
+    ld: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
@@ -165,12 +167,12 @@ comptime StridedCopy = def(
 @always_inline
 def strided_copy(
     sym: KernelSym[StridedCopy],
-    read src_layout: Layout,
-    read dst_layout: Layout,
-    read src: AnyBuffer,
-    read dst: AnyBuffer,
-    read dtype: DType,
-    read device: Device,
+    imm src_layout: Layout,
+    imm dst_layout: Layout,
+    imm src: AnyBuffer,
+    imm dst: AnyBuffer,
+    imm dtype: DType,
+    imm device: Device,
 ) raises:
     sym.load(device)(
         src.data_ptr(),
@@ -183,9 +185,9 @@ def strided_copy(
 
 
 comptime AxisReduceKernel = def(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    layout: Layout,
     axis: Int,
     dtype: DType,
     ctx: DeviceContext,
@@ -194,7 +196,7 @@ comptime AxisReduceKernel = def(
 
 @always_inline
 def axis_reduce_strided(
-    sym: KernelSym[AxisReduceKernel], read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+    sym: KernelSym[AxisReduceKernel], imm node: OpRef, imm inputs: List[AnyBuffer], imm device: Device
 ) raises -> AnyBuffer:
     var layout = node.src(0).layout()
     var axis = node.attr_int("axis")
@@ -211,11 +213,11 @@ def axis_reduce_strided(
 
 
 comptime MatmulStrided = def(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    b: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    la: Layout,
+    lb: Layout,
     N: Int,
     dtype: DType,
     ctx: DeviceContext,
@@ -224,7 +226,7 @@ comptime MatmulStrided = def(
 
 @always_inline
 def matmul_strided(
-    sym: KernelSym[MatmulStrided], read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+    sym: KernelSym[MatmulStrided], imm node: OpRef, imm inputs: List[AnyBuffer], imm device: Device
 ) raises -> AnyBuffer:
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
@@ -243,12 +245,12 @@ def matmul_strided(
 
 
 comptime MatmulBiasStrided = def(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    bias: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    b: Pointer[NoneType, ImmutAnyOrigin],
+    bias: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    la: Layout,
+    lb: Layout,
     N: Int,
     dtype: DType,
     ctx: DeviceContext,
@@ -257,7 +259,7 @@ comptime MatmulBiasStrided = def(
 
 @always_inline
 def matmul_bias_strided(
-    sym: KernelSym[MatmulBiasStrided], read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+    sym: KernelSym[MatmulBiasStrided], imm node: OpRef, imm inputs: List[AnyBuffer], imm device: Device
 ) raises -> AnyBuffer:
     var la = node.src(0).layout()
     var lb = node.src(1).layout()
@@ -277,10 +279,10 @@ def matmul_bias_strided(
 
 
 comptime LayerNormFwdKernel = def(
-    x: UnsafePointer[NoneType, ImmutAnyOrigin],
-    gamma: UnsafePointer[NoneType, ImmutAnyOrigin],
-    beta: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    x: Pointer[NoneType, ImmutAnyOrigin],
+    gamma: Pointer[NoneType, ImmutAnyOrigin],
+    beta: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
     rows: Int,
     cols: Int,
     eps: Float32,
@@ -291,7 +293,7 @@ comptime LayerNormFwdKernel = def(
 
 @always_inline
 def layer_norm_fwd_dispatch(
-    sym: KernelSym[LayerNormFwdKernel], read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+    sym: KernelSym[LayerNormFwdKernel], imm node: OpRef, imm inputs: List[AnyBuffer], imm device: Device
 ) raises -> AnyBuffer:
     var x_layout = node.src(0).layout()
     var cols = x_layout.shape(x_layout.rank() - 1)
@@ -313,12 +315,12 @@ def layer_norm_fwd_dispatch(
 
 
 comptime LayerNormBwdKernel = def(
-    dy: UnsafePointer[NoneType, ImmutAnyOrigin],
-    x: UnsafePointer[NoneType, ImmutAnyOrigin],
-    gamma: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dx: UnsafePointer[NoneType, MutAnyOrigin],
-    dgamma: UnsafePointer[NoneType, MutAnyOrigin],
-    dbeta: UnsafePointer[NoneType, MutAnyOrigin],
+    dy: Pointer[NoneType, ImmutAnyOrigin],
+    x: Pointer[NoneType, ImmutAnyOrigin],
+    gamma: Pointer[NoneType, ImmutAnyOrigin],
+    dx: Pointer[NoneType, MutAnyOrigin],
+    dgamma: Pointer[NoneType, MutAnyOrigin],
+    dbeta: Pointer[NoneType, MutAnyOrigin],
     rows: Int,
     cols: Int,
     eps: Float32,
@@ -329,7 +331,7 @@ comptime LayerNormBwdKernel = def(
 
 @always_inline
 def layer_norm_bwd_dispatch(
-    sym: KernelSym[LayerNormBwdKernel], read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+    sym: KernelSym[LayerNormBwdKernel], imm node: OpRef, imm inputs: List[AnyBuffer], imm device: Device
 ) raises -> List[AnyBuffer]:
     # inputs: [dy, x, gamma]  attrs: eps, axis  srcs: [dy, x, gamma]
     var x_layout = node.src(1).layout()
@@ -357,12 +359,12 @@ def layer_norm_bwd_dispatch(
 
 
 comptime FlashAttnFwdKernel = def(
-    q: UnsafePointer[NoneType, ImmutAnyOrigin],
-    k: UnsafePointer[NoneType, ImmutAnyOrigin],
-    v: UnsafePointer[NoneType, ImmutAnyOrigin],
-    mask: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    lse: UnsafePointer[NoneType, MutAnyOrigin],
+    q: Pointer[NoneType, ImmutAnyOrigin],
+    k: Pointer[NoneType, ImmutAnyOrigin],
+    v: Pointer[NoneType, ImmutAnyOrigin],
+    mask: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    lse: Pointer[NoneType, MutAnyOrigin],
     B: Int,
     S: Int,
     H: Int,
@@ -377,7 +379,7 @@ comptime FlashAttnFwdKernel = def(
 
 @always_inline
 def flash_attn_fwd_dispatch(
-    sym: KernelSym[FlashAttnFwdKernel], read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+    sym: KernelSym[FlashAttnFwdKernel], imm node: OpRef, imm inputs: List[AnyBuffer], imm device: Device
 ) raises -> List[AnyBuffer]:
     # node.srcs = [Q, K, V, mask], all BSHD (B, S, H, D)
     # Returns [O_buf (BHSD), LSE_buf (BHS, float32)]
@@ -414,16 +416,16 @@ def flash_attn_fwd_dispatch(
 
 
 comptime FlashAttnBwdKernel = def(
-    dy: UnsafePointer[NoneType, ImmutAnyOrigin],
-    o: UnsafePointer[NoneType, ImmutAnyOrigin],
-    q: UnsafePointer[NoneType, ImmutAnyOrigin],
-    k: UnsafePointer[NoneType, ImmutAnyOrigin],
-    v: UnsafePointer[NoneType, ImmutAnyOrigin],
-    mask: UnsafePointer[NoneType, ImmutAnyOrigin],
-    lse: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dq: UnsafePointer[NoneType, MutAnyOrigin],
-    dk: UnsafePointer[NoneType, MutAnyOrigin],
-    dv: UnsafePointer[NoneType, MutAnyOrigin],
+    dy: Pointer[NoneType, ImmutAnyOrigin],
+    o: Pointer[NoneType, ImmutAnyOrigin],
+    q: Pointer[NoneType, ImmutAnyOrigin],
+    k: Pointer[NoneType, ImmutAnyOrigin],
+    v: Pointer[NoneType, ImmutAnyOrigin],
+    mask: Pointer[NoneType, ImmutAnyOrigin],
+    lse: Pointer[NoneType, ImmutAnyOrigin],
+    dq: Pointer[NoneType, MutAnyOrigin],
+    dk: Pointer[NoneType, MutAnyOrigin],
+    dv: Pointer[NoneType, MutAnyOrigin],
     B: Int,
     S: Int,
     H: Int,
@@ -438,7 +440,7 @@ comptime FlashAttnBwdKernel = def(
 
 @always_inline
 def flash_attn_bwd_dispatch(
-    sym: KernelSym[FlashAttnBwdKernel], read node: OpRef, read inputs: List[AnyBuffer], read device: Device
+    sym: KernelSym[FlashAttnBwdKernel], imm node: OpRef, imm inputs: List[AnyBuffer], imm device: Device
 ) raises -> List[AnyBuffer]:
     # node.srcs = [dO, O, Q, K, V, mask, LSE]  attrs: scale
     var q_layout = node.src(2).layout()
@@ -480,20 +482,20 @@ def flash_attn_bwd_dispatch(
 
 
 comptime OneHotOp = def(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
     in_dtype: DType,
     out_dtype: DType,
-    read ld: Layout,
-    read la: Layout,
+    ld: Layout,
+    la: Layout,
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
 
 
 comptime BinaryElementWise = def(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    b: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
     numel: Int,
     dtype: DType,
     ctx: DeviceContext,
@@ -501,19 +503,19 @@ comptime BinaryElementWise = def(
 
 
 comptime BinaryScalarElementWiseStrided = def(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    b: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    layout: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
 
 
 comptime CastOp = def(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    layout: Layout,
     in_dtype: DType,
     out_dtype: DType,
     ctx: DeviceContext,
@@ -521,9 +523,9 @@ comptime CastOp = def(
 
 
 comptime TriuOp = def(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read layout: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    layout: Layout,
     diagonal: Int,
     dtype: DType,
     ctx: DeviceContext,
@@ -531,9 +533,9 @@ comptime TriuOp = def(
 
 
 comptime BinaryOp = def(
-    UnsafePointer[NoneType, ImmutAnyOrigin],
-    UnsafePointer[NoneType, ImmutAnyOrigin],
-    UnsafePointer[NoneType, MutAnyOrigin],
+    Pointer[NoneType, ImmutAnyOrigin],
+    Pointer[NoneType, ImmutAnyOrigin],
+    Pointer[NoneType, MutAnyOrigin],
     Int,
     DType,
     DeviceContext,
@@ -541,12 +543,12 @@ comptime BinaryOp = def(
 
 
 comptime TernaryStrided = def(
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    c: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
-    read la: Layout,
-    read lb: Layout,
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    b: Pointer[NoneType, ImmutAnyOrigin],
+    c: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
+    la: Layout,
+    lb: Layout,
     dtype: DType,
     ctx: DeviceContext,
 ) thin abi("Mojo") raises -> None
@@ -563,7 +565,7 @@ def dispatch_dtype[
     body: def[d: DType]() capturing raises -> None,
     float_only: Bool = False,
 ](dtype: DType) raises:
-    comptime for k in range(AnyBuffer.BufVariant.Ts.size):
+    comptime for k in range(AnyBuffer.BufVariant.Ts.length):
         comptime T = AnyBuffer.BufVariant.Ts[k]
         comptime assert conforms_to(T, BufferArm)
         comptime d = T.node_dtype
@@ -575,11 +577,11 @@ def dispatch_dtype[
 
 
 comptime UnaryStridedImpl = def[dtype: DType](
-    a: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    dst: Pointer[Scalar[dtype], MutAnyOrigin],
     rank: Int,
-    inner: UnsafePointer[Int64, ImmutAnyOrigin],
-    sa: UnsafePointer[Int64, ImmutAnyOrigin],
+    inner: Pointer[Int64, ImmutAnyOrigin],
+    sa: Pointer[Int64, ImmutAnyOrigin],
     n: Int,
     ctx: DeviceContext,
 ) raises thin -> None
@@ -589,20 +591,20 @@ def dispatch_unary[
     kernel: UnaryStridedImpl,
     float_only: Bool = False,
 ](
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
     numel: Int,
     rank: Int,
-    inner: UnsafePointer[mut=False, Int64, _],
-    sa: UnsafePointer[mut=False, Int64, _],
+    inner: Pointer[mut=False, Int64, _],
+    sa: Pointer[mut=False, Int64, _],
     dtype: DType,
     ctx: DeviceContext,
 ) raises:
     @always_inline
     def body[d: DType]() raises capturing:
         kernel[d](
-            a.bitcast[Scalar[d]](),
-            dst.bitcast[Scalar[d]](),
+            a.unsafe_bitcast[Scalar[d]](),
+            dst.unsafe_bitcast[Scalar[d]](),
             rank,
             inner.as_unsafe_any_origin(),
             sa.as_unsafe_any_origin(),
@@ -614,9 +616,9 @@ def dispatch_unary[
 
 
 comptime BinaryContigImpl = def[dtype: DType](
-    a: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    b: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    b: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    dst: Pointer[Scalar[dtype], MutAnyOrigin],
     n: Int,
     ctx: DeviceContext,
 ) raises thin -> None
@@ -626,16 +628,18 @@ def dispatch_binary_contiguous[
     kernel: BinaryContigImpl,
     float_only: Bool = False,
 ](
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    b: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
     numel: Int,
     dtype: DType,
     ctx: DeviceContext,
 ) raises:
     @always_inline
     def body[d: DType]() capturing raises:
-        kernel[d](a.bitcast[Scalar[d]](), b.bitcast[Scalar[d]](), dst.bitcast[Scalar[d]](), numel, ctx)
+        kernel[d](
+            a.unsafe_bitcast[Scalar[d]](), b.unsafe_bitcast[Scalar[d]](), dst.unsafe_bitcast[Scalar[d]](), numel, ctx
+        )
 
     dispatch_dtype[body, float_only](dtype)
 
@@ -644,20 +648,20 @@ def dispatch_unary_map[
     op: def[d: DType](x: Scalar[d]) thin -> Scalar[d],
     float_only: Bool = False,
 ](
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
     numel: Int,
     rank: Int,
-    inner: UnsafePointer[mut=False, Int64, _],
-    sa: UnsafePointer[mut=False, Int64, _],
+    inner: Pointer[mut=False, Int64, _],
+    sa: Pointer[mut=False, Int64, _],
     dtype: DType,
     ctx: DeviceContext,
 ) raises:
     @always_inline
     def body[d: DType]() capturing raises:
         unary_strided_map[d, op[d]](
-            a.bitcast[Scalar[d]](),
-            dst.bitcast[Scalar[d]](),
+            a.unsafe_bitcast[Scalar[d]](),
+            dst.unsafe_bitcast[Scalar[d]](),
             rank,
             inner,
             sa,
@@ -672,23 +676,23 @@ def dispatch_binary_map[
     op: def[d: DType](x: Scalar[d], y: Scalar[d]) thin -> Scalar[d],
     float_only: Bool = False,
 ](
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    b: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
     numel: Int,
     rank: Int,
-    inner: UnsafePointer[mut=False, Int64, _],
-    sa: UnsafePointer[mut=False, Int64, _],
-    sb: UnsafePointer[mut=False, Int64, _],
+    inner: Pointer[mut=False, Int64, _],
+    sa: Pointer[mut=False, Int64, _],
+    sb: Pointer[mut=False, Int64, _],
     dtype: DType,
     ctx: DeviceContext,
 ) raises:
     @always_inline
     def body[d: DType]() capturing raises:
         binary_strided_map[d, op[d]](
-            a.bitcast[Scalar[d]](),
-            b.bitcast[Scalar[d]](),
-            dst.bitcast[Scalar[d]](),
+            a.unsafe_bitcast[Scalar[d]](),
+            b.unsafe_bitcast[Scalar[d]](),
+            dst.unsafe_bitcast[Scalar[d]](),
             rank,
             inner,
             sa,
@@ -704,13 +708,13 @@ def dispatch_binary_scalar_map[
     op: def[d: DType](x: Scalar[d], y: Scalar[d]) thin -> Scalar[d],
     float_only: Bool = False,
 ](
-    a: UnsafePointer[NoneType, ImmutAnyOrigin],
-    b: UnsafePointer[NoneType, ImmutAnyOrigin],
-    dst: UnsafePointer[NoneType, MutAnyOrigin],
+    a: Pointer[NoneType, ImmutAnyOrigin],
+    b: Pointer[NoneType, ImmutAnyOrigin],
+    dst: Pointer[NoneType, MutAnyOrigin],
     numel: Int,
     rank: Int,
-    inner: UnsafePointer[mut=False, Int64, _],
-    sa: UnsafePointer[mut=False, Int64, _],
+    inner: Pointer[mut=False, Int64, _],
+    sa: Pointer[mut=False, Int64, _],
     dtype: DType,
     ctx: DeviceContext,
 ) raises:
@@ -719,11 +723,11 @@ def dispatch_binary_scalar_map[
         # The scheduler always materialises the scalar operand as Float32
         # (see runtime scale()). Convert to the tensor dtype rather than
         # bitcasting, which reads garbage for any non-f32 dtype.
-        var scalar = Scalar[d](b.bitcast[Float32]()[0])
+        var scalar = Scalar[d](b.unsafe_bitcast[Float32]()[unsafe_offset=0])
         binary_strided_scalar_map[d, op[d]](
-            a.bitcast[Scalar[d]](),
-            UnsafePointer(to=scalar),
-            dst.bitcast[Scalar[d]](),
+            a.unsafe_bitcast[Scalar[d]](),
+            Pointer(to=scalar),
+            dst.unsafe_bitcast[Scalar[d]](),
             rank,
             inner,
             sa,

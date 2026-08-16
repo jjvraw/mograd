@@ -1,5 +1,9 @@
 from std.math import log as math_log, exp as math_exp, sqrt as math_sqrt
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
+from max.gpu.host import DeviceContext
+from std.gpu.host import get_gpu_target
+from std.sys.info import simd_width_of
+from layout import Coord
 
 from mograd.runtime.gpu.kernels.strided import strided_offset, unary_strided_map
 
@@ -71,17 +75,17 @@ def relu_grad_op[d: DType](x: Scalar[d], y: Scalar[d]) -> Scalar[d]:
 def cast[
     src_dtype: DType, dst_dtype: DType
 ](
-    a: UnsafePointer[mut=False, Scalar[src_dtype], _],
-    dst: UnsafePointer[mut=True, Scalar[dst_dtype], _],
+    a: Pointer[mut=False, Scalar[src_dtype], _],
+    dst: Pointer[mut=True, Scalar[dst_dtype], _],
     rank: Int,
-    inner: UnsafePointer[mut=False, Int64, _],
-    sa: UnsafePointer[mut=False, Int64, _],
+    inner: Pointer[mut=False, Int64, _],
+    sa: Pointer[mut=False, Int64, _],
     n: Int,
     ctx: DeviceContext,
 ) raises:
     def apply_strided[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var flat = Int(coord[0].value())
-        dst.store(flat, a.load(strided_offset(flat, rank, inner, sa)).cast[dst_dtype]())
+        dst.unsafe_store(flat, a.unsafe_load(strided_offset(flat, rank, inner, sa)).cast[dst_dtype]())
 
     elementwise[simd_width=1, target="gpu"](apply_strided, Coord(n), ctx)
 
@@ -94,17 +98,17 @@ def cast[
 def slice_grad[
     dtype: DType
 ](
-    a: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    dst: Pointer[Scalar[dtype], MutAnyOrigin],
     rank: Int,
-    inner: UnsafePointer[Int64, ImmutAnyOrigin],
-    sa: UnsafePointer[Int64, ImmutAnyOrigin],
+    inner: Pointer[Int64, ImmutAnyOrigin],
+    sa: Pointer[Int64, ImmutAnyOrigin],
     n: Int,
     ctx: DeviceContext,
 ) raises:
     def apply[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var flat = Int(coord[0].value())
-        dst.store(strided_offset(flat, rank, inner, sa), a.load(flat))
+        dst.unsafe_store(strided_offset(flat, rank, inner, sa), a.unsafe_load(flat))
 
     elementwise[simd_width=1, target="gpu"](apply, Coord(n), ctx)
 
@@ -117,9 +121,9 @@ def slice_grad[
 def add[
     dtype: DType
 ](
-    a: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    b: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    b: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    dst: Pointer[Scalar[dtype], MutAnyOrigin],
     n: Int,
     ctx: DeviceContext,
 ) raises:
@@ -127,7 +131,7 @@ def add[
 
     def apply_fast[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         var flat = Int(coord[0].value())
-        dst.store[simd_width](flat, a.load[simd_width](flat) + b.load[simd_width](flat))
+        dst.unsafe_store[simd_width](flat, a.unsafe_load[simd_width](flat) + b.unsafe_load[simd_width](flat))
 
     elementwise[simd_width=width, target="gpu"](apply_fast, Coord(n), ctx)
 
@@ -140,14 +144,14 @@ def add[
 def triu_impl[
     dtype: DType
 ](
-    a: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a: Pointer[Scalar[dtype], ImmutAnyOrigin],
+    dst: Pointer[Scalar[dtype], MutAnyOrigin],
     numel: Int,
     rows: Int,
     cols: Int,
     rank: Int,
-    inner: UnsafePointer[Int64, ImmutAnyOrigin],
-    sa: UnsafePointer[Int64, ImmutAnyOrigin],
+    inner: Pointer[Int64, ImmutAnyOrigin],
+    sa: Pointer[Int64, ImmutAnyOrigin],
     diagonal: Int64,
     ctx: DeviceContext,
 ) raises:
@@ -158,8 +162,8 @@ def triu_impl[
         var row = idx_in_last2d // cols
         var col = idx_in_last2d % cols
         if col >= row + diag:
-            dst.store(flat, a.load(strided_offset(flat, rank, inner, sa)))
+            dst.unsafe_store(flat, a.unsafe_load(strided_offset(flat, rank, inner, sa)))
         else:
-            dst.store(flat, Scalar[dtype](0))
+            dst.unsafe_store(flat, Scalar[dtype](0))
 
     elementwise[simd_width=1, target="gpu"](apply, Coord(numel), ctx)

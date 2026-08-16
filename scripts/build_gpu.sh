@@ -43,6 +43,11 @@ RUNTIME_DIR="$SRC_ROOT/mograd/runtime"
 [[ -f "$PIN_SRC" ]] || die "Missing pin source: $PIN_SRC"
 [[ -d "$RUNTIME_DIR" ]] || die "Missing runtime dir: $RUNTIME_DIR"
 
+# abi("Mojo") requires host and .so from the same toolchain: rebuild when the
+# compiler version changes, not only when sources do.
+BUILD_STAMP="$SO_PATH.mojo-version"
+CURRENT_MOJO_VERSION="$(mojo --version 2>&1 | head -1)"
+
 if [[ "$FORCE_BUILD" != "1" && -f "$SO_PATH" ]]; then
     NEWER_INPUT="$(
         find "$RUNTIME_DIR" \
@@ -52,12 +57,19 @@ if [[ "$FORCE_BUILD" != "1" && -f "$SO_PATH" ]]; then
             -quit
     )"
 
-    if [[ -z "$NEWER_INPUT" ]]; then
+    STAMPED_MOJO_VERSION=""
+    [[ -f "$BUILD_STAMP" ]] && STAMPED_MOJO_VERSION="$(cat "$BUILD_STAMP")"
+
+    if [[ -z "$NEWER_INPUT" && "$STAMPED_MOJO_VERSION" == "$CURRENT_MOJO_VERSION" ]]; then
         log "GPU library already up to date: $SO_PATH"
         exit 0
     fi
 
-    log "Rebuilding because runtime input changed: $NEWER_INPUT"
+    if [[ "$STAMPED_MOJO_VERSION" != "$CURRENT_MOJO_VERSION" ]]; then
+        log "Rebuilding because toolchain changed: '$STAMPED_MOJO_VERSION' -> '$CURRENT_MOJO_VERSION'"
+    else
+        log "Rebuilding because runtime input changed: $NEWER_INPUT"
+    fi
 elif [[ "$FORCE_BUILD" == "1" ]]; then
     log "Force rebuild requested"
 fi
@@ -85,8 +97,7 @@ if ! command -v mojo >/dev/null 2>&1; then
     die "mojo not found in PATH"
 fi
 
-MOJO_VERSION="$(mojo --version 2>&1 | head -1)"
-log "$MOJO_VERSION"
+log "$CURRENT_MOJO_VERSION"
 log "Building libmograd_gpu.so"
 log "mode: $MODE"
 
@@ -104,13 +115,18 @@ if [[ "$PLATFORM" == "Darwin" && "${CI:-}" == "true" ]]; then
     MOJO_BUILD_THREADS="--num-threads 1"
 fi
 
+# MODULAR_DISABLE_VENDOR_FALLBACK: the cuBLAS fallback allocates a fresh 32MB
+# workspace per matmul; the native matmul kernels avoid it.
 mojo build --emit shared-lib \
     $MOJO_BUILD_THREADS \
+    -D MODULAR_DISABLE_VENDOR_FALLBACK=True \
     "$KERNEL_SRC" \
     -o "$SO_PATH" \
     -Xlinker "$PIN_OBJ"
 
 END="$(date +%s)"
+
+printf '%s' "$CURRENT_MOJO_VERSION" > "$BUILD_STAMP"
 
 if [[ "$PLATFORM" == "Darwin" ]]; then
     SO_SIZE="$(stat -f%z "$SO_PATH")"
