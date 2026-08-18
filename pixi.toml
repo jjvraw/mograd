@@ -14,10 +14,10 @@ version = "0.0.0"
 backend = { name = "pixi-build-rattler-build", version = "*" }
 
 [package.build-dependencies]
-mojo-compiler = "*"
+mojo-compiler = "==1.1.0.dev2026081605"
 
 [package.host-dependencies]
-mojo-compiler = "*"
+mojo-compiler = "==1.1.0.dev2026081605"
 
 [dependencies]
 mojo = "==1.1.0.dev2026081605"
