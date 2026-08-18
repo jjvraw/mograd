@@ -3,7 +3,7 @@
 The 2026-07-10 MAX nightly dropped the runtime's caching allocator,
 https://github.com/modular/modular/issues/6815, every `enqueue_create_buffer`
 /destroy pair costs a real driver allocation. We therefore manage
-our own caching buffer.
+our own caching buffer, which is toggleable with MOGRAD_POOL env flag.
 
 Every device allocation is a pop from a size-keyed free list, and every
 deallocation is a push back onto it. Driver allocations is only realised 
@@ -28,16 +28,15 @@ NOTE: There is currently no synchronization as all current mograd work for
 a context is enqueued on a single in-order stream: work enqueued after
 a take cannot run before the earlier-enqueued work that last touched the
 memory. If mograd ever runs multiple streams per context, frees must record
-an event (`Storage.__del__`) that takes wait on (`take_storage`), PyTorch's
-`record_stream` analog.
+an event (`Storage.__deinit__`) that takes wait on (`take_storage`).
 
-Teardown discipline: releasing device buffers and then destroying their
-DeviceContext leaves the enqueued releases unsynchronized, which poisons a
-per-device AsyncRT mutex on the 2026-07 runtime and stalls the next context's
-first allocation. `DeviceMemGuard` therefore purges this context's pool state
-and synchronizes before the context handle can drop. It is co-owned by `Device`
+Teardown discipline: destroying a DeviceContext while work it enqueued
+(buffer releases, map_to_host write-backs) is still in flight poisons a
+per-device driver mutex, and the next context's first allocation deadlocks
+on it. `DeviceMemGuard` therefore purges this context's pool state and
+synchronizes before the context handle can drop. It is co-owned by `Device`
 and by every pooled `Storage` ticket, so the purge runs only after the last
-pooled buffer is gone, a Tensor outliving its Device stays safe.
+pooled buffer is gone; a Tensor outliving its Device stays safe.
 """
 
 from std.bit import prev_power_of_two
