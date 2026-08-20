@@ -1,0 +1,82 @@
+.heroBanner {
+  padding: 5rem 0 4rem;
+  text-align: center;
+  overflow: hidden;
+}
+
+.heroLogo {
+  width: 140px;
+  height: auto;
+  margin-bottom: 1rem;
+}
+
+.heroTitle {
+  font-size: 3rem;
+  margin-bottom: 0.5rem;
+}
+
+.heroSubtitle {
+  font-size: 1.25rem;
+  color: var(--ifm-color-emphasis-700);
+  margin-bottom: 2rem;
+}
+
+.status {
+  max-width: 34rem;
+  margin: 0 auto 2rem;
+  padding: 0.75rem 1rem;
+  border: 0.5px solid #bf5200;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  color: var(--ifm-color-emphasis-800);
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.buttons :global(.button) {
+  --ifm-button-border-width: 0.5px;
+
+  border-radius: 4px;
+  font-weight: 400;
+}
+
+/**
+ * Infima fills an outline button with its border color on hover and inverts
+ * the label. Against a 0.5px border and a 400 weight that reads as a jump, so
+ * hover is a faint wash instead and the text keeps its color.
+ */
+.buttons :global(.button--outline:hover) {
+  --ifm-button-background-color: color-mix(in srgb, var(--ifm-button-border-color) 12%, transparent);
+  --ifm-button-color: var(--ifm-button-border-color);
+}
+
+.buttons :global(.button--outline:active) {
+  --ifm-button-background-color: color-mix(in srgb, var(--ifm-button-border-color) 20%, transparent);
+  --ifm-button-color: var(--ifm-button-border-color);
+}
+
+/**
+ * Neutral outline for the secondary action. Bound to --ifm-font-color-base
+ * rather than a literal white so it inverts to near-black in light mode
+ * instead of disappearing against the page. Infima's `button--outline` derives
+ * the text color from the border color, so setting the border is enough.
+ */
+.buttonNeutral {
+  --ifm-button-border-color: var(--ifm-font-color-base);
+}
+
+@media screen and (max-width: 996px) {
+  .heroBanner {
+    padding: 3rem 1rem;
+  }
+
+  .heroTitle {
+    font-size: 2.25rem;
+  }
+}
