@@ -22,19 +22,19 @@ mkdir -p "$MOGRAD_LIB_DIR"
 DEV_ROOT="${PIXI_PROJECT_ROOT:-}"
 PKG_ROOT="$CONDA_PREFIX/share/mograd"
 
-if [[ -n "$DEV_ROOT" && -f "$DEV_ROOT/mograd/runtime/gpu/kernels/__init__.mojo" ]]; then
+if [[ -n "$DEV_ROOT" && -f "$DEV_ROOT/mograd_gpu/exports.mojo" ]]; then
     SRC_ROOT="$DEV_ROOT"
     MODE="dev"
-elif [[ -f "$PKG_ROOT/mograd/runtime/gpu/kernels/__init__.mojo" ]]; then
+elif [[ -f "$PKG_ROOT/mograd_gpu/exports.mojo" ]]; then
     SRC_ROOT="$PKG_ROOT"
     MODE="installed"
 else
     die "Could not find mograd GPU kernel sources. Checked:
-  - \$PIXI_PROJECT_ROOT/mograd/runtime/gpu/kernels/__init__.mojo
-  - $PKG_ROOT/mograd/runtime/gpu/kernels/__init__.mojo"
+  - \$PIXI_PROJECT_ROOT/mograd_gpu/exports.mojo
+  - $PKG_ROOT/mograd_gpu/exports.mojo"
 fi
 
-KERNEL_SRC="$SRC_ROOT/mograd/runtime/gpu/kernels/__init__.mojo"
+KERNEL_SRC="$SRC_ROOT/mograd_gpu/exports.mojo"
 PIN_SRC="$SRC_ROOT/mograd/runtime/gpu/kernels/pin.c"
 PIN_OBJ="$MOGRAD_LIB_DIR/pin.o"
 RUNTIME_DIR="$SRC_ROOT/mograd/runtime"
@@ -120,6 +120,7 @@ fi
 mojo build --emit shared-lib \
     $MOJO_BUILD_THREADS \
     -D MODULAR_DISABLE_VENDOR_FALLBACK=True \
+    -I "$SRC_ROOT" \
     "$KERNEL_SRC" \
     -o "$SO_PATH" \
     -Xlinker "$PIN_OBJ"

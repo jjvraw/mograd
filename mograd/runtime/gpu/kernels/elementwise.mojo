@@ -23,18 +23,27 @@ def neg_op[d: DType](x: Scalar[d]) -> Scalar[d]:
 
 
 @always_inline
-def log_op[d: DType](x: Scalar[d]) -> Scalar[d] where d.is_floating_point():
-    return math_log(x)
+def log_op[d: DType](x: Scalar[d]) -> Scalar[d]:
+    comptime if d.is_floating_point():
+        return math_log(x)
+    else:
+        return x
 
 
 @always_inline
-def exp_op[d: DType](x: Scalar[d]) -> Scalar[d] where d.is_floating_point():
-    return math_exp(x)
+def exp_op[d: DType](x: Scalar[d]) -> Scalar[d]:
+    comptime if d.is_floating_point():
+        return math_exp(x)
+    else:
+        return x
 
 
 @always_inline
-def sqrt_op[d: DType](x: Scalar[d]) -> Scalar[d] where d.is_floating_point():
-    return math_sqrt(x)
+def sqrt_op[d: DType](x: Scalar[d]) -> Scalar[d]:
+    comptime if d.is_floating_point():
+        return math_sqrt(x)
+    else:
+        return x
 
 
 @always_inline

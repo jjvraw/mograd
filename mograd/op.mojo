@@ -527,13 +527,13 @@ struct OpRef(Copyable, ImplicitlyCopyable, KeyElement, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def __hash__[H: Hasher](self, mut hasher: H):
-        hasher.update(Int(self._ptr.unsafe_ptr()))
+        hasher.update(Int(self._ptr.ptr()))
 
     def __eq__(self, other: Self) -> Bool:
-        return self._ptr.unsafe_ptr() == other._ptr.unsafe_ptr()
+        return self._ptr.ptr() == other._ptr.ptr()
 
     def __ne__(self, other: Self) -> Bool:
-        return self._ptr.unsafe_ptr() != other._ptr.unsafe_ptr()
+        return self._ptr.ptr() != other._ptr.ptr()
 
     def write_to(self, mut writer: Some[Writer]):
         var cache = Dict[Self, _NodeEntry]()

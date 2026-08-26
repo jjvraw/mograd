@@ -1233,18 +1233,18 @@ def test_sdpa_causal_first_token_equals_v0() raises:
 
 
 def test_manual_seed_replays() raises:
-    device = Device()
+    var device = Device()
     device.manual_seed(7)
-    a = Tensor.randn(device, (64,))
+    var a = Tensor.randn(device, (64,))
     device.manual_seed(7)
-    b = Tensor.randn(device, (64,))
+    var b = Tensor.randn(device, (64,))
     assert_allclose(a, b)
 
 
 def test_randn_is_random() raises:
-    device = Device()
-    a = Tensor.randn(device, (1024, 1024))
-    b = Tensor.randn(device, (1024, 1024))
+    var device = Device()
+    var a = Tensor.randn(device, (1024, 1024))
+    var b = Tensor.randn(device, (1024, 1024))
     with assert_raises():
         assert_allclose(a, b)
 
