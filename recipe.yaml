@@ -21,6 +21,8 @@ build:
     - mkdir -p $PREFIX/share/mograd/mograd/runtime
 
     - cp scripts/build_gpu.sh $PREFIX/share/mograd/scripts/build_gpu.sh
+    - mkdir -p $PREFIX/share/mograd/mograd_gpu
+    - cp mograd_gpu/exports.mojo $PREFIX/share/mograd/mograd_gpu/exports.mojo
     - chmod +x $PREFIX/share/mograd/scripts/build_gpu.sh
 
     - cp -r mograd/runtime $PREFIX/share/mograd/mograd/runtime
@@ -51,8 +53,8 @@ build:
 
 requirements:
   run:
-    - mojo ==1.1.0.dev2026081605
-    - max ==26.6.0.dev2026081605
+    - mojo ==1.1.0.dev2026082505
+    - max ==26.6.0.dev2026082505
 
     # Needed because libmograd_gpu.so is built on the user's machine.
     - if: linux

@@ -1,4 +1,5 @@
-from std.gpu.host import DeviceContext
+from max.benchmark import bencher_iter_custom
+from max.gpu.host import DeviceContext
 from std.math import sqrt
 from std.benchmark import Bench, Bencher, BenchId, keep, BenchConfig
 from std.benchmark import BenchMetric, ThroughputMeasure
@@ -15,7 +16,7 @@ from mograd.runtime.gpu.kernels.attention.apple import (
 
 @always_inline
 def _imm[dtype: DType](buf: CacheBustingBuffer[dtype], i: Int) -> Pointer[Scalar[dtype], ImmutAnyOrigin]:
-    return buf.offset_ptr(i).as_immutable().as_unsafe_any_origin()
+    return buf.offset_ptr(i).as_imm().as_unsafe_any_origin()
 
 
 @always_inline
@@ -43,9 +44,8 @@ def bench_apple_fwd[
     var dst = CacheBustingBuffer[dtype](B * H * S * D, 1, ctx)
     var lse = CacheBustingBuffer[DType.float32](B * H * S, 1, ctx)
 
-    @parameter
     @always_inline
-    def kernel_launch(dc: DeviceContext, iteration: Int) raises:
+    def kernel_launch(dc: DeviceContext, iteration: Int) raises {imm}:
         _flash_attn_fwd_launch_apple[dtype, D, CAUSAL, BIAS](
             _imm(q, iteration),
             _imm(k, iteration),
@@ -64,13 +64,13 @@ def bench_apple_fwd[
     kernel_launch(ctx, 0)  # warmup
     ctx.synchronize()
 
-    @parameter
     @always_inline
-    def bench_func(mut bench: Bencher) raises:
-        bench.iter_custom[kernel_launch](ctx)
+    def bench_func(mut bench: Bencher) raises {imm}:
+        bencher_iter_custom(bench, kernel_launch, ctx)
         keep(dst.unsafe_ptr())
 
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(
             "apple_attn_fwd",
             input_id=String(dtype_str, "/", causal_str, "/B", B, "S", S, "H", H, "D", D),
@@ -108,9 +108,8 @@ def bench_apple_bwd[
     var dk = CacheBustingBuffer[dtype](B * S * H * D, 1, ctx)
     var dv = CacheBustingBuffer[dtype](B * S * H * D, 1, ctx)
 
-    @parameter
     @always_inline
-    def kernel_launch(dc: DeviceContext, iteration: Int) raises:
+    def kernel_launch(dc: DeviceContext, iteration: Int) raises {imm}:
         _flash_attn_bwd_launch_apple[dtype, D, CAUSAL, BIAS](
             _imm(dy, iteration),
             _imm(o, iteration),
@@ -133,13 +132,13 @@ def bench_apple_bwd[
     kernel_launch(ctx, 0)  # warmup
     ctx.synchronize()
 
-    @parameter
     @always_inline
-    def bench_func(mut bench: Bencher) raises:
-        bench.iter_custom[kernel_launch](ctx)
+    def bench_func(mut bench: Bencher) raises {imm}:
+        bencher_iter_custom(bench, kernel_launch, ctx)
         keep(dq.unsafe_ptr())
 
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(
             "apple_attn_bwd",
             input_id=String(dtype_str, "/", causal_str, "/B", B, "S", S, "H", H, "D", D),
@@ -168,12 +167,13 @@ def main() raises:
 
     with DeviceContext() as ctx:
         comptime for si in range(len(shapes)):
-            comptime B = shapes[si][0]
-            comptime S = shapes[si][1]
-            comptime H = shapes[si][2]
-            comptime D = shapes[si][3]
+            comptime shape = rebind[Tuple[Int, Int, Int, Int]](shapes[si])
+            comptime B = shape[0]
+            comptime S = shape[1]
+            comptime H = shape[2]
+            comptime D = shape[3]
             comptime for di in range(len(dtypes)):
-                comptime dtype = dtypes[di]
+                comptime dtype = rebind[DType](dtypes[di])
                 bench_apple_fwd[dtype, B, S, H, D, False, False](m, ctx=ctx)
                 bench_apple_fwd[dtype, B, S, H, D, False, True](m, ctx=ctx)
                 bench_apple_fwd[dtype, B, S, H, D, True](m, ctx=ctx)

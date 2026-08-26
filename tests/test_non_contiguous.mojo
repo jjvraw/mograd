@@ -24,41 +24,41 @@ def numerical_grad[
 
 
 def test_add_strided_step2() raises:
-    device = Device()
-    a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], (6, 2))
-    b = Tensor(device, [Float32(10), 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120], (6, 2))
-    sa = a[0:6:2]
-    sb = b[0:6:2]
-    c = sa + sb
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], (6, 2))
+    var b = Tensor(device, [Float32(10), 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120], (6, 2))
+    var sa = a[0:6:2]
+    var sb = b[0:6:2]
+    var c = sa + sb
     assert_true(not sa.is_contiguous() or not sb.is_contiguous() or c.is_contiguous())
     assert_allclose(c, [Float32(11), 22, 55, 66, 99, 110])
 
 
 def test_add_strided_lhs_only() raises:
-    device = Device()
-    a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8], (4, 2))
-    b = Tensor.full(device, (2, 2), Float32(100))
-    sa = a[0:4:2]
-    c = sa + b
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8], (4, 2))
+    var b = Tensor.full(device, (2, 2), Float32(100))
+    var sa = a[0:4:2]
+    var c = sa + b
     assert_true(not sa.is_contiguous() or b.is_contiguous() or c.is_contiguous())
     assert_allclose(c, [Float32(101), 102, 105, 106])
 
 
 def test_add_strided_step3() raises:
-    device = Device()
-    a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], (6, 2))
-    zeros = Tensor.full(device, (2, 2), Float32(0))
-    sa = a[0:6:3]
-    c = sa + zeros
+    var device = Device()
+    var a = Tensor(device, [Float32(1), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], (6, 2))
+    var zeros = Tensor.full(device, (2, 2), Float32(0))
+    var sa = a[0:6:3]
+    var c = sa + zeros
     assert_true(not sa.is_contiguous() or zeros.is_contiguous() or c.is_contiguous())
     assert_allclose(c, [Float32(1), 2, 7, 8])
 
 
 def test_add_both_strided_different_offsets() raises:
     var device = Device()
-    a = Tensor(device, [Float32(1), 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6], (6, 2))
-    b = Tensor(device, [Float32(10), 10, 20, 20, 30, 30, 40, 40, 50, 50, 60, 60], (6, 2))
-    c = a[0:6:2] + b[1:6:2]
+    var a = Tensor(device, [Float32(1), 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6], (6, 2))
+    var b = Tensor(device, [Float32(10), 10, 20, 20, 30, 30, 40, 40, 50, 50, 60, 60], (6, 2))
+    var c = a[0:6:2] + b[1:6:2]
     assert_allclose(c, [Float32(21), 21, 43, 43, 65, 65])
 
 

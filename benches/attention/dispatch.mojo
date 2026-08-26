@@ -1,25 +1,25 @@
-from std.gpu.host import DeviceContext
-from std.ffi import OwnedDLHandle
+from max.benchmark import bencher_iter_custom
+from max.gpu.host import DeviceContext
 from std.math import sqrt
-from std.os.env import getenv
 from std.benchmark import Bench, Bencher, BenchId, keep, BenchConfig
 from std.benchmark import BenchMetric, ThroughputMeasure
 from std.sys import size_of
 
 from internal_utils import CacheBustingBuffer
 
-from mograd.runtime.gpu.kernels.utils import FlashAttnFwdKernel, FlashAttnBwdKernel
+from mograd import Device
+from mograd.runtime.gpu.kernels.dispatch import FlashAttnFwdKernel, FlashAttnBwdKernel
 
 
 @always_inline
 def _arg[dtype: DType](buf: CacheBustingBuffer[dtype], i: Int) -> Pointer[NoneType, MutAnyOrigin]:
-    return buf.offset_ptr(i).bitcast[NoneType]().as_unsafe_any_origin()
+    return buf.offset_ptr(i).unsafe_bitcast[NoneType]().as_unsafe_any_origin()
 
 
 @no_inline
 def bench_flash_attn_fwd[
     dtype: DType, B: Int, S: Int, H: Int, D: Int, CAUSAL: Bool, BIAS: Bool = False
-](mut m: Bench, *, lib: OwnedDLHandle, ctx: DeviceContext) raises:
+](mut m: Bench, *, device: Device, ctx: DeviceContext) raises:
     comptime dtype_str = "f32" if dtype == DType.float32 else "f16" if dtype == DType.float16 else "bf16"
     comptime causal_str = "causal" if CAUSAL else ("bias" if BIAS else "full")
     comptime fwd_flop_scale = 2 if CAUSAL else 4
@@ -29,7 +29,7 @@ def bench_flash_attn_fwd[
     )
 
     var scale = Float32(1.0) / sqrt(Float32(D))
-    var func = lib.get_function[FlashAttnFwdKernel]("mograd_flash_attn_fwd")
+    var func = device.get_function[FlashAttnFwdKernel]("mograd_flash_attn_fwd")
 
     var q = CacheBustingBuffer[dtype](B * S * H * D, 1, ctx)
     var k = CacheBustingBuffer[dtype](B * S * H * D, 1, ctx)
@@ -38,10 +38,9 @@ def bench_flash_attn_fwd[
     var dst = CacheBustingBuffer[dtype](B * H * S * D, 1, ctx)
     var lse = CacheBustingBuffer[DType.float32](B * H * S, 1, ctx)
 
-    @parameter
     @always_inline
-    def kernel_launch(dc: DeviceContext, iteration: Int) raises:
-        func(
+    def kernel_launch(dc: DeviceContext, iteration: Int) raises {imm}:
+        _ = func(
             _arg(q, iteration),
             _arg(k, iteration),
             _arg(v, iteration),
@@ -62,13 +61,13 @@ def bench_flash_attn_fwd[
     kernel_launch(ctx, 0)  # warmup
     ctx.synchronize()
 
-    @parameter
     @always_inline
-    def bench_func(mut bench: Bencher) raises:
-        bench.iter_custom[kernel_launch](ctx)
+    def bench_func(mut bench: Bencher) raises {imm}:
+        bencher_iter_custom(bench, kernel_launch, ctx)
         keep(dst.unsafe_ptr())
 
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(
             "flash_attn_fwd",
             input_id=String(dtype_str, "/", causal_str, "/B", B, "S", S, "H", H, "D", D),
@@ -83,7 +82,7 @@ def bench_flash_attn_fwd[
 @no_inline
 def bench_flash_attn_bwd[
     dtype: DType, B: Int, S: Int, H: Int, D: Int, CAUSAL: Bool, BIAS: Bool = not CAUSAL
-](mut m: Bench, *, lib: OwnedDLHandle, ctx: DeviceContext) raises:
+](mut m: Bench, *, device: Device, ctx: DeviceContext) raises:
     comptime dtype_str = "f32" if dtype == DType.float32 else "f16" if dtype == DType.float16 else "bf16"
     comptime causal_str = "causal" if CAUSAL else ("bias" if BIAS else "full")
     # We use FA2 convention here, the backward is 5 matmuls (score, dP, dV, dK, dQ) = 2.5x the forward's 2,
@@ -102,7 +101,7 @@ def bench_flash_attn_bwd[
     )
 
     var scale = Float32(1.0) / sqrt(Float32(D))
-    var func = lib.get_function[FlashAttnBwdKernel]("mograd_flash_attn_bwd")
+    var func = device.get_function[FlashAttnBwdKernel]("mograd_flash_attn_bwd")
 
     var dy = CacheBustingBuffer[dtype](B * H * S * D, 1, ctx)
     var o = CacheBustingBuffer[dtype](B * H * S * D, 1, ctx)
@@ -115,10 +114,9 @@ def bench_flash_attn_bwd[
     var dk = CacheBustingBuffer[dtype](B * S * H * D, 1, ctx)
     var dv = CacheBustingBuffer[dtype](B * S * H * D, 1, ctx)
 
-    @parameter
     @always_inline
-    def kernel_launch(dc: DeviceContext, iteration: Int) raises:
-        func(
+    def kernel_launch(dc: DeviceContext, iteration: Int) raises {imm}:
+        _ = func(
             _arg(dy, iteration),
             _arg(o, iteration),
             _arg(q, iteration),
@@ -143,13 +141,13 @@ def bench_flash_attn_bwd[
     kernel_launch(ctx, 0)  # warmup
     ctx.synchronize()
 
-    @parameter
     @always_inline
-    def bench_func(mut bench: Bencher) raises:
-        bench.iter_custom[kernel_launch](ctx)
+    def bench_func(mut bench: Bencher) raises {imm}:
+        bencher_iter_custom(bench, kernel_launch, ctx)
         keep(dq.unsafe_ptr())
 
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(
             "flash_attn_bwd",
             input_id=String(dtype_str, "/", causal_str, "/B", B, "S", S, "H", H, "D", D),
@@ -163,7 +161,7 @@ def bench_flash_attn_bwd[
 
 def main() raises:
     var m = Bench(BenchConfig(max_iters=1000, min_runtime_secs=2, max_runtime_secs=5))
-    var lib = OwnedDLHandle(getenv("MOGRAD_SO"))
+    var device = Device()
 
     # (B, S, H, D) spans both D buckets and small to large sequence lengths.
     comptime shapes = (
@@ -177,19 +175,20 @@ def main() raises:
     )
     comptime dtypes = (DType.float32, DType.float16)
 
-    with DeviceContext() as ctx:
-        comptime for si in range(len(shapes)):
-            comptime B = shapes[si][0]
-            comptime S = shapes[si][1]
-            comptime H = shapes[si][2]
-            comptime D = shapes[si][3]
-            comptime for di in range(len(dtypes)):
-                comptime dtype = dtypes[di]
-                bench_flash_attn_fwd[dtype, B, S, H, D, False, False](m, lib=lib, ctx=ctx)
-                bench_flash_attn_fwd[dtype, B, S, H, D, False, True](m, lib=lib, ctx=ctx)
-                bench_flash_attn_fwd[dtype, B, S, H, D, True](m, lib=lib, ctx=ctx)
-                bench_flash_attn_bwd[dtype, B, S, H, D, False, False](m, lib=lib, ctx=ctx)
-                bench_flash_attn_bwd[dtype, B, S, H, D, False, True](m, lib=lib, ctx=ctx)
-                bench_flash_attn_bwd[dtype, B, S, H, D, True](m, lib=lib, ctx=ctx)
+    var ctx = device.ctx
+    comptime for si in range(len(shapes)):
+        comptime shape = rebind[Tuple[Int, Int, Int, Int]](shapes[si])
+        comptime B = shape[0]
+        comptime S = shape[1]
+        comptime H = shape[2]
+        comptime D = shape[3]
+        comptime for di in range(len(dtypes)):
+            comptime dtype = rebind[DType](dtypes[di])
+            bench_flash_attn_fwd[dtype, B, S, H, D, False, False](m, device=device, ctx=ctx)
+            bench_flash_attn_fwd[dtype, B, S, H, D, False, True](m, device=device, ctx=ctx)
+            bench_flash_attn_fwd[dtype, B, S, H, D, True](m, device=device, ctx=ctx)
+            bench_flash_attn_bwd[dtype, B, S, H, D, False, False](m, device=device, ctx=ctx)
+            bench_flash_attn_bwd[dtype, B, S, H, D, False, True](m, device=device, ctx=ctx)
+            bench_flash_attn_bwd[dtype, B, S, H, D, True](m, device=device, ctx=ctx)
 
     m.dump_report()
